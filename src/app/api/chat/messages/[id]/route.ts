@@ -3,19 +3,20 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/lib/pusher";
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { id } = await params;
   const { content } = await request.json();
-  const message = await prisma.message.findUnique({ where: { id: params.id } });
+  const message = await prisma.message.findUnique({ where: { id } });
 
   if (!message || message.userId !== session.user.id) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const updated = await prisma.message.update({
-    where: { id: params.id },
+    where: { id },
     data: { content, editedAt: new Date() },
     include: {
       user: { select: { id: true, name: true, initials: true, image: true } },
@@ -27,11 +28,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   return Response.json(updated);
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const message = await prisma.message.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const message = await prisma.message.findUnique({ where: { id } });
   if (!message) return Response.json({ error: "Not found" }, { status: 404 });
 
   const isOwner =
@@ -42,12 +44,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (!isOwner) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   await prisma.message.update({
-    where: { id: params.id },
+    where: { id },
     data: { deletedAt: new Date(), content: "This message was deleted." },
   });
 
   await pusherServer.trigger(channelName(message.channelId), PUSHER_EVENTS.DELETE_MESSAGE, {
-    id: params.id,
+    id,
     channelId: message.channelId,
   });
 
