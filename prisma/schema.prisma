@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("viewer")
+  initials      String?
+  phone         String?
+  department    String?
+  isActive      Boolean   @default(true)
+  canCreate     Boolean   @default(false)
+  canEdit       Boolean   @default(false)
+  canDelete     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts         Account[]
+  sessions         Session[]
+  projects         ProjectAssignment[]
+  agendaItems      AgendaItem[]
+  activities       Activity[]
+  channelsCreated  Channel[]         @relation("ChannelCreator")
+  channelMembers   ChannelMember[]
+  messages         Message[]
+  messageReactions MessageReaction[]
+  callsStarted     Call[]            @relation("CallStarter")
+  callParticipants CallParticipant[]
+  googleCalToken   GoogleCalendarToken?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  title       String
+  category    String   @default("Residenziale")
+  phase       String   @default("ETUDE/AP")
+  client      String?
+  year        Int?
+  commune     String?
+  typology    String?
+  terrain     String?
+  roof        String?
+  description String?
+  pageLink    String?
+  image       String?
+  floors      Int?
+  area        Float?
+  status      String   @default("active")
+  billing     String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments ProjectAssignment[]
+  agendaItems AgendaItem[]
+  gallery     GalleryImage[]
+  floorPlans  FloorPlan[]
+  activities  Activity[]
+  channels    Channel[]
+  calls       Call[]
+}
+
+model ProjectAssignment {
+  id         String   @id @default(cuid())
+  projectId  String
+  userId     String
+  role       String?
+  assignedAt DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model AgendaItem {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime
+  endDate     DateTime?
+  type        String    @default("task")
+  priority    String    @default("medium")
+  status      String    @default("pending")
+  projectId   String?
+  userId      String
+  color       String?
+  allDay      Boolean   @default(false)
+  googleEventId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  project     Project?  @relation(fields: [projectId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model GalleryImage {
+  id         String   @id @default(cuid())
+  projectId  String?
+  title      String?
+  url        String
+  thumbnail  String?
+  type       String   @default("render")
+  tags       String?
+  colors     String?
+  materials  String?
+  shapes     String?
+  floors     Int?
+  year       Int?
+  aiAnalysis String?
+  createdAt  DateTime @default(now())
+  project    Project? @relation(fields: [projectId], references: [id])
+}
+
+model FloorPlan {
+  id           String   @id @default(cuid())
+  projectId    String?
+  title        String?
+  url          String
+  type         String   @default("floor_plan")
+  floors       Int?
+  siteArea     Float?
+  buildingArea Float?
+  typology     String?
+  apartmentMix String?
+  shape        String?
+  year         Int?
+  aiAnalysis   String?
+  createdAt    DateTime @default(now())
+  project      Project? @relation(fields: [projectId], references: [id])
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  type        String
+  description String
+  projectId   String?
+  userId      String
+  metadata    String?
+  createdAt   DateTime @default(now())
+  project     Project? @relation(fields: [projectId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+// ─── CHAT ────────────────────────────────────────────────────
+
+model Channel {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        String   @default("public") // public | private | direct
+  projectId   String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project  Project?        @relation(fields: [projectId], references: [id])
+  creator  User            @relation("ChannelCreator", fields: [createdBy], references: [id])
+  members  ChannelMember[]
+  messages Message[]
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  role      String   @default("member") // owner | admin | member
+  lastRead  DateTime @default(now())
+  joinedAt  DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  channelId String
+  userId    String
+  content   String
+  type      String    @default("text") // text | file | image | system
+  fileUrl   String?
+  fileName  String?
+  parentId  String?
+  editedAt  DateTime?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id])
+  parent    Message?          @relation("MessageThread", fields: [parentId], references: [id])
+  replies   Message[]         @relation("MessageThread")
+  reactions MessageReaction[]
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+}
+
+// ─── CALLS ───────────────────────────────────────────────────
+
+model Call {
+  id        String    @id @default(cuid())
+  roomName  String    @unique
+  roomUrl   String
+  title     String?
+  type      String    @default("video") // video | audio
+  status    String    @default("active") // active | ended
+  startedBy String
+  projectId String?
+  createdAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  starter      User              @relation("CallStarter", fields: [startedBy], references: [id])
+  project      Project?          @relation(fields: [projectId], references: [id])
+  participants CallParticipant[]
+}
+
+model CallParticipant {
+  id       String    @id @default(cuid())
+  callId   String
+  userId   String
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─── GOOGLE CALENDAR ─────────────────────────────────────────
+
+model GoogleCalendarToken {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  accessToken  String
+  refreshToken String?
+  expiryDate   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

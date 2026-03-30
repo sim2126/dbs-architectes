@@ -1,0 +1,47 @@
+import { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+export async function GET() {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const items = await prisma.agendaItem.findMany({
+    orderBy: { date: "asc" },
+    include: {
+      project: { select: { id: true, title: true, code: true } },
+      user: { select: { id: true, name: true, initials: true } },
+    },
+  });
+
+  return Response.json(items);
+}
+
+export async function POST(request: NextRequest) {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
+
+  const item = await prisma.agendaItem.create({
+    data: {
+      title: body.title,
+      description: body.description || null,
+      date: new Date(body.date),
+      endDate: body.endDate ? new Date(body.endDate) : null,
+      type: body.type || "task",
+      priority: body.priority || "medium",
+      status: body.status || "pending",
+      projectId: body.projectId || null,
+      userId: session.user.id,
+      color: body.color || null,
+      allDay: body.allDay || false,
+    },
+    include: {
+      project: { select: { id: true, title: true, code: true } },
+      user: { select: { id: true, name: true, initials: true } },
+    },
+  });
+
+  return Response.json(item, { status: 201 });
+}
