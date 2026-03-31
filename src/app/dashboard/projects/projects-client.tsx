@@ -15,7 +15,9 @@ import {
   Tag,
   ChevronDown,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -487,69 +489,75 @@ function ProjectCard({
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ y: -2 }}
-      className="group bg-card border border-border rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-    >
-      {/* Project image */}
-      <div className="aspect-[4/3] bg-muted relative overflow-hidden">
-        {project.image ? (
-          <img
-            src={project.image}
-            alt={project.title}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-            <Building2 className="w-8 h-8 text-muted-foreground/30" />
+    <Link href={`/dashboard/projects/${project.id}`} target="_blank" rel="noopener noreferrer">
+      <motion.div
+        layout
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        whileHover={{ y: -2 }}
+        className="group bg-card border border-border rounded-xl overflow-hidden cursor-pointer hover:shadow-lg hover:border-foreground/20 transition-all"
+      >
+        {/* Project image */}
+        <div className="aspect-[4/3] bg-muted relative overflow-hidden">
+          {project.image ? (
+            <img
+              src={project.image}
+              alt={project.title}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
+              <Building2 className="w-8 h-8 text-muted-foreground/30" />
+            </div>
+          )}
+          {/* Phase badge */}
+          <div
+            className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-medium"
+            style={{ background: phaseColor }}
+          >
+            {project.phase}
           </div>
-        )}
-        {/* Phase badge */}
-        <div
-          className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-medium"
-          style={{ background: phaseColor }}
-        >
-          {project.phase}
-        </div>
-        {/* Assignees */}
-        {project.assignments.length > 0 && (
-          <div className="absolute bottom-2 right-2 flex -space-x-1">
-            {project.assignments.slice(0, 3).map((a) => (
-              <Avatar key={a.userId} className="h-5 w-5 border border-background">
-                <AvatarFallback className="text-[8px] bg-foreground text-background">
-                  {a.user.initials || a.user.name?.slice(0, 2).toUpperCase() || "??"}
-                </AvatarFallback>
-              </Avatar>
-            ))}
+          {/* Open in new tab indicator */}
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded-full p-1">
+            <ExternalLink className="w-2.5 h-2.5 text-white" />
           </div>
-        )}
-      </div>
-
-      {/* Project info */}
-      <div className="p-3">
-        <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
-        <h3 className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">
-          {project.title.replace(project.code + " ", "")}
-        </h3>
-        <div className="flex items-center gap-1 mt-1.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-            {project.category}
-          </span>
-          {project.commune && (
-            <>
-              <span className="text-muted-foreground/30">·</span>
-              <span className="text-[10px] text-muted-foreground truncate">
-                {project.commune}
-              </span>
-            </>
+          {/* Assignees */}
+          {project.assignments.length > 0 && (
+            <div className="absolute bottom-2 right-2 flex -space-x-1">
+              {project.assignments.slice(0, 3).map((a) => (
+                <Avatar key={a.userId} className="h-5 w-5 border border-background">
+                  <AvatarFallback className="text-[8px] bg-foreground text-background">
+                    {a.user.initials || a.user.name?.slice(0, 2).toUpperCase() || "??"}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-    </motion.div>
+
+        {/* Project info */}
+        <div className="p-3">
+          <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
+          <h3 className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight group-hover:text-foreground transition-colors">
+            {project.title.replace(project.code + " ", "")}
+          </h3>
+          <div className="flex items-center gap-1 mt-1.5">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+              {project.category}
+            </span>
+            {project.commune && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <span className="text-[10px] text-muted-foreground truncate">
+                  {project.commune}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </Link>
   );
 }
 
@@ -618,8 +626,10 @@ function ProjectListView({
                 </div>
               </td>
               <td className="p-3">
-                <p className="font-medium text-xs">{project.title}</p>
-                <p className="text-[10px] text-muted-foreground">{project.category}</p>
+                <Link href={`/dashboard/projects/${project.id}`} target="_blank" rel="noopener noreferrer" className="group/title">
+                  <p className="font-medium text-xs group-hover/title:underline">{project.title}</p>
+                  <p className="text-[10px] text-muted-foreground">{project.category}</p>
+                </Link>
               </td>
               <td className="p-3">
                 <div className="flex items-center gap-1.5">
@@ -685,31 +695,19 @@ function ProjectListView({
               </td>
               <td className="p-3">
                 <div className="flex items-center gap-1 justify-end">
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {/* Edit modal */}}
-                    >
-                      Edit
+                  <Link href={`/dashboard/projects/${project.id}`} target="_blank" rel="noopener noreferrer">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                      <ExternalLink className="w-3 h-3" />
+                      Open
                     </Button>
-                  )}
-                  {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                    >
-                      Duplicate
-                    </Button>
-                  )}
+                  </Link>
                   {canDelete && (
                     <Button
                       variant="destructive"
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         if (confirm("Delete this project?")) {
                           await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
                           onDelete(project.id);
