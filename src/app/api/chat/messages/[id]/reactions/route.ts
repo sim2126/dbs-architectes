@@ -20,9 +20,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let payload: object;
 
   if (existing) {
+    
     await prisma.messageReaction.delete({ where: { id: existing.id } });
-    event = PUSHER_EVENTS.REACTION_REMOVE;
-    payload = { messageId: id, reactionId: existing.id, emoji, userId: session.user.id };
+    event = PUSHER_EVENTS.REACTION_REMOVE;                                                                                                                                        payload = { messageId: id, reactionId: existing.id, emoji, userId: session.user.id };
   } else {
     const reaction = await prisma.messageReaction.create({
       data: { messageId: id, userId: session.user.id, emoji },

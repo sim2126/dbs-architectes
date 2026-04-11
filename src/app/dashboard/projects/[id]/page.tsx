@@ -5,33 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
-  Building2,
-  MapPin,
-  Calendar,
-  User,
-  Tag,
-  Layers,
-  Mountain,
-  Home,
-  SquareStack,
-  Ruler,
-  CreditCard,
-  FileText,
-  ExternalLink,
-  Clock,
-  Activity,
-  Edit3,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Send,
-  Globe,
-  Eye,
-  MessageSquare,
-  ChevronDown,
-  ChevronRight as ChevronRightIcon,
-  RotateCcw,
+  ArrowLeft, Building2, ExternalLink, Loader2, Send, Globe,
+  MessageSquare, ChevronDown, AlertCircle, ThumbsUp, Reply,
+  Paperclip, Smile, AtSign, FileText, Activity, MoreHorizontal,
+  Upload, Image, File, Check, Clock, X, Trash2, Edit2,
+  User, Tag, MapPin, CreditCard, Calendar, RotateCcw,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +19,8 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow, format } from "date-fns";
 import { useT } from "@/lib/translations";
 import { useLanguageStore } from "@/lib/language-store";
+
+// ── Types ───────────────────────────────────────────────────────────────────
 
 interface ThreadMessage {
   id: string;
@@ -69,6 +49,7 @@ interface ProjectDetail {
   floors: number | null;
   area: number | null;
   status: string;
+  workStatus?: string;
   billing: string | null;
   notes: string | null;
   createdAt: string;
@@ -85,53 +66,52 @@ interface ProjectDetail {
   }>;
 }
 
-type DetailTab = "details" | "tasks" | "activity";
+// ── Work Status — monday.com palette ───────────────────────────────────────
+const WORK_STATUS = {
+  todo:      { label: "Not Started",   solid: "#c4c4cf" },
+  doing:     { label: "Working on it", solid: "#fdab3d" },
+  stuck:     { label: "Stuck",         solid: "#e2445c" },
+  completed: { label: "Done",          solid: "#00c875" },
+} as const;
+type WorkStatusKey = keyof typeof WORK_STATUS;
 
-const PRIORITY_CONFIG = {
-  high: { label: "High", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
-  medium: { label: "Medium", color: "text-yellow-600", bg: "bg-yellow-50 dark:bg-yellow-950/30" },
-  low: { label: "Low", color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30" },
-} as Record<string, { label: string; color: string; bg: string }>;
+// ── Update / Comment feed (monday.com style) ────────────────────────────────
 
-function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-start gap-3 py-2.5">
-      <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-muted shrink-0 mt-0.5">
-        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
-        <div className="text-sm font-medium break-words">{value}</div>
-      </div>
-    </div>
-  );
-}
-
-// ── Message bubble ──────────────────────────────────────────────────────────
-
-function MessageBubble({
+function UpdateItem({
   message,
   currentUserId,
   projectId,
-  onReply,
   targetLang,
+  onReply,
 }: {
   message: ThreadMessage;
   currentUserId: string;
   projectId: string;
-  onReply: (msg: ThreadMessage) => void;
   targetLang: string;
+  onReply: (msg: ThreadMessage) => void;
 }) {
   const t = useT();
+  const [likeCount, setLikeCount] = useState(message.reactions.filter(r => r.emoji === "👍").length);
+  const [liked, setLiked] = useState(message.reactions.some(r => r.emoji === "👍" && r.user.id === currentUserId));
+  const [showReplies, setShowReplies] = useState(false);
   const [translated, setTranslated] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
-  const [showReplies, setShowReplies] = useState(false);
-  const isMe = message.user.id === currentUserId;
+
+  const displayText = translated && !showOriginal ? translated : message.content;
+
+  const handleLike = async () => {
+    setLiked((v) => !v);
+    setLikeCount((c) => liked ? c - 1 : c + 1);
+    await fetch(`/api/projects/${projectId}/thread/${message.id}/react`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    }).catch(() => {});
+  };
 
   const handleTranslate = async () => {
-    if (translated) { setShowOriginal(!showOriginal); return; }
+    if (translated) { setShowOriginal((v) => !v); return; }
     setTranslating(true);
     try {
       const res = await fetch("/api/translate", {
@@ -141,135 +121,124 @@ function MessageBubble({
       });
       const data = await res.json();
       if (data.translated) setTranslated(data.translated);
-    } finally {
-      setTranslating(false);
-    }
+    } finally { setTranslating(false); }
   };
 
-  const displayText = translated && !showOriginal ? translated : message.content;
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="group"
-    >
-      <div className={cn("flex gap-3", isMe && "flex-row-reverse")}>
-        <Avatar className="h-8 w-8 shrink-0 mt-0.5">
-          <AvatarImage src={message.user.image || ""} />
-          <AvatarFallback className="text-[10px] bg-foreground text-background">
-            {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "?"}
+    <div className="border-b border-border last:border-0">
+      {/* Update header */}
+      <div className="flex items-start gap-3 px-5 py-4">
+        <Avatar className="w-9 h-9 shrink-0 mt-0.5">
+          <AvatarImage src={message.user.image ?? undefined} />
+          <AvatarFallback className="text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+            {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "??"}
           </AvatarFallback>
         </Avatar>
 
-        <div className={cn("flex-1 max-w-[80%]", isMe && "items-end flex flex-col")}>
-          <div className={cn("flex items-center gap-2 mb-1", isMe && "flex-row-reverse")}>
-            <span className="text-xs font-semibold">{message.user.name}</span>
-            <span className="text-[10px] text-muted-foreground">
-              {format(new Date(message.createdAt), "HH:mm")} ·{" "}
-              {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
-            </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-foreground">{message.user.name ?? "Unknown"}</span>
+              <span className="text-xs text-muted-foreground">
+                {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
+              </span>
+            </div>
+            <button className="p-1 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors">
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
           </div>
 
-          <div
-            className={cn(
-              "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-              isMe
-                ? "bg-foreground text-background rounded-tr-sm"
-                : "bg-muted rounded-tl-sm"
-            )}
-          >
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
             {displayText}
-          </div>
+          </p>
 
-          {/* Actions row */}
-          <div className={cn("flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity", isMe && "flex-row-reverse")}>
+          {/* Replies preview */}
+          {message.replies.length > 0 && (
             <button
-              onClick={() => onReply(message)}
-              className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+              onClick={() => setShowReplies((v) => !v)}
+              className="flex items-center gap-1.5 mt-2 text-xs text-blue-500 hover:text-blue-600 font-medium"
             >
               <MessageSquare className="w-3 h-3" />
-              {t("thread.reply")}
+              {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
+              <ChevronDown className={cn("w-3 h-3 transition-transform", showReplies && "rotate-180")} />
             </button>
-            <button
-              onClick={handleTranslate}
-              disabled={translating}
-              className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-            >
-              <Globe className="w-3 h-3" />
-              {translating ? "…" : translated && !showOriginal ? t("common.show_original") : t("common.translate")}
-            </button>
-            {translated && showOriginal && (
-              <button
-                onClick={() => setShowOriginal(false)}
-                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Translated
-              </button>
-            )}
-          </div>
-
-          {/* Replies */}
-          {message.replies.length > 0 && (
-            <div className={cn("mt-1", isMe && "self-end")}>
-              <button
-                onClick={() => setShowReplies(!showReplies)}
-                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                {showReplies ? <ChevronDown className="w-3 h-3" /> : <ChevronRightIcon className="w-3 h-3" />}
-                {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
-              </button>
-              <AnimatePresence>
-                {showReplies && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-2 pl-4 border-l-2 border-border space-y-2"
-                  >
-                    {message.replies.map((reply) => (
-                      <div key={reply.id} className="flex gap-2">
-                        <Avatar className="h-6 w-6 shrink-0">
-                          <AvatarFallback className="text-[9px] bg-foreground text-background">
-                            {reply.user.initials ?? "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-[11px] font-semibold">{reply.user.name}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                          <div className="bg-muted rounded-xl rounded-tl-sm px-3 py-2 text-xs">
-                            {reply.content}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
           )}
+
+          <AnimatePresence>
+            {showReplies && message.replies.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden mt-3 pl-3 border-l-2 border-blue-200 dark:border-blue-800 space-y-3"
+              >
+                {message.replies.map((reply) => (
+                  <div key={reply.id} className="flex gap-2.5">
+                    <Avatar className="w-7 h-7 shrink-0">
+                      <AvatarFallback className="text-[9px] font-bold bg-muted text-foreground">
+                        {reply.user.initials ?? reply.user.name?.slice(0, 2).toUpperCase() ?? "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs font-semibold">{reply.user.name}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground leading-relaxed">{reply.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
-    </motion.div>
+
+      {/* Action bar — Like | Reply | Translate */}
+      <div className="flex items-center gap-1 px-5 pb-3 ml-12">
+        <button
+          onClick={handleLike}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all",
+            liked
+              ? "text-blue-600 bg-blue-50 dark:bg-blue-900/20"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <ThumbsUp className="w-3.5 h-3.5" />
+          {likeCount > 0 ? `Like (${likeCount})` : "Like"}
+        </button>
+        <button
+          onClick={() => onReply(message)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+        >
+          <Reply className="w-3.5 h-3.5" />
+          Reply
+        </button>
+        <button
+          onClick={handleTranslate}
+          disabled={translating}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+        >
+          <Globe className="w-3.5 h-3.5" />
+          {translating ? "Translating…" : translated && !showOriginal ? "Show original" : "Translate"}
+        </button>
+      </div>
+    </div>
   );
 }
 
-// ── Project Thread Panel ────────────────────────────────────────────────────
+// ── Updates Tab ─────────────────────────────────────────────────────────────
 
-function ProjectThread({ projectId, currentUserId }: { projectId: string; currentUserId: string }) {
-  const t = useT();
+function UpdatesTab({ projectId, currentUserId }: { projectId: string; currentUserId: string }) {
   const language = useLanguageStore((s) => s.language);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchMessages = useCallback(async () => {
@@ -277,43 +246,30 @@ function ProjectThread({ projectId, currentUserId }: { projectId: string; curren
       const res = await fetch(`/api/projects/${projectId}/thread`);
       const data = await res.json();
       if (data.messages) setMessages(data.messages);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [projectId]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
-
-  // Poll every 10s for new messages
-  useEffect(() => {
-    const interval = setInterval(fetchMessages, 10000);
-    return () => clearInterval(interval);
-  }, [fetchMessages]);
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  useEffect(() => { const id = setInterval(fetchMessages, 15000); return () => clearInterval(id); }, [fetchMessages]);
 
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending) return;
     setSending(true);
     setInput("");
+    const prevReplyTo = replyTo;
     setReplyTo(null);
     try {
       const res = await fetch(`/api/projects/${projectId}/thread`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text, parentId: replyTo?.id }),
+        body: JSON.stringify({ content: text, parentId: prevReplyTo?.id }),
       });
       const msg = await res.json();
       if (msg.id) {
-        if (replyTo) {
+        if (prevReplyTo) {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === replyTo.id ? { ...m, replies: [...m.replies, msg] } : m
-            )
+            prev.map((m) => m.id === prevReplyTo.id ? { ...m, replies: [...m.replies, msg] } : m)
           );
         } else {
           setMessages((prev) => [...prev, { ...msg, replies: [], reactions: [] }]);
@@ -325,131 +281,237 @@ function ProjectThread({ projectId, currentUserId }: { projectId: string; curren
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  // Group messages by date
-  const grouped: { date: string; messages: ThreadMessage[] }[] = [];
-  for (const msg of messages) {
-    const dateKey = format(new Date(msg.createdAt), "MMMM d, yyyy");
-    const last = grouped[grouped.length - 1];
-    if (last?.date === dateKey) last.messages.push(msg);
-    else grouped.push({ date: dateKey, messages: [msg] });
-  }
-
   return (
     <div className="flex flex-col h-full">
-      {/* Thread header */}
-      <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-semibold">{t("thread.title")}</span>
-          {messages.length > 0 && (
-            <Badge variant="secondary" className="text-xs">{messages.length}</Badge>
+      {/* Composer */}
+      <div className="px-5 py-4 border-b border-border shrink-0">
+        <AnimatePresence>
+          {replyTo && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-t-xl px-3 py-2 mb-0 border-b-0"
+            >
+              <span className="text-xs text-blue-600 font-medium flex items-center gap-1.5">
+                <Reply className="w-3 h-3" />
+                Replying to <strong>{replyTo.user.name}</strong>
+              </span>
+              <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
           )}
-        </div>
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-          Ctrl+Enter to send
-        </span>
-      </div>
+        </AnimatePresence>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <div className={cn(
+          "border border-border rounded-xl overflow-hidden bg-background focus-within:border-foreground/30 transition-colors",
+          replyTo && "rounded-t-none border-t-0"
+        )}>
+          {/* Toolbar */}
+          <div className="flex items-center gap-0.5 px-3 py-2 border-b border-border bg-muted/30">
+            {[
+              { icon: "B", label: "Bold", cls: "font-bold" },
+              { icon: "I", label: "Italic", cls: "italic" },
+              { icon: "U", label: "Underline", cls: "underline" },
+            ].map((b) => (
+              <button key={b.label} className={`px-2 py-1 text-xs ${b.cls} text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors`}>{b.icon}</button>
+            ))}
+            <div className="w-px h-4 bg-border mx-1" />
+            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors" title="Mention">
+              <AtSign className="w-3.5 h-3.5" />
+            </button>
+            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors" title="Emoji">
+              <Smile className="w-3.5 h-3.5" />
+            </button>
+            <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors" title="Attach file">
+              <Paperclip className="w-3.5 h-3.5" />
+            </button>
           </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
-            <MessageSquare className="w-10 h-10 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">{t("thread.no_messages")}</p>
-          </div>
-        ) : (
-          grouped.map((group) => (
-            <div key={group.date}>
-              <div className="flex items-center gap-2 my-3">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-[10px] text-muted-foreground font-medium px-2">{group.date}</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <div className="space-y-3">
-                {group.messages.map((msg) => (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    currentUserId={currentUserId}
-                    projectId={projectId}
-                    onReply={setReplyTo}
-                    targetLang={language}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* Reply indicator */}
-      <AnimatePresence>
-        {replyTo && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            className="mx-4 mb-2 px-3 py-2 bg-accent rounded-lg border border-border text-xs flex items-center justify-between"
-          >
-            <span className="text-muted-foreground">
-              Replying to <strong>{replyTo.user.name}</strong>: {replyTo.content.slice(0, 50)}…
-            </span>
-            <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground ml-2">✕</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Input */}
-      <div className="px-4 pb-4 shrink-0">
-        <div className="flex gap-2 items-end border border-border rounded-xl overflow-hidden bg-background focus-within:border-foreground/30 transition-colors">
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t("thread.placeholder")}
-            rows={1}
-            className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none resize-none min-h-[40px] max-h-32"
-            style={{ fieldSizing: "content" } as React.CSSProperties}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder={replyTo ? `Reply to ${replyTo.user.name}…` : "Write an update…"}
+            rows={3}
+            className="w-full px-4 py-3 text-sm bg-transparent outline-none resize-none placeholder:text-muted-foreground"
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="m-1.5 p-2 bg-foreground text-background rounded-lg disabled:opacity-40 hover:bg-foreground/80 transition-colors shrink-0"
-          >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
+
+          <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/30">
+            <span className="text-[11px] text-muted-foreground">
+              <kbd className="font-mono bg-background border border-border px-1 rounded text-[10px]">↵</kbd> send ·{" "}
+              <kbd className="font-mono bg-background border border-border px-1 rounded text-[10px]">⇧↵</kbd> newline
+            </span>
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold text-white transition-all",
+                input.trim() && !sending ? "bg-blue-600 hover:bg-blue-700" : "bg-muted text-muted-foreground cursor-not-allowed"
+              )}
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {replyTo ? "Reply" : "Update"}
+            </button>
+          </div>
         </div>
+      </div>
+
+      {/* Feed */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+              <MessageSquare className="w-8 h-8 text-muted-foreground/30" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-1">No updates yet</p>
+              <p className="text-xs text-muted-foreground">Share progress, mention a teammate.</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {[...messages].reverse().map((msg) => (
+              <UpdateItem
+                key={msg.id}
+                message={msg}
+                currentUserId={currentUserId}
+                projectId={projectId}
+                targetLang={language}
+                onReply={setReplyTo}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Work Status Config ──────────────────────────────────────────────────────
-const WORK_STATUS = {
-  todo:      { label: "Not Started", color: "#94a3b8", bg: "#f1f5f9" },
-  doing:     { label: "In Progress", color: "#3b82f6", bg: "#eff6ff" },
-  stuck:     { label: "Stuck",       color: "#ef4444", bg: "#fef2f2" },
-  completed: { label: "Done",        color: "#22c55e", bg: "#f0fdf4" },
-} as const;
+// ── Files Tab ────────────────────────────────────────────────────────────────
+
+function FilesTab({ projectId }: { projectId: string }) {
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
+        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors">
+          <Upload className="w-3.5 h-3.5" /> Add file
+        </button>
+        <span className="text-xs text-muted-foreground ml-2">Upload documents, images, and more</span>
+      </div>
+
+      {/* Drop zone */}
+      <div
+        className="flex-1 p-6 flex flex-col items-center justify-center"
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); /* handle files */ }}
+      >
+        <motion.div
+          animate={{ scale: dragging ? 1.03 : 1 }}
+          className={cn(
+            "w-full max-w-md flex flex-col items-center gap-4 py-16 px-8 rounded-2xl border-2 border-dashed transition-colors",
+            dragging ? "border-blue-400 bg-blue-50 dark:bg-blue-900/10" : "border-border bg-muted/20"
+          )}
+        >
+          <div className="flex gap-3">
+            <div className="w-14 h-14 rounded-xl bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
+              <Image className="w-7 h-7 text-yellow-500" />
+            </div>
+            <div className="w-14 h-14 rounded-xl bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+              <File className="w-7 h-7 text-blue-500" />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-foreground">
+              <span className="font-bold">Drag &amp; drop</span> or{" "}
+              <label className="text-blue-500 cursor-pointer hover:underline">
+                browse files
+                <input type="file" multiple className="hidden" onChange={() => {}} />
+              </label>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Upload, comment and review files to collaborate in context
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+// ── Activity Log Tab ─────────────────────────────────────────────────────────
+
+function ActivityTab({ activities }: {
+  activities: Array<{
+    id: string; type: string; description: string; createdAt: string;
+    user: { id: string; name: string | null; initials: string; image: string | null };
+  }>;
+}) {
+  const TYPE_ICON: Record<string, { icon: React.ElementType; color: string }> = {
+    updated:  { icon: Edit2,        color: "#3b82f6" },
+    created:  { icon: Check,        color: "#00c875" },
+    assigned: { icon: User,         color: "#8b5cf6" },
+    comment:  { icon: MessageSquare,color: "#f59e0b" },
+    default:  { icon: Activity,     color: "#94a3b8" },
+  };
+
+  return (
+    <div className="overflow-y-auto h-full px-5 py-4">
+      {activities.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+          <Activity className="w-10 h-10 text-muted-foreground/20" />
+          <p className="text-sm text-muted-foreground">No activity yet</p>
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Vertical timeline line */}
+          <div className="absolute left-4 top-2 bottom-2 w-px bg-border" />
+          <div className="space-y-0">
+            {activities.map((act) => {
+              const cfg = TYPE_ICON[act.type] ?? TYPE_ICON.default;
+              const Icon = cfg.icon;
+              return (
+                <div key={act.id} className="flex gap-3 py-3 relative">
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 relative z-10"
+                    style={{ background: cfg.color }}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex-1 min-w-0 pt-1">
+                    <p className="text-xs text-foreground leading-relaxed">{act.description}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {act.user.name && (
+                        <span className="text-[10px] font-semibold text-muted-foreground">{act.user.name}</span>
+                      )}
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Main Page ───────────────────────────────────────────────────────────────
+
+type DetailView = "updates" | "files" | "activity";
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -460,6 +522,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [showDetails, setShowDetails] = useState(false);
+  const [activeTab, setActiveTab] = useState<DetailView>("updates");
 
   useEffect(() => {
     fetch(`/api/projects/${id}`)
@@ -486,38 +549,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <AlertCircle className="w-12 h-12 text-muted-foreground/30" />
         <p className="text-muted-foreground">{error ?? "Project not found"}</p>
         <Button variant="outline" onClick={() => router.push("/dashboard/projects")}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          {t("common.back")} to Projects
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Projects
         </Button>
       </div>
     );
   }
 
   const phaseColor = PHASE_COLORS[project.phase] ?? "#6b7280";
-  const ws = WORK_STATUS[(project as any).workStatus as keyof typeof WORK_STATUS] ?? WORK_STATUS.todo;
+  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
+  const ws = WORK_STATUS[wsKey];
+
+  const TABS: { id: DetailView; label: string; icon: React.ElementType; count?: number }[] = [
+    { id: "updates", label: "Updates", icon: MessageSquare },
+    { id: "files",   label: "Files",   icon: Paperclip },
+    { id: "activity",label: "Activity Log", icon: Activity, count: project.activities.length },
+  ];
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background">
-      {/* ── Compact header ── */}
+      {/* ── Header ── */}
       <div className="border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
-        {/* Row 1: nav + title */}
+        {/* Row 1: breadcrumb + title + status */}
         <div className="flex items-center gap-3 px-5 py-3">
           <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/projects")} className="gap-1.5 shrink-0 h-8 text-xs">
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Projects
+            <ArrowLeft className="w-3.5 h-3.5" /> Projects
           </Button>
           <div className="w-px h-4 bg-border" />
           {project.image && <img src={project.image} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />}
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold truncate leading-tight">{project.title}</h1>
+            <h1 className="text-sm font-bold truncate leading-tight">{project.title}</h1>
             <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
           </div>
-          {/* Badges */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
               {project.phase}
             </span>
-            <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}>
+            {/* Monday.com style status chip */}
+            <span className="text-[10px] font-bold px-3 py-1 rounded text-white" style={{ background: ws.solid }}>
               {ws.label}
             </span>
             {project.pageLink && (
@@ -530,28 +598,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
 
-        {/* Row 2: assignees + key meta + toggle details */}
-        <div className="flex items-center gap-4 px-5 pb-2.5">
-          {/* Assignees */}
-          <div className="flex items-center gap-2">
-            <div className="flex -space-x-1.5">
-              {project.assignments.slice(0, 5).map((a) => (
-                <Avatar key={a.userId} className="h-6 w-6 border-2 border-background" title={a.user.name ?? ""}>
-                  <AvatarImage src={a.user.image || ""} />
-                  <AvatarFallback className="text-[8px] font-bold bg-foreground text-background">
-                    {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-                  </AvatarFallback>
-                </Avatar>
-              ))}
-            </div>
+        {/* Row 2: assignees + meta + toggle */}
+        <div className="flex items-center gap-3 px-5 pb-2.5 flex-wrap">
+          <div className="flex -space-x-1.5">
+            {project.assignments.slice(0, 5).map((a) => (
+              <Avatar key={a.userId} className="h-6 w-6 border-2 border-background" title={a.user.name ?? ""}>
+                <AvatarImage src={a.user.image || ""} />
+                <AvatarFallback className="text-[8px] font-bold bg-foreground text-background">
+                  {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
+                </AvatarFallback>
+              </Avatar>
+            ))}
             {project.assignments.length === 0 && <span className="text-[11px] text-muted-foreground">No assignees</span>}
           </div>
-
-          {/* Meta pills */}
           {[project.category, project.commune, project.client, project.year ? String(project.year) : null].filter(Boolean).map((v) => (
             <span key={v} className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{v}</span>
           ))}
-
           <button
             onClick={() => setShowDetails(!showDetails)}
             className="ml-auto text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
@@ -570,22 +632,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden border-t border-border"
             >
-              <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2">
+              <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-3">
                 {[
-                  { label: "Category", value: project.category },
-                  { label: "Client", value: project.client },
-                  { label: "Year", value: project.year },
-                  { label: "Commune", value: project.commune },
-                  { label: "Typology", value: project.typology },
-                  { label: "Terrain", value: project.terrain },
-                  { label: "Roof", value: project.roof },
-                  { label: "Billing", value: project.billing },
-                  { label: "Area", value: project.area ? `${project.area} m²` : null },
-                  { label: "Floors", value: project.floors },
+                  { label: "Category", value: project.category, icon: Tag },
+                  { label: "Client", value: project.client, icon: User },
+                  { label: "Year", value: project.year, icon: Calendar },
+                  { label: "Commune", value: project.commune, icon: MapPin },
+                  { label: "Typology", value: project.typology, icon: Building2 },
+                  { label: "Terrain", value: project.terrain, icon: Building2 },
+                  { label: "Roof", value: project.roof, icon: Building2 },
+                  { label: "Billing", value: project.billing, icon: CreditCard },
+                  { label: "Area", value: project.area ? `${project.area} m²` : null, icon: Building2 },
+                  { label: "Floors", value: project.floors, icon: Building2 },
                 ].filter((r) => r.value).map((row) => (
-                  <div key={row.label}>
-                    <p className="text-[10px] text-muted-foreground">{row.label}</p>
-                    <p className="text-xs font-medium">{String(row.value)}</p>
+                  <div key={row.label} className="flex items-start gap-2">
+                    <row.icon className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">{row.label}</p>
+                      <p className="text-xs font-medium">{String(row.value)}</p>
+                    </div>
                   </div>
                 ))}
                 {project.notes && (
@@ -598,17 +663,79 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Tabs ── */}
+        <div className="flex items-center gap-1 px-5 border-t border-border">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors relative",
+                  isActive
+                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                )}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className={cn(
+                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                    isActive ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30" : "bg-muted text-muted-foreground"
+                  )}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Full-height Thread ── */}
+      {/* ── Tab content ── */}
       <div className="flex-1 overflow-hidden">
-        {currentUserId ? (
-          <ProjectThread projectId={id} currentUserId={currentUserId} />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
+        <AnimatePresence mode="wait">
+          {activeTab === "updates" && currentUserId && (
+            <motion.div
+              key="updates"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="h-full"
+            >
+              <UpdatesTab projectId={id} currentUserId={currentUserId} />
+            </motion.div>
+          )}
+          {activeTab === "files" && (
+            <motion.div
+              key="files"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="h-full"
+            >
+              <FilesTab projectId={id} />
+            </motion.div>
+          )}
+          {activeTab === "activity" && (
+            <motion.div
+              key="activity"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="h-full"
+            >
+              <ActivityTab activities={project.activities} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -37,14 +37,17 @@ export default async function ProjectsPage() {
     <ProjectsClient
       initialProjects={projects.map((p) => ({
         ...p,
+        workStatus: p.workStatus ?? "todo",
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
         assignments: p.assignments.map((a) => ({
           userId: a.userId,
+          role: a.role ?? null,
           user: {
             id: a.user.id,
             name: a.user.name,
             initials: a.user.initials,
+            image: a.user.image ?? null,
           },
         })),
       }))}

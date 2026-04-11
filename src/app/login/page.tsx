@@ -4,11 +4,19 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +26,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
     setLoading(true);
     setError("");
 
@@ -32,127 +40,154 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid credentials. Please try again.");
-    } else {
-      router.push("/dashboard");
-      router.refresh();
+      setError("Invalid credentials. Please verify the demo account and try again.");
+      return;
     }
-  };
+
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background pattern */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-foreground/3 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-foreground/3 rounded-full blur-3xl" />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md"
-      >
-        {/* Logo */}
-        <div className="flex items-center justify-center mb-8">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center justify-center w-12 h-12 bg-foreground rounded-xl shadow-lg">
-              <span className="text-background font-bold text-xl">[</span>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">DBS</h1>
-              <p className="text-sm text-muted-foreground">Architectes</p>
-            </div>
-          </div>
-        </div>
-
-        <Card className="shadow-xl border-border">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl font-bold">Sign In</CardTitle>
-            <CardDescription>
-              Enter your credentials to access the platform
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="nome@dbsarc.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                />
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f8fa_0%,#ffffff_32%,#f7f4ef_100%)] px-6 py-8">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_54%,#155e75_100%)] p-8 text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] sm:p-10"
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
+          <div className="relative flex h-full flex-col">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12 text-sm font-semibold backdrop-blur-sm">
+                DBS
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+              <div>
+                <p className="text-lg font-semibold">DBS Architectes</p>
+                <p className="text-xs text-white/65">AI-native project workspace</p>
               </div>
+            </div>
 
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 text-red-600 text-sm border border-red-200 dark:border-red-900"
-                >
-                  {error}
-                </motion.div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full"
-                size="lg"
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  "Sign In"
-                )}
-              </Button>
-            </form>
-
-            <div className="mt-4 p-3 bg-muted rounded-lg">
-              <p className="text-xs text-muted-foreground text-center">
-                Demo: <strong>admin@dbsarc.com</strong> / <strong>admin123</strong>
+            <div className="mt-12 max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">Private workspace access</p>
+              <h1 className="mt-4 text-5xl font-semibold tracking-tight">
+                Enter the product experience prepared for the DBS client demo.
+              </h1>
+              <p className="mt-5 text-sm leading-8 text-white/75">
+                The platform combines structured project management, role-based operations, and a differentiated AI layer across regulations, precedent retrieval, and planning support.
               </p>
             </div>
-          </CardContent>
-        </Card>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          © 2025 DBS Architectes · Powered by AI
-        </p>
-      </motion.div>
+            <div className="mt-10 grid gap-4 sm:grid-cols-3">
+              {[
+                { icon: Sparkles, title: "AI copilots", text: "Operations, gallery, and planning intelligence" },
+                { icon: Users, title: "Role-based", text: "Admin, manager, and collaborator views" },
+                { icon: Lock, title: "Secure access", text: "Centralized permissions and ownership" },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-sm">
+                  <item.icon className="h-4 w-4 text-[#bfdbfe]" />
+                  <p className="mt-3 text-sm font-semibold">{item.title}</p>
+                  <p className="mt-2 text-xs leading-6 text-white/70">{item.text}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-auto pt-10 text-sm text-white/70">
+              Demonstration environment for DBS Architectes.
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="flex items-center justify-center"
+        >
+          <Card className="w-full max-w-lg rounded-[32px] border-white/80 bg-white/88 shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
+            <CardContent className="p-8 sm:p-10">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Workspace sign in</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight">Access the DBS platform</h2>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                  Use the demo credentials below to enter the dashboard and present the product.
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="admin@dbsarc.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    autoComplete="email"
+                    className="h-12 rounded-2xl"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      autoComplete="current-password"
+                      className="h-12 rounded-2xl pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20">
+                    {error}
+                  </div>
+                )}
+
+                <Button type="submit" size="xl" className="w-full rounded-2xl" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in
+                    </>
+                  ) : (
+                    <>
+                      Enter workspace
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              <div className="mt-6 rounded-[24px] border border-border bg-slate-50 p-5 dark:bg-slate-950/30">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Demo credentials</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  <p>
+                    <span className="font-medium text-foreground">Email:</span> admin@dbsarc.com
+                  </p>
+                  <p>
+                    <span className="font-medium text-foreground">Password:</span> admin123
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
     </div>
   );
 }
