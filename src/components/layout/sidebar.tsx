@@ -20,82 +20,32 @@ import {
   Sparkles,
   Building2,
   MessageSquare,
-  Video,
   Activity,
-  BookUser,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CommandPalette } from "@/components/command-palette";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { useT } from "@/lib/translations";
 
 const navItems = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Projects",
-    href: "/dashboard/projects",
-    icon: FolderOpen,
-  },
-  {
-    label: "Agenda",
-    href: "/dashboard/agenda",
-    icon: Calendar,
-  },
-  {
-    label: "Statistics",
-    href: "/dashboard/statistics",
-    icon: BarChart3,
-  },
-  {
-    label: "Users",
-    href: "/dashboard/users",
-    icon: Users,
-    adminOnly: true,
-  },
+  { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { labelKey: "nav.projects", href: "/dashboard/projects", icon: FolderOpen },
+  { labelKey: "nav.agenda", href: "/dashboard/agenda", icon: Calendar },
+  { labelKey: "nav.statistics", href: "/dashboard/statistics", icon: BarChart3 },
+  { labelKey: "nav.users", href: "/dashboard/users", icon: Users, adminOnly: true },
 ];
 
 const collaborationItems = [
-  {
-    label: "Chat",
-    href: "/dashboard/chat",
-    icon: MessageSquare,
-  },
-  {
-    label: "Calls",
-    href: "/dashboard/calls",
-    icon: Video,
-  },
-  {
-    label: "Contacts",
-    href: "/dashboard/contact",
-    icon: BookUser,
-  },
-  {
-    label: "Activity",
-    href: "/dashboard/activity",
-    icon: Activity,
-  },
+  { labelKey: "nav.chat", href: "/dashboard/chat", icon: MessageSquare },
+  { labelKey: "nav.activity", href: "/dashboard/activity", icon: Activity },
 ];
 
 const aiItems = [
-  {
-    label: "DBS GPT",
-    href: "/dashboard/ai/gpt",
-    icon: Sparkles,
-  },
-  {
-    label: "Visual Gallery AI",
-    href: "/dashboard/ai/gallery",
-    icon: Image,
-  },
-  {
-    label: "Planning AI",
-    href: "/dashboard/ai/planning",
-    icon: FileSearch,
-  },
+  { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
+  { labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image },
+  { labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch },
 ];
 
 interface SidebarProps {
@@ -110,6 +60,7 @@ interface SidebarProps {
 export function Sidebar({ user }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const t = useT();
 
   const isAdmin = user?.role === "super_admin" || user?.role === "admin";
   const initials = user?.name
@@ -120,6 +71,8 @@ export function Sidebar({ user }: SidebarProps) {
     .slice(0, 2) || "DB";
 
   return (
+    <>
+    <CommandPalette />
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -177,7 +130,7 @@ export function Sidebar({ user }: SidebarProps) {
                       transition={{ duration: 0.15 }}
                       className="truncate"
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </motion.span>
                   )}
                 </AnimatePresence>
@@ -198,7 +151,7 @@ export function Sidebar({ user }: SidebarProps) {
               >
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <MessageSquare className="w-3 h-3" />
-                  Collaboration
+                  {t("nav.collaboration")}
                 </span>
               </motion.div>
             )}
@@ -227,7 +180,7 @@ export function Sidebar({ user }: SidebarProps) {
                         transition={{ duration: 0.15 }}
                         className="truncate"
                       >
-                        {item.label}
+                        {t(item.labelKey)}
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -249,7 +202,7 @@ export function Sidebar({ user }: SidebarProps) {
               >
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                   <Brain className="w-3 h-3" />
-                  AI Workflow
+                  {t("nav.ai_workflow")}
                 </span>
               </motion.div>
             )}
@@ -278,7 +231,7 @@ export function Sidebar({ user }: SidebarProps) {
                         transition={{ duration: 0.15 }}
                         className="truncate"
                       >
-                        {item.label}
+                        {t(item.labelKey)}
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -288,6 +241,21 @@ export function Sidebar({ user }: SidebarProps) {
           </div>
         </div>
       </nav>
+
+      {/* Language switcher */}
+      <AnimatePresence>
+        {!collapsed && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="px-3 py-2 border-t border-border flex items-center justify-between"
+          >
+            <span className="text-xs text-muted-foreground">Language</span>
+            <LanguageSwitcher />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* User section */}
       <div className="px-3 py-3 border-t border-border">
@@ -341,5 +309,6 @@ export function Sidebar({ user }: SidebarProps) {
         )}
       </button>
     </motion.aside>
+    </>
   );
 }

@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Hash, Plus, Send, Smile, Paperclip, Search, Settings,
   MoreHorizontal, Reply, Edit2, Trash2, MessageSquare,
-  Users, X, ChevronDown, Check, Video, Phone, Bell,
-  AtSign, Loader2, Lock, Globe, UserPlus,
+  Users, X, ChevronDown, Video, Phone,
+  AtSign, Loader2, Lock, UserPlus, BookUser,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -92,10 +92,10 @@ function MessageItem({
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
   const isDeleted = !!message.deletedAt;
   const isOwn = message.userId === currentUserId;
 
-  // Group reactions by emoji
   const groupedReactions = message.reactions.reduce<Record<string, Reaction[]>>((acc, r) => {
     if (!acc[r.emoji]) acc[r.emoji] = [];
     acc[r.emoji].push(r);
@@ -104,92 +104,145 @@ function MessageItem({
 
   const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
 
+  // Render message content with @mention highlighting
+  function renderContent(content: string) {
+    const parts = content.split(/(@\w[\w\s]*)/g);
+    return parts.map((part, i) =>
+      part.startsWith("@") ? (
+        <span key={i} className="text-blue-600 font-semibold bg-blue-50 dark:bg-blue-900/20 rounded px-0.5">
+          {part}
+        </span>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
+  }
+
   return (
     <div
-      className={cn(
-        "group relative flex gap-3 px-4 py-1 hover:bg-muted/30 rounded-lg transition-colors",
-        isThread && "py-0.5"
-      )}
+      className={cn("group relative px-4 py-2", isThread && "py-1")}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => { setShowActions(false); setShowEmojiPicker(false); }}
     >
-      <Avatar className="w-9 h-9 mt-0.5 shrink-0">
-        <AvatarImage src={message.user.image ?? undefined} />
-        <AvatarFallback className="text-xs font-bold bg-foreground text-background">
-          {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-        </AvatarFallback>
-      </Avatar>
+      <div className={cn(
+        "flex gap-3",
+        isOwn && "flex-row-reverse"
+      )}>
+        <Avatar className="w-8 h-8 shrink-0 mt-0.5">
+          <AvatarImage src={message.user.image ?? undefined} />
+          <AvatarFallback className="text-[10px] font-bold bg-foreground text-background">
+            {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "??"}
+          </AvatarFallback>
+        </Avatar>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-0.5">
-          <span className="font-semibold text-sm">{message.user.name ?? "Unknown"}</span>
-          <span className="text-xs text-muted-foreground">{formatTime(message.createdAt)}</span>
-          {message.editedAt && (
-            <span className="text-xs text-muted-foreground italic">(edited)</span>
+        <div className={cn("flex flex-col max-w-[72%]", isOwn && "items-end")}>
+          {/* Sender + time */}
+          <div className={cn("flex items-baseline gap-2 mb-1", isOwn && "flex-row-reverse")}>
+            <span className="text-xs font-semibold leading-none">{message.user.name ?? "Unknown"}</span>
+            <span className="text-[11px] text-muted-foreground">{formatTime(message.createdAt)}</span>
+            {message.editedAt && <span className="text-[11px] text-muted-foreground italic">(edited)</span>}
+          </div>
+
+          {/* Message bubble — rectangle */}
+          {isDeleted ? (
+            <div className="px-3 py-2 rounded-2xl border border-border bg-muted/40">
+              <p className="text-xs text-muted-foreground italic">This message was deleted.</p>
+            </div>
+          ) : (
+            <div className={cn(
+              "relative px-3.5 py-2.5 rounded-2xl border text-sm leading-relaxed break-words",
+              isOwn
+                ? "bg-foreground text-background border-transparent rounded-tr-sm"
+                : "bg-card border-border rounded-tl-sm"
+            )}>
+              <p className="whitespace-pre-wrap">{renderContent(message.content)}</p>
+            </div>
+          )}
+
+          {/* Reactions */}
+          {Object.keys(groupedReactions).length > 0 && (
+            <div className={cn("flex flex-wrap gap-1 mt-1", isOwn && "justify-end")}>
+              {Object.entries(groupedReactions).map(([emoji, reactors]) => {
+                const isMine = reactors.some((r) => r.user.id === currentUserId);
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => onReact(message.id, emoji)}
+                    className={cn(
+                      "flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors",
+                      isMine
+                        ? "bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-600"
+                        : "bg-muted border-border hover:bg-muted/80"
+                    )}
+                    title={reactors.map((r) => r.user.name).join(", ")}
+                  >
+                    <span>{emoji}</span>
+                    <span className="font-medium">{reactors.length}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Thread replies */}
+          {!isThread && message.replies.length > 0 && (
+            <div className="mt-1.5">
+              <button
+                onClick={() => setShowReplies(!showReplies)}
+                className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium"
+              >
+                <MessageSquare className="w-3 h-3" />
+                {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
+                <ChevronDown className={cn("w-3 h-3 transition-transform", showReplies && "rotate-180")} />
+              </button>
+              <AnimatePresence>
+                {showReplies && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-2 pl-3 border-l-2 border-blue-200 dark:border-blue-800 space-y-2"
+                  >
+                    {message.replies.map((reply) => (
+                      <MessageItem
+                        key={reply.id}
+                        message={reply}
+                        currentUserId={currentUserId}
+                        onReact={onReact}
+                        onReply={() => {}}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        isThread
+                      />
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
         </div>
-
-        {isDeleted ? (
-          <p className="text-sm text-muted-foreground italic">This message was deleted.</p>
-        ) : (
-          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
-        )}
-
-        {/* Reactions */}
-        {Object.keys(groupedReactions).length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {Object.entries(groupedReactions).map(([emoji, reactors]) => {
-              const isMine = reactors.some((r) => r.user.id === currentUserId);
-              return (
-                <button
-                  key={emoji}
-                  onClick={() => onReact(message.id, emoji)}
-                  className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors",
-                    isMine
-                      ? "bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-600"
-                      : "bg-muted border-border hover:bg-muted/80"
-                  )}
-                  title={reactors.map((r) => r.user.name).join(", ")}
-                >
-                  <span>{emoji}</span>
-                  <span className="font-medium">{reactors.length}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Thread replies count */}
-        {!isThread && message.replies.length > 0 && (
-          <button
-            onClick={() => onReply(message)}
-            className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium"
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
-          </button>
-        )}
       </div>
 
       {/* Hover Actions */}
       <AnimatePresence>
         {showActions && !isDeleted && (
           <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.1 }}
-            className="absolute right-4 top-0 -translate-y-1/2 flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1 z-10"
+            className={cn(
+              "absolute top-1 flex items-center gap-0.5 bg-background border border-border rounded-xl shadow-md p-1 z-10",
+              isOwn ? "left-4" : "right-4"
+            )}
           >
-            {/* Emoji picker */}
             <div className="relative">
               <button
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                title="Add reaction"
+                className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                title="React"
               >
-                <Smile className="w-4 h-4" />
+                <Smile className="w-3.5 h-3.5" />
               </button>
               <AnimatePresence>
                 {showEmojiPicker && (
@@ -197,13 +250,14 @@ function MessageItem({
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className="absolute right-0 top-full mt-1 bg-background border border-border rounded-xl shadow-xl p-2 flex gap-1 z-20"
+                    className="absolute top-full mt-1 bg-background border border-border rounded-xl shadow-xl p-2 flex gap-1 z-20"
+                    style={isOwn ? { right: 0 } : { left: 0 }}
                   >
                     {QUICK_EMOJIS.map((emoji) => (
                       <button
                         key={emoji}
                         onClick={() => { onReact(message.id, emoji); setShowEmojiPicker(false); }}
-                        className="text-xl hover:scale-125 transition-transform p-1"
+                        className="text-xl hover:scale-125 transition-transform p-0.5"
                       >
                         {emoji}
                       </button>
@@ -216,10 +270,10 @@ function MessageItem({
             {!isThread && (
               <button
                 onClick={() => onReply(message)}
-                className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                title="Reply in thread"
+                className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                title="Reply"
               >
-                <Reply className="w-4 h-4" />
+                <Reply className="w-3.5 h-3.5" />
               </button>
             )}
 
@@ -227,17 +281,17 @@ function MessageItem({
               <>
                 <button
                   onClick={() => onEdit(message)}
-                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="Edit message"
+                  className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                  title="Edit"
                 >
-                  <Edit2 className="w-4 h-4" />
+                  <Edit2 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => onDelete(message.id)}
-                  className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors text-muted-foreground hover:text-red-500"
-                  title="Delete message"
+                  className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-muted-foreground hover:text-red-500"
+                  title="Delete"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </>
             )}
@@ -270,6 +324,7 @@ function MessageInput({
   onCancelReply,
   editMessage,
   onCancelEdit,
+  users = [],
 }: {
   onSend: (content: string) => void;
   loading: boolean;
@@ -278,9 +333,16 @@ function MessageInput({
   onCancelReply?: () => void;
   editMessage?: Message | null;
   onCancelEdit?: () => void;
+  users?: { id: string; name?: string | null; initials?: string | null }[];
 }) {
   const [value, setValue] = useState(editMessage?.content ?? "");
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const mentionMatches = mentionQuery !== null
+    ? users.filter((u) => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : [];
 
   useEffect(() => {
     if (editMessage) setValue(editMessage.content);
@@ -288,7 +350,43 @@ function MessageInput({
     textareaRef.current?.focus();
   }, [editMessage, replyTo]);
 
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const v = e.target.value;
+    setValue(v);
+
+    // Detect @mention
+    const cursor = e.target.selectionStart ?? 0;
+    const textBefore = v.slice(0, cursor);
+    const match = textBefore.match(/@(\w*)$/);
+    if (match) {
+      setMentionQuery(match[1]);
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
+  };
+
+  const insertMention = (name: string) => {
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    const textBefore = value.slice(0, cursor);
+    const textAfter = value.slice(cursor);
+    const replaced = textBefore.replace(/@(\w*)$/, `@${name} `);
+    setValue(replaced + textAfter);
+    setMentionQuery(null);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      const pos = replaced.length;
+      textareaRef.current?.setSelectionRange(pos, pos);
+    }, 0);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionQuery !== null && mentionMatches.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionMatches.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionMatches[mentionIndex]?.name ?? ""); return; }
+      if (e.key === "Escape") { setMentionQuery(null); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -299,10 +397,45 @@ function MessageInput({
     if (!value.trim() || loading) return;
     onSend(value.trim());
     setValue("");
+    setMentionQuery(null);
   };
 
   return (
-    <div className="px-4 pb-4">
+    <div className="px-4 pb-4 relative">
+      {/* @mention dropdown */}
+      <AnimatePresence>
+        {mentionQuery !== null && mentionMatches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            className="absolute bottom-full left-4 right-4 mb-1 bg-background border border-border rounded-xl shadow-xl overflow-hidden z-30"
+          >
+            <div className="px-3 py-1.5 border-b border-border">
+              <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">Mention someone</span>
+            </div>
+            {mentionMatches.slice(0, 6).map((user, i) => (
+              <button
+                key={user.id}
+                onClick={() => insertMention(user.name ?? "")}
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors",
+                  i === mentionIndex ? "bg-accent" : "hover:bg-muted"
+                )}
+              >
+                <Avatar className="w-6 h-6 shrink-0">
+                  <AvatarFallback className="text-[9px] font-bold bg-foreground text-background">
+                    {user.initials ?? user.name?.slice(0, 2).toUpperCase() ?? "??"}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="font-medium">{user.name}</span>
+                <span className="text-xs text-muted-foreground">@{(user.name ?? "").toLowerCase().replace(/\s+/g, ".")}</span>
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Reply / Edit banner */}
       <AnimatePresence>
         {(replyTo || editMessage) && (
@@ -310,16 +443,16 @@ function MessageInput({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="flex items-center justify-between bg-muted/50 border border-border rounded-t-xl px-3 py-2 border-b-0"
+            className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-border border-b-0 rounded-t-xl px-3 py-2"
           >
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {editMessage ? (
-                <><Edit2 className="w-3.5 h-3.5" /> Editing message</>
+                <><Edit2 className="w-3 h-3" /> Editing message</>
               ) : (
-                <><Reply className="w-3.5 h-3.5" /> Replying to <span className="font-semibold text-foreground">{replyTo?.user.name}</span></>
+                <><Reply className="w-3 h-3" /> Replying to <span className="font-semibold text-foreground">{replyTo?.user.name}</span></>
               )}
             </div>
-            <button onClick={editMessage ? onCancelEdit : onCancelReply} className="hover:text-foreground">
+            <button onClick={editMessage ? onCancelEdit : onCancelReply} className="text-muted-foreground hover:text-foreground">
               <X className="w-3.5 h-3.5" />
             </button>
           </motion.div>
@@ -327,26 +460,30 @@ function MessageInput({
       </AnimatePresence>
 
       <div className={cn(
-        "flex items-end gap-2 bg-muted/30 border border-border rounded-xl p-3",
+        "flex items-end gap-2 bg-background border border-border rounded-xl shadow-sm",
         (replyTo || editMessage) && "rounded-t-none border-t-0"
       )}>
-        <div className="flex gap-2 shrink-0">
-          <button className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" title="Attach file">
+        <div className="flex gap-1 shrink-0 p-2 pb-2.5">
+          <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors" title="Attach file">
             <Paperclip className="w-4 h-4" />
           </button>
-          <button className="p-1.5 text-muted-foreground hover:text-foreground transition-colors" title="Emoji">
-            <Smile className="w-4 h-4" />
+          <button
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+            title="Mention someone"
+            onClick={() => { setValue((v) => v + "@"); textareaRef.current?.focus(); setMentionQuery(""); }}
+          >
+            <AtSign className="w-4 h-4" />
           </button>
         </div>
 
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           rows={1}
-          className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground leading-relaxed max-h-32 overflow-y-auto"
+          className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground leading-relaxed py-3 max-h-32 overflow-y-auto font-[Inter,sans-serif]"
           style={{ height: "auto" }}
           onInput={(e) => {
             const t = e.currentTarget;
@@ -355,19 +492,24 @@ function MessageInput({
           }}
         />
 
-        <button
-          onClick={handleSend}
-          disabled={!value.trim() || loading}
-          className={cn(
-            "shrink-0 p-2 rounded-lg transition-all",
-            value.trim() && !loading
-              ? "bg-foreground text-background hover:opacity-80"
-              : "bg-muted text-muted-foreground cursor-not-allowed"
-          )}
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-        </button>
+        <div className="p-2 pb-2.5">
+          <button
+            onClick={handleSend}
+            disabled={!value.trim() || loading}
+            className={cn(
+              "p-2 rounded-lg transition-all",
+              value.trim() && !loading
+                ? "bg-foreground text-background hover:opacity-80"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
+            )}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
+      <p className="mt-1.5 text-[11px] text-muted-foreground px-1">
+        <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for new line · <kbd className="font-mono">@</kbd> to mention
+      </p>
     </div>
   );
 }
@@ -729,25 +871,32 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 <span className="text-xs text-muted-foreground mr-2">
                   {activeChannel.members.length} members
                 </span>
-                <a
-                  href="/dashboard/calls"
+                <button
                   className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                  title="Start video call"
+                  title="Contacts"
+                  onClick={() => window.open("/dashboard/contact", "_self")}
                 >
-                  <Video className="w-4 h-4" />
-                </a>
+                  <BookUser className="w-4 h-4" />
+                </button>
                 <a
                   href="/dashboard/calls"
                   className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                  title="Start voice call"
+                  title="Voice call"
                 >
                   <Phone className="w-4 h-4" />
                 </a>
-                <button className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground">
+                <a
+                  href="/dashboard/calls"
+                  className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                  title="Video call"
+                >
+                  <Video className="w-4 h-4" />
+                </a>
+                <button className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground" title="Add member">
                   <UserPlus className="w-4 h-4" />
                 </button>
               </div>
@@ -782,7 +931,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                           message={msg}
                           currentUserId={currentUser.id}
                           onReact={reactToMessage}
-                          onReply={setReplyTo}
+                          onReply={setThreadMessage}
                           onEdit={setEditMessage}
                           onDelete={deleteMessage}
                         />
@@ -820,6 +969,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
               onCancelReply={() => setReplyTo(null)}
               editMessage={editMessage}
               onCancelEdit={() => setEditMessage(null)}
+              users={users}
             />
           </>
         ) : (
@@ -884,6 +1034,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
               placeholder="Reply in thread..."
               replyTo={threadMessage}
               onCancelReply={() => setThreadMessage(null)}
+              users={users}
             />
           </motion.div>
         )}
