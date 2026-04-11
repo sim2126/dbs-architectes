@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, Grid, ChevronDown, X, Building2, ExternalLink,
@@ -61,13 +62,21 @@ interface ProjectsClientProps {
   currentUserId: string;
 }
 
-// ─── Work Status Config ───────────────────────────────────────
+// ─── Work Status Config — monday.com palette ─────────────────
+// Solid full-bleed colors, white text (just like monday.com)
 const WORK_STATUS = {
-  todo:      { label: "Not Started", color: "#94a3b8", bg: "#f1f5f9" },
-  doing:     { label: "In Progress", color: "#3b82f6", bg: "#eff6ff" },
-  stuck:     { label: "Stuck",       color: "#ef4444", bg: "#fef2f2" },
-  completed: { label: "Done",        color: "#22c55e", bg: "#f0fdf4" },
+  todo:      { label: "Not Started",   solid: "#c4c4cf", text: "#fff" },
+  doing:     { label: "Working on it", solid: "#fdab3d", text: "#fff" },
+  stuck:     { label: "Stuck",         solid: "#e2445c", text: "#fff" },
+  completed: { label: "Done",          solid: "#00c875", text: "#fff" },
 } as const;
+
+// Legacy compat — some components still read .color / .bg
+type WorkStatusEntry = typeof WORK_STATUS[WorkStatusKey] & { color: string; bg: string };
+function wsCompat(key: WorkStatusKey): WorkStatusEntry {
+  const e = WORK_STATUS[key];
+  return { ...e, color: e.solid, bg: e.solid };
+}
 
 type WorkStatusKey = keyof typeof WORK_STATUS;
 const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
@@ -155,7 +164,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
             </div>
 
             {/* Filter chips */}
-            <div className="flex items-center gap-1.5 flex-1 overflow-x-auto">
+            <div className="flex items-center gap-1.5 flex-1 flex-wrap">
               <FilterPopover label="Phase" options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
               <FilterPopover label="Category" options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
               <FilterSelect label="Client" value={filters.client} options={clients.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, client: v })} />
@@ -332,17 +341,22 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
   const [showActions, setShowActions] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const statusRef = useRef<HTMLDivElement>(null);
-  const ws = WORK_STATUS[project.workStatus as WorkStatusKey] ?? WORK_STATUS.todo;
+  const [statusCoords, setStatusCoords] = useState({ top: 0, left: 0 });
+  const statusTriggerRef = useRef<HTMLButtonElement>(null);
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
+  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
+  const ws = WORK_STATUS[wsKey];
 
-  // Is current user an assignee?
   const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
   const canUpdateStatus = canEdit || isAssignee;
 
   useEffect(() => {
     if (!showStatusMenu) return;
     function close(e: MouseEvent) {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node)) setShowStatusMenu(false);
+      const t = e.target as Node;
+      if (statusTriggerRef.current?.contains(t)) return;
+      if (statusDropdownRef.current?.contains(t)) return;
+      setShowStatusMenu(false);
     }
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -414,50 +428,57 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
       </div>
 
       {/* Work Status */}
-      <div className="py-2.5 pr-3" ref={statusRef}>
-        <div className="relative">
-          <button
-            onClick={(e) => { e.stopPropagation(); if (canUpdateStatus) setShowStatusMenu(!showStatusMenu); }}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all border",
-              canUpdateStatus && "hover:shadow-sm cursor-pointer",
-              !canUpdateStatus && "cursor-default"
-            )}
-            style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}
-            disabled={updatingStatus}
+      <div className="py-2.5 pr-3">
+        {/* Full-color status block — monday.com style */}
+        <button
+          ref={statusTriggerRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!canUpdateStatus) return;
+            if (!showStatusMenu && statusTriggerRef.current) {
+              const r = statusTriggerRef.current.getBoundingClientRect();
+              setStatusCoords({ top: r.bottom + 2, left: r.left });
+            }
+            setShowStatusMenu((v) => !v);
+          }}
+          className={cn(
+            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold transition-all",
+            canUpdateStatus && "hover:opacity-90 cursor-pointer",
+            !canUpdateStatus && "cursor-default"
+          )}
+          style={{ background: ws.solid, color: ws.text }}
+          disabled={updatingStatus}
+        >
+          {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : ws.label}
+        </button>
+        <PortalDropdown coords={statusCoords} open={showStatusMenu}>
+          <div
+            ref={statusDropdownRef}
+            className="bg-background border border-border rounded-xl shadow-xl overflow-hidden min-w-[160px]"
+            onClick={(e) => e.stopPropagation()}
           >
-            {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : <Circle className="w-2 h-2 fill-current" />}
-            {ws.label}
-          </button>
-
-          <AnimatePresence>
-            {showStatusMenu && (
-              <motion.div
-                initial={{ opacity: 0, y: 4, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                transition={{ duration: 0.1 }}
-                className="absolute left-0 top-full mt-1 bg-background border border-border rounded-xl shadow-xl p-1 z-50 min-w-[140px]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {WORK_STATUS_KEYS.map((key) => {
-                  const s = WORK_STATUS[key];
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => updateStatus(key)}
-                      className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors"
-                    >
-                      <Circle className="w-2.5 h-2.5 fill-current shrink-0" style={{ color: s.color }} />
-                      <span className="font-medium" style={{ color: s.color }}>{s.label}</span>
-                      {project.workStatus === key && <Check className="w-3 h-3 ml-auto text-foreground/40" />}
-                    </button>
-                  );
-                })}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+            <div className="px-3 py-2 border-b border-border">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Change status</span>
+            </div>
+            {WORK_STATUS_KEYS.map((key) => {
+              const s = WORK_STATUS[key];
+              return (
+                <button
+                  key={key}
+                  onClick={() => updateStatus(key)}
+                  className={cn(
+                    "flex items-center justify-between w-full px-3 py-2.5 text-white text-sm font-bold transition-opacity",
+                    wsKey === key ? "opacity-100" : "opacity-90 hover:opacity-100"
+                  )}
+                  style={{ background: s.solid }}
+                >
+                  {s.label}
+                  {wsKey === key && <Check className="w-4 h-4 opacity-80" />}
+                </button>
+              );
+            })}
+          </div>
+        </PortalDropdown>
       </div>
 
       {/* Phase */}
@@ -530,7 +551,8 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
 }) {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
-  const ws = WORK_STATUS[project.workStatus as WorkStatusKey] ?? WORK_STATUS.todo;
+  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
+  const ws = WORK_STATUS[wsKey];
   const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
   const canUpdateStatus = canEdit || isAssignee;
 
@@ -577,33 +599,33 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
           <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
             {project.phase}
           </span>
-          <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}>
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: ws.solid }}>
             {ws.label}
           </span>
         </div>
 
-        {/* Status selector (for assignees) */}
+        {/* Status selector (monday.com full-color buttons) */}
         {canUpdateStatus && (
           <div className="mt-3">
             <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5">Update status</p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-2 gap-1">
               {WORK_STATUS_KEYS.map((key) => {
                 const s = WORK_STATUS[key];
-                const isActive = project.workStatus === key;
+                const isActive = wsKey === key;
                 return (
                   <button
                     key={key}
                     onClick={() => updateStatus(key)}
                     disabled={updatingStatus}
                     className={cn(
-                      "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all",
-                      isActive ? "shadow-sm scale-105" : "opacity-60 hover:opacity-100"
+                      "flex items-center justify-center gap-1.5 px-2 py-2 rounded text-xs font-bold text-white transition-all",
+                      isActive ? "ring-2 ring-offset-1 ring-offset-background" : "opacity-70 hover:opacity-100"
                     )}
-                    style={{ color: s.color, background: isActive ? s.bg : "transparent", borderColor: s.color + "60" }}
+                    style={{ background: s.solid, ...(isActive ? { ringColor: s.solid } : {}) }}
                   >
-                    <Circle className="w-2 h-2 fill-current" />
+                    {isActive && updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    {isActive && !updatingStatus ? <Check className="w-3 h-3" /> : null}
                     {s.label}
-                    {isActive && updatingStatus && <Loader2 className="w-2.5 h-2.5 animate-spin ml-0.5" />}
                   </button>
                 );
               })}
@@ -711,7 +733,8 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
 // ─── Project Card (grid view) ─────────────────────────────────
 function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSelect: () => void; isSelected: boolean }) {
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
-  const ws = WORK_STATUS[project.workStatus as WorkStatusKey] ?? WORK_STATUS.todo;
+  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
+  const ws = WORK_STATUS[wsKey];
   return (
     <motion.div
       layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
@@ -733,7 +756,7 @@ function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSe
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
           {project.phase}
         </div>
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}>
+        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ws.solid }}>
           {ws.label}
         </div>
         {project.assignments.length > 0 && (
@@ -758,85 +781,177 @@ function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSe
   );
 }
 
+// ─── Portal Dropdown ──────────────────────────────────────────
+// Renders dropdown content directly in <body> so no overflow/clip/
+// backdrop-filter ancestor can hide it.
+function PortalDropdown({
+  coords,
+  open,
+  children,
+}: {
+  coords: { top: number; left: number };
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+  return createPortal(
+    <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 9999, pointerEvents: open ? "auto" : "none" }}>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+            transition={{ duration: 0.1 }}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Filter Popover ───────────────────────────────────────────
 function FilterPopover({ label, options, selected, onToggle }: {
   label: string; options: { value: string; label: string; color?: string }[];
   selected: string[]; onToggle: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const count = selected.length;
+
   useEffect(() => {
     if (!open) return;
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+    function h(e: MouseEvent) {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (dropdownRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, [open]);
-  const count = selected.length;
+
+  const handleOpen = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button onClick={() => setOpen(!open)} className={cn("flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors", count > 0 ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40")}>
-        {label}{count > 0 && <span className="bg-background/20 text-background rounded-full px-1 text-[9px] font-bold">{count}</span>}
+    <div className="shrink-0">
+      <button
+        ref={triggerRef}
+        onClick={handleOpen}
+        className={cn(
+          "flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors",
+          count > 0 ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40"
+        )}
+      >
+        {label}
+        {count > 0 && <span className="bg-background/20 text-background rounded-full px-1 text-[9px] font-bold">{count}</span>}
         <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.1 }}
-            className="absolute top-full left-0 mt-1 bg-background border border-border rounded-xl shadow-xl p-1 min-w-[170px] z-50">
-            {options.map((opt) => {
-              const isSel = selected.includes(opt.value);
-              return (
-                <button key={opt.value} onClick={() => onToggle(opt.value)} className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left">
-                  <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", isSel ? "bg-foreground border-foreground" : "border-border")}>
-                    {isSel && <Check className="w-2.5 h-2.5 text-background" />}
-                  </div>
-                  {opt.color && <div className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />}
-                  <span className={isSel ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
-                </button>
-              );
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PortalDropdown coords={coords} open={open}>
+        <div ref={dropdownRef} className="bg-background border border-border rounded-xl shadow-xl p-1 min-w-[170px]">
+          {options.map((opt) => {
+            const isSel = selected.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onToggle(opt.value)}
+                className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
+              >
+                <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", isSel ? "bg-foreground border-foreground" : "border-border")}>
+                  {isSel && <Check className="w-2.5 h-2.5 text-background" />}
+                </div>
+                {opt.color && <div className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />}
+                <span className={isSel ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </PortalDropdown>
     </div>
   );
 }
 
 // ─── Filter Select ────────────────────────────────────────────
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+function FilterSelect({ label, value, options, onChange }: {
+  label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const isActive = value !== "all";
+
   useEffect(() => {
     if (!open) return;
-    function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h);
+    function h(e: MouseEvent) {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (dropdownRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, [open]);
+
+  const handleOpen = () => {
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setCoords({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button onClick={() => setOpen(!open)} className={cn("flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors", isActive ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40")}>
+    <div className="shrink-0">
+      <button
+        ref={triggerRef}
+        onClick={handleOpen}
+        className={cn(
+          "flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors",
+          isActive ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40"
+        )}
+      >
         {isActive ? value : label}
         <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.1 }}
-            className="absolute top-full left-0 mt-1 bg-background border border-border rounded-xl shadow-xl p-1 min-w-[150px] z-50 max-h-60 overflow-y-auto">
-            <button onClick={() => { onChange("all"); setOpen(false); }} className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left">
-              <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", !isActive ? "bg-foreground border-foreground" : "border-border")}>
-                {!isActive && <Check className="w-2.5 h-2.5 text-background" />}
+      <PortalDropdown coords={coords} open={open}>
+        <div ref={dropdownRef} className="bg-background border border-border rounded-xl shadow-xl p-1 min-w-[150px] max-h-60 overflow-y-auto">
+          <button
+            onClick={() => { onChange("all"); setOpen(false); }}
+            className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
+          >
+            <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", !isActive ? "bg-foreground border-foreground" : "border-border")}>
+              {!isActive && <Check className="w-2.5 h-2.5 text-background" />}
+            </div>
+            <span className="text-muted-foreground">All {label.toLowerCase()}s</span>
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
+            >
+              <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", value === opt.value ? "bg-foreground border-foreground" : "border-border")}>
+                {value === opt.value && <Check className="w-2.5 h-2.5 text-background" />}
               </div>
-              <span className="text-muted-foreground">All {label.toLowerCase()}s</span>
+              <span className={value === opt.value ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
             </button>
-            {options.map((opt) => (
-              <button key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }} className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left">
-                <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", value === opt.value ? "bg-foreground border-foreground" : "border-border")}>
-                  {value === opt.value && <Check className="w-2.5 h-2.5 text-background" />}
-                </div>
-                <span className={value === opt.value ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+          ))}
+        </div>
+      </PortalDropdown>
     </div>
   );
 }
@@ -884,7 +999,8 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
             <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]">
               <AnimatePresence>
                 {cols.map((project) => {
-                  const ws = WORK_STATUS[project.workStatus as WorkStatusKey] ?? WORK_STATUS.todo;
+                  const wsk = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
+                  const ws = WORK_STATUS[wsk];
                   return (
                     <motion.div
                       key={project.id} layout
@@ -898,7 +1014,7 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
                       <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
                       <p className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">{project.title.replace(project.code + " ", "")}</p>
                       <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold border" style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}>{ws.label}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white" style={{ background: ws.solid }}>{ws.label}</span>
                         <div className="flex -space-x-1">
                           {project.assignments.slice(0, 3).map((a) => (
                             <Avatar key={a.userId} className="h-5 w-5 border border-background">

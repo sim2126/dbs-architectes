@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Hash, Plus, Send, Smile, Paperclip, Search, Settings,
   MoreHorizontal, Reply, Edit2, Trash2, MessageSquare,
-  Users, X, ChevronDown, Video, Phone,
+  Users, X, Video, Phone,
   AtSign, Loader2, Lock, UserPlus, BookUser,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
@@ -73,6 +73,9 @@ interface ChatClientProps {
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "🔥", "👀", "✅", "🚀"];
 
 // ─── Message Item ─────────────────────────────────────────────
+// Slack / Monday.com style: all messages left-aligned, no bubbles.
+// Consecutive messages from the same sender are "grouped" — the
+// avatar + name are suppressed and a compact timestamp appears on hover.
 function MessageItem({
   message,
   currentUserId,
@@ -81,6 +84,7 @@ function MessageItem({
   onEdit,
   onDelete,
   isThread = false,
+  isGrouped = false,
 }: {
   message: Message;
   currentUserId: string;
@@ -89,10 +93,10 @@ function MessageItem({
   onEdit: (msg: Message) => void;
   onDelete: (msgId: string) => void;
   isThread?: boolean;
+  isGrouped?: boolean;
 }) {
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showReplies, setShowReplies] = useState(false);
   const isDeleted = !!message.deletedAt;
   const isOwn = message.userId === currentUserId;
 
@@ -102,14 +106,11 @@ function MessageItem({
     return acc;
   }, {});
 
-  const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
-
-  // Render message content with @mention highlighting
   function renderContent(content: string) {
-    const parts = content.split(/(@\w[\w\s]*)/g);
+    const parts = content.split(/(@[\w][\w ]*)/g);
     return parts.map((part, i) =>
       part.startsWith("@") ? (
-        <span key={i} className="text-blue-600 font-semibold bg-blue-50 dark:bg-blue-900/20 rounded px-0.5">
+        <span key={i} className="text-blue-600 font-semibold bg-blue-50 dark:bg-blue-900/20 rounded px-0.5 py-px">
           {part}
         </span>
       ) : (
@@ -120,127 +121,126 @@ function MessageItem({
 
   return (
     <div
-      className={cn("group relative px-4 py-2", isThread && "py-1")}
+      className={cn(
+        "group relative flex gap-3 px-4 hover:bg-muted/30 transition-colors",
+        isGrouped ? "py-0.5" : "pt-3 pb-0.5",
+        isThread && "px-3"
+      )}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => { setShowActions(false); setShowEmojiPicker(false); }}
     >
-      <div className={cn(
-        "flex gap-3",
-        isOwn && "flex-row-reverse"
-      )}>
-        <Avatar className="w-8 h-8 shrink-0 mt-0.5">
-          <AvatarImage src={message.user.image ?? undefined} />
-          <AvatarFallback className="text-[10px] font-bold bg-foreground text-background">
-            {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-          </AvatarFallback>
-        </Avatar>
-
-        <div className={cn("flex flex-col max-w-[72%]", isOwn && "items-end")}>
-          {/* Sender + time */}
-          <div className={cn("flex items-baseline gap-2 mb-1", isOwn && "flex-row-reverse")}>
-            <span className="text-xs font-semibold leading-none">{message.user.name ?? "Unknown"}</span>
-            <span className="text-[11px] text-muted-foreground">{formatTime(message.createdAt)}</span>
-            {message.editedAt && <span className="text-[11px] text-muted-foreground italic">(edited)</span>}
-          </div>
-
-          {/* Message bubble — rectangle */}
-          {isDeleted ? (
-            <div className="px-3 py-2 rounded-2xl border border-border bg-muted/40">
-              <p className="text-xs text-muted-foreground italic">This message was deleted.</p>
-            </div>
-          ) : (
-            <div className={cn(
-              "relative px-3.5 py-2.5 rounded-2xl border text-sm leading-relaxed break-words",
-              isOwn
-                ? "bg-foreground text-background border-transparent rounded-tr-sm"
-                : "bg-card border-border rounded-tl-sm"
-            )}>
-              <p className="whitespace-pre-wrap">{renderContent(message.content)}</p>
-            </div>
-          )}
-
-          {/* Reactions */}
-          {Object.keys(groupedReactions).length > 0 && (
-            <div className={cn("flex flex-wrap gap-1 mt-1", isOwn && "justify-end")}>
-              {Object.entries(groupedReactions).map(([emoji, reactors]) => {
-                const isMine = reactors.some((r) => r.user.id === currentUserId);
-                return (
-                  <button
-                    key={emoji}
-                    onClick={() => onReact(message.id, emoji)}
-                    className={cn(
-                      "flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors",
-                      isMine
-                        ? "bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-600"
-                        : "bg-muted border-border hover:bg-muted/80"
-                    )}
-                    title={reactors.map((r) => r.user.name).join(", ")}
-                  >
-                    <span>{emoji}</span>
-                    <span className="font-medium">{reactors.length}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Thread replies */}
-          {!isThread && message.replies.length > 0 && (
-            <div className="mt-1.5">
-              <button
-                onClick={() => setShowReplies(!showReplies)}
-                className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium"
-              >
-                <MessageSquare className="w-3 h-3" />
-                {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
-                <ChevronDown className={cn("w-3 h-3 transition-transform", showReplies && "rotate-180")} />
-              </button>
-              <AnimatePresence>
-                {showReplies && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-2 pl-3 border-l-2 border-blue-200 dark:border-blue-800 space-y-2"
-                  >
-                    {message.replies.map((reply) => (
-                      <MessageItem
-                        key={reply.id}
-                        message={reply}
-                        currentUserId={currentUserId}
-                        onReact={onReact}
-                        onReply={() => {}}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                        isThread
-                      />
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
+      {/* Avatar column — fixed width so text always starts at the same x */}
+      <div className="w-9 shrink-0 pt-0.5">
+        {isGrouped ? (
+          /* Compact timestamp on hover instead of avatar */
+          <span className="block text-center text-[10px] text-muted-foreground leading-none opacity-0 group-hover:opacity-100 transition-opacity mt-1 select-none">
+            {format(new Date(message.createdAt), "HH:mm")}
+          </span>
+        ) : (
+          <Avatar className="w-9 h-9">
+            <AvatarImage src={message.user.image ?? undefined} />
+            <AvatarFallback className="text-[11px] font-bold bg-muted text-foreground">
+              {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "??"}
+            </AvatarFallback>
+          </Avatar>
+        )}
       </div>
 
-      {/* Hover Actions */}
+      {/* Message body */}
+      <div className="flex-1 min-w-0">
+        {/* Header row */}
+        {!isGrouped && (
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className="text-sm font-bold text-foreground leading-none">
+              {message.user.name ?? "Unknown"}
+            </span>
+            {isOwn && (
+              <span className="text-[10px] text-muted-foreground font-normal">(you)</span>
+            )}
+            <span className="text-[11px] text-muted-foreground">
+              {format(new Date(message.createdAt), "HH:mm")}
+            </span>
+            {message.editedAt && (
+              <span className="text-[11px] text-muted-foreground italic">(edited)</span>
+            )}
+          </div>
+        )}
+
+        {/* Text */}
+        {isDeleted ? (
+          <p className="text-sm text-muted-foreground italic">This message was deleted.</p>
+        ) : (
+          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+            {renderContent(message.content)}
+          </p>
+        )}
+
+        {/* Reactions */}
+        {Object.keys(groupedReactions).length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {Object.entries(groupedReactions).map(([emoji, reactors]) => {
+              const isMine = reactors.some((r) => r.user.id === currentUserId);
+              return (
+                <button
+                  key={emoji}
+                  onClick={() => onReact(message.id, emoji)}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors",
+                    isMine
+                      ? "bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-600"
+                      : "bg-muted border-border hover:bg-accent"
+                  )}
+                  title={reactors.map((r) => r.user.name).join(", ")}
+                >
+                  <span>{emoji}</span>
+                  <span className="font-semibold text-foreground">{reactors.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Thread reply preview — clicking opens thread sidebar */}
+        {!isThread && message.replies.length > 0 && (
+          <button
+            onClick={() => onReply(message)}
+            className="flex items-center gap-2 mt-1.5 group/thread"
+          >
+            <div className="flex -space-x-1 shrink-0">
+              {message.replies.slice(0, 3).map((r, i) => (
+                <Avatar key={i} className="w-5 h-5 border-2 border-background">
+                  <AvatarFallback className="text-[8px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                    {r.user.initials ?? r.user.name?.slice(0, 2).toUpperCase() ?? "?"}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+            <span className="text-xs text-blue-500 font-semibold group-hover/thread:underline">
+              {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Last reply {formatDistanceToNow(new Date(message.replies[message.replies.length - 1].createdAt))} ago
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Hover action toolbar — floats above the row, right-aligned */}
       <AnimatePresence>
         {showActions && !isDeleted && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ duration: 0.1 }}
-            className={cn(
-              "absolute top-1 flex items-center gap-0.5 bg-background border border-border rounded-xl shadow-md p-1 z-10",
-              isOwn ? "left-4" : "right-4"
-            )}
+            transition={{ duration: 0.08 }}
+            className="absolute -top-4 right-4 flex items-center gap-0.5 bg-background border border-border rounded-xl shadow-md p-0.5 z-10"
           >
+            {/* Emoji picker */}
             <div className="relative">
               <button
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                title="React"
+                title="Add reaction"
               >
                 <Smile className="w-3.5 h-3.5" />
               </button>
@@ -250,8 +250,7 @@ function MessageItem({
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
-                    className="absolute top-full mt-1 bg-background border border-border rounded-xl shadow-xl p-2 flex gap-1 z-20"
-                    style={isOwn ? { right: 0 } : { left: 0 }}
+                    className="absolute bottom-full right-0 mb-1 bg-background border border-border rounded-xl shadow-xl p-2 flex gap-1 z-20"
                   >
                     {QUICK_EMOJIS.map((emoji) => (
                       <button
@@ -271,7 +270,7 @@ function MessageItem({
               <button
                 onClick={() => onReply(message)}
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                title="Reply"
+                title="Reply in thread"
               >
                 <Reply className="w-3.5 h-3.5" />
               </button>
@@ -282,14 +281,14 @@ function MessageItem({
                 <button
                   onClick={() => onEdit(message)}
                   className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                  title="Edit"
+                  title="Edit message"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => onDelete(message.id)}
                   className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-muted-foreground hover:text-red-500"
-                  title="Delete"
+                  title="Delete message"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -401,7 +400,7 @@ function MessageInput({
   };
 
   return (
-    <div className="px-4 pb-4 relative">
+    <div className="px-4 pb-4 pt-1 relative">
       {/* @mention dropdown */}
       <AnimatePresence>
         {mentionQuery !== null && mentionMatches.length > 0 && (
@@ -409,9 +408,9 @@ function MessageInput({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
-            className="absolute bottom-full left-4 right-4 mb-1 bg-background border border-border rounded-xl shadow-xl overflow-hidden z-30"
+            className="absolute bottom-full left-4 right-4 mb-2 bg-background border border-border rounded-xl shadow-xl overflow-hidden z-30"
           >
-            <div className="px-3 py-1.5 border-b border-border">
+            <div className="px-3 py-2 border-b border-border bg-muted/40">
               <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">Mention someone</span>
             </div>
             {mentionMatches.slice(0, 6).map((user, i) => (
@@ -423,13 +422,15 @@ function MessageInput({
                   i === mentionIndex ? "bg-accent" : "hover:bg-muted"
                 )}
               >
-                <Avatar className="w-6 h-6 shrink-0">
-                  <AvatarFallback className="text-[9px] font-bold bg-foreground text-background">
+                <Avatar className="w-7 h-7 shrink-0">
+                  <AvatarFallback className="text-[10px] font-bold bg-muted text-foreground">
                     {user.initials ?? user.name?.slice(0, 2).toUpperCase() ?? "??"}
                   </AvatarFallback>
                 </Avatar>
-                <span className="font-medium">{user.name}</span>
-                <span className="text-xs text-muted-foreground">@{(user.name ?? "").toLowerCase().replace(/\s+/g, ".")}</span>
+                <div>
+                  <p className="font-semibold text-sm leading-none">{user.name}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">@{(user.name ?? "").toLowerCase().replace(/\s+/g, ".")}</p>
+                </div>
               </button>
             ))}
           </motion.div>
@@ -447,69 +448,94 @@ function MessageInput({
           >
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {editMessage ? (
-                <><Edit2 className="w-3 h-3" /> Editing message</>
+                <><Edit2 className="w-3 h-3 text-blue-500" /> <span className="text-blue-600 font-medium">Editing message</span></>
               ) : (
-                <><Reply className="w-3 h-3" /> Replying to <span className="font-semibold text-foreground">{replyTo?.user.name}</span></>
+                <><Reply className="w-3 h-3 text-blue-500" /> Replying to{" "}
+                  <span className="font-semibold text-foreground">{replyTo?.user.name}</span></>
               )}
             </div>
-            <button onClick={editMessage ? onCancelEdit : onCancelReply} className="text-muted-foreground hover:text-foreground">
+            <button
+              onClick={editMessage ? onCancelEdit : onCancelReply}
+              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors text-muted-foreground hover:text-foreground"
+            >
               <X className="w-3.5 h-3.5" />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* Input box */}
       <div className={cn(
-        "flex items-end gap-2 bg-background border border-border rounded-xl shadow-sm",
+        "bg-background border border-border rounded-xl shadow-sm overflow-hidden",
         (replyTo || editMessage) && "rounded-t-none border-t-0"
       )}>
-        <div className="flex gap-1 shrink-0 p-2 pb-2.5">
-          <button className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors" title="Attach file">
-            <Paperclip className="w-4 h-4" />
-          </button>
-          <button
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-            title="Mention someone"
-            onClick={() => { setValue((v) => v + "@"); textareaRef.current?.focus(); setMentionQuery(""); }}
-          >
-            <AtSign className="w-4 h-4" />
-          </button>
+        {/* Textarea */}
+        <div className="flex items-end gap-2 px-3 pt-2.5">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            rows={1}
+            className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground leading-relaxed py-1 max-h-36 overflow-y-auto"
+            style={{ height: "auto" }}
+            onInput={(e) => {
+              const t = e.currentTarget;
+              t.style.height = "auto";
+              t.style.height = `${Math.min(t.scrollHeight, 144)}px`;
+            }}
+          />
         </div>
 
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          rows={1}
-          className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground leading-relaxed py-3 max-h-32 overflow-y-auto font-[Inter,sans-serif]"
-          style={{ height: "auto" }}
-          onInput={(e) => {
-            const t = e.currentTarget;
-            t.style.height = "auto";
-            t.style.height = `${Math.min(t.scrollHeight, 128)}px`;
-          }}
-        />
+        {/* Toolbar row */}
+        <div className="flex items-center justify-between px-2 pb-2 pt-1">
+          <div className="flex items-center gap-0.5">
+            <button
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+              title="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+            <button
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+              title="Add emoji"
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+            <button
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+              title="Mention someone"
+              onClick={() => {
+                setValue((v) => v + "@");
+                textareaRef.current?.focus();
+                setMentionQuery("");
+              }}
+            >
+              <AtSign className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-border mx-1" />
+            <span className="text-[11px] text-muted-foreground hidden sm:block">
+              <kbd className="font-mono bg-muted px-1 rounded text-[10px]">↵</kbd> send ·{" "}
+              <kbd className="font-mono bg-muted px-1 rounded text-[10px]">⇧↵</kbd> newline
+            </span>
+          </div>
 
-        <div className="p-2 pb-2.5">
           <button
             onClick={handleSend}
             disabled={!value.trim() || loading}
             className={cn(
-              "p-2 rounded-lg transition-all",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
               value.trim() && !loading
                 ? "bg-foreground text-background hover:opacity-80"
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             )}
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            {!loading && "Send"}
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-[11px] text-muted-foreground px-1">
-        <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for new line · <kbd className="font-mono">@</kbd> to mention
-      </p>
     </div>
   );
 }
@@ -925,17 +951,27 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                   {groupedMessages.map(({ date, messages: dayMsgs }) => (
                     <div key={date}>
                       <DateSeparator date={`${date}T12:00:00`} />
-                      {dayMsgs.map((msg) => (
-                        <MessageItem
-                          key={msg.id}
-                          message={msg}
-                          currentUserId={currentUser.id}
-                          onReact={reactToMessage}
-                          onReply={setThreadMessage}
-                          onEdit={setEditMessage}
-                          onDelete={deleteMessage}
-                        />
-                      ))}
+                      {dayMsgs.map((msg, idx) => {
+                        const prev = idx > 0 ? dayMsgs[idx - 1] : null;
+                        const isGrouped = !!(
+                          prev &&
+                          prev.userId === msg.userId &&
+                          !prev.deletedAt &&
+                          new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60 * 1000
+                        );
+                        return (
+                          <MessageItem
+                            key={msg.id}
+                            message={msg}
+                            currentUserId={currentUser.id}
+                            onReact={reactToMessage}
+                            onReply={setThreadMessage}
+                            onEdit={setEditMessage}
+                            onDelete={deleteMessage}
+                            isGrouped={isGrouped}
+                          />
+                        );
+                      })}
                     </div>
                   ))}
                   {typingUsers.length > 0 && (
@@ -988,18 +1024,27 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
         {threadMessage && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 340, opacity: 1 }}
+            animate={{ width: 360, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="shrink-0 border-l border-border flex flex-col overflow-hidden"
+            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            className="shrink-0 border-l border-border flex flex-col overflow-hidden bg-background"
           >
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <h3 className="font-bold text-sm">Thread</h3>
-              <button onClick={() => setThreadMessage(null)}>
-                <X className="w-4 h-4 text-muted-foreground" />
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-bold text-sm">Thread</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  #{activeChannel ? getChannelDisplayName(activeChannel) : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => setThreadMessage(null)}
+                className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
+              {/* Parent message */}
               <MessageItem
                 message={threadMessage}
                 currentUserId={currentUser.id}
@@ -1009,24 +1054,36 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 onDelete={deleteMessage}
                 isThread
               />
-              <div className="px-4 my-3">
-                <div className="h-px bg-border" />
-                <span className="text-xs text-muted-foreground">
-                  {threadMessage.replies.length} replies
+              <div className="px-4 my-3 flex items-center gap-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[11px] font-semibold text-muted-foreground shrink-0">
+                  {threadMessage.replies.length === 0
+                    ? "No replies yet"
+                    : `${threadMessage.replies.length} ${threadMessage.replies.length === 1 ? "reply" : "replies"}`}
                 </span>
+                <div className="flex-1 h-px bg-border" />
               </div>
-              {threadMessage.replies.map((reply) => (
-                <MessageItem
-                  key={reply.id}
-                  message={reply}
-                  currentUserId={currentUser.id}
-                  onReact={reactToMessage}
-                  onReply={() => {}}
-                  onEdit={setEditMessage}
-                  onDelete={deleteMessage}
-                  isThread
-                />
-              ))}
+              {threadMessage.replies.map((reply, idx) => {
+                const prev = idx > 0 ? threadMessage.replies[idx - 1] : null;
+                const isGrouped = !!(
+                  prev &&
+                  prev.userId === reply.userId &&
+                  new Date(reply.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60 * 1000
+                );
+                return (
+                  <MessageItem
+                    key={reply.id}
+                    message={reply}
+                    currentUserId={currentUser.id}
+                    onReact={reactToMessage}
+                    onReply={() => {}}
+                    onEdit={setEditMessage}
+                    onDelete={deleteMessage}
+                    isThread
+                    isGrouped={isGrouped}
+                  />
+                );
+              })}
             </div>
             <MessageInput
               onSend={sendMessage}

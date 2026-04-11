@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Sora } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -13,9 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const sora = Sora({
+  variable: "--font-sora",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "DBS Architectes | Progetti",
-  description: "DBS Architectes - Centralized project management platform powered by AI",
+  title: "DBS Architectes | AI-Native Project Workspace",
+  description:
+    "A centralized project management and AI workflow platform built exclusively for DBS Architectes.",
   icons: {
     icon: "/favicon.ico",
   },
@@ -29,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full`}
       suppressHydrationWarning
     >
       <body className="h-full bg-background text-foreground antialiased">
