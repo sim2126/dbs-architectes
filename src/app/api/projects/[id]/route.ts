@@ -36,15 +36,24 @@ export async function PATCH(
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const canEdit =
+  const { id } = await params;
+  const body = await request.json();
+
+  const isAdmin =
     session.user.role === "super_admin" ||
     session.user.role === "admin" ||
     session.user.role === "project_manager";
 
-  if (!canEdit) return Response.json({ error: "Forbidden" }, { status: 403 });
+  // Any assignee can update workStatus; all other fields require admin
+  const isAssignee = await prisma.projectAssignment.findUnique({
+    where: { projectId_userId: { projectId: id, userId: session.user.id } },
+  });
 
-  const { id } = await params;
-  const body = await request.json();
+  const workStatusOnly = Object.keys(body).length === 1 && body.workStatus !== undefined;
+
+  if (!isAdmin && !(isAssignee && workStatusOnly)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const project = await prisma.project.update({
     where: { id },
@@ -62,6 +71,7 @@ export async function PATCH(
       ...(body.notes !== undefined && { notes: body.notes }),
       ...(body.billing !== undefined && { billing: body.billing }),
       ...(body.image !== undefined && { image: body.image }),
+      ...(body.workStatus !== undefined && { workStatus: body.workStatus }),
     },
   });
 

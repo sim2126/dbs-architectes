@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Building2,
@@ -25,13 +25,31 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Send,
+  Globe,
+  Eye,
+  MessageSquare,
+  ChevronDown,
+  ChevronRight as ChevronRightIcon,
+  RotateCcw,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PHASE_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
+import { useT } from "@/lib/translations";
+import { useLanguageStore } from "@/lib/language-store";
+
+interface ThreadMessage {
+  id: string;
+  content: string;
+  createdAt: string;
+  user: { id: string; name: string | null; initials: string | null; image: string | null; role: string };
+  replies: ThreadMessage[];
+  reactions: Array<{ emoji: string; user: { id: string; name: string | null } }>;
+}
 
 interface ProjectDetail {
   id: string;
@@ -58,30 +76,22 @@ interface ProjectDetail {
   assignments: Array<{
     userId: string;
     role: string | null;
-    user: {
-      id: string;
-      name: string | null;
-      initials: string | null;
-      image: string | null;
-      email: string;
-      role: string;
-    };
+    user: { id: string; name: string | null; initials: string | null; image: string | null; email: string; role: string };
   }>;
-  agendaItems: Array<{
-    id: string;
-    title: string;
-    date: string;
-    priority: string;
-    status: string;
-  }>;
+  agendaItems: Array<{ id: string; title: string; date: string; priority: string; status: string }>;
   activities: Array<{
-    id: string;
-    type: string;
-    description: string;
-    createdAt: string;
+    id: string; type: string; description: string; createdAt: string;
     user: { id: string; name: string | null; initials: string; image: string | null };
   }>;
 }
+
+type DetailTab = "details" | "tasks" | "activity";
+
+const PRIORITY_CONFIG = {
+  high: { label: "High", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
+  medium: { label: "Medium", color: "text-yellow-600", bg: "bg-yellow-50 dark:bg-yellow-950/30" },
+  low: { label: "Low", color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30" },
+} as Record<string, { label: string; color: string; bg: string }>;
 
 function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: React.ReactNode }) {
   if (!value) return null;
@@ -98,28 +108,368 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
   );
 }
 
-const PRIORITY_CONFIG = {
-  high: { label: "High", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
-  medium: { label: "Medium", color: "text-yellow-600", bg: "bg-yellow-50 dark:bg-yellow-950/30" },
-  low: { label: "Low", color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30" },
-} as Record<string, { label: string; color: string; bg: string }>;
+// ── Message bubble ──────────────────────────────────────────────────────────
+
+function MessageBubble({
+  message,
+  currentUserId,
+  projectId,
+  onReply,
+  targetLang,
+}: {
+  message: ThreadMessage;
+  currentUserId: string;
+  projectId: string;
+  onReply: (msg: ThreadMessage) => void;
+  targetLang: string;
+}) {
+  const t = useT();
+  const [translated, setTranslated] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
+  const isMe = message.user.id === currentUserId;
+
+  const handleTranslate = async () => {
+    if (translated) { setShowOriginal(!showOriginal); return; }
+    setTranslating(true);
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: message.content, targetLang }),
+      });
+      const data = await res.json();
+      if (data.translated) setTranslated(data.translated);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const displayText = translated && !showOriginal ? translated : message.content;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group"
+    >
+      <div className={cn("flex gap-3", isMe && "flex-row-reverse")}>
+        <Avatar className="h-8 w-8 shrink-0 mt-0.5">
+          <AvatarImage src={message.user.image || ""} />
+          <AvatarFallback className="text-[10px] bg-foreground text-background">
+            {message.user.initials ?? message.user.name?.slice(0, 2).toUpperCase() ?? "?"}
+          </AvatarFallback>
+        </Avatar>
+
+        <div className={cn("flex-1 max-w-[80%]", isMe && "items-end flex flex-col")}>
+          <div className={cn("flex items-center gap-2 mb-1", isMe && "flex-row-reverse")}>
+            <span className="text-xs font-semibold">{message.user.name}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {format(new Date(message.createdAt), "HH:mm")} ·{" "}
+              {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
+            </span>
+          </div>
+
+          <div
+            className={cn(
+              "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+              isMe
+                ? "bg-foreground text-background rounded-tr-sm"
+                : "bg-muted rounded-tl-sm"
+            )}
+          >
+            {displayText}
+          </div>
+
+          {/* Actions row */}
+          <div className={cn("flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity", isMe && "flex-row-reverse")}>
+            <button
+              onClick={() => onReply(message)}
+              className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <MessageSquare className="w-3 h-3" />
+              {t("thread.reply")}
+            </button>
+            <button
+              onClick={handleTranslate}
+              disabled={translating}
+              className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <Globe className="w-3 h-3" />
+              {translating ? "…" : translated && !showOriginal ? t("common.show_original") : t("common.translate")}
+            </button>
+            {translated && showOriginal && (
+              <button
+                onClick={() => setShowOriginal(false)}
+                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Translated
+              </button>
+            )}
+          </div>
+
+          {/* Replies */}
+          {message.replies.length > 0 && (
+            <div className={cn("mt-1", isMe && "self-end")}>
+              <button
+                onClick={() => setShowReplies(!showReplies)}
+                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                {showReplies ? <ChevronDown className="w-3 h-3" /> : <ChevronRightIcon className="w-3 h-3" />}
+                {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
+              </button>
+              <AnimatePresence>
+                {showReplies && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-2 pl-4 border-l-2 border-border space-y-2"
+                  >
+                    {message.replies.map((reply) => (
+                      <div key={reply.id} className="flex gap-2">
+                        <Avatar className="h-6 w-6 shrink-0">
+                          <AvatarFallback className="text-[9px] bg-foreground text-background">
+                            {reply.user.initials ?? "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-[11px] font-semibold">{reply.user.name}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {formatDistanceToNow(new Date(reply.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                          <div className="bg-muted rounded-xl rounded-tl-sm px-3 py-2 text-xs">
+                            {reply.content}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Project Thread Panel ────────────────────────────────────────────────────
+
+function ProjectThread({ projectId, currentUserId }: { projectId: string; currentUserId: string }) {
+  const t = useT();
+  const language = useLanguageStore((s) => s.language);
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const fetchMessages = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/thread`);
+      const data = await res.json();
+      if (data.messages) setMessages(data.messages);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
+
+  // Poll every 10s for new messages
+  useEffect(() => {
+    const interval = setInterval(fetchMessages, 10000);
+    return () => clearInterval(interval);
+  }, [fetchMessages]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setInput("");
+    setReplyTo(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/thread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text, parentId: replyTo?.id }),
+      });
+      const msg = await res.json();
+      if (msg.id) {
+        if (replyTo) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === replyTo.id ? { ...m, replies: [...m.replies, msg] } : m
+            )
+          );
+        } else {
+          setMessages((prev) => [...prev, { ...msg, replies: [], reactions: [] }]);
+        }
+      }
+    } finally {
+      setSending(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // Group messages by date
+  const grouped: { date: string; messages: ThreadMessage[] }[] = [];
+  for (const msg of messages) {
+    const dateKey = format(new Date(msg.createdAt), "MMMM d, yyyy");
+    const last = grouped[grouped.length - 1];
+    if (last?.date === dateKey) last.messages.push(msg);
+    else grouped.push({ date: dateKey, messages: [msg] });
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Thread header */}
+      <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">{t("thread.title")}</span>
+          {messages.length > 0 && (
+            <Badge variant="secondary" className="text-xs">{messages.length}</Badge>
+          )}
+        </div>
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
+          Ctrl+Enter to send
+        </span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
+            <MessageSquare className="w-10 h-10 text-muted-foreground/20" />
+            <p className="text-sm text-muted-foreground">{t("thread.no_messages")}</p>
+          </div>
+        ) : (
+          grouped.map((group) => (
+            <div key={group.date}>
+              <div className="flex items-center gap-2 my-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[10px] text-muted-foreground font-medium px-2">{group.date}</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <div className="space-y-3">
+                {group.messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    currentUserId={currentUserId}
+                    projectId={projectId}
+                    onReply={setReplyTo}
+                    targetLang={language}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Reply indicator */}
+      <AnimatePresence>
+        {replyTo && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            className="mx-4 mb-2 px-3 py-2 bg-accent rounded-lg border border-border text-xs flex items-center justify-between"
+          >
+            <span className="text-muted-foreground">
+              Replying to <strong>{replyTo.user.name}</strong>: {replyTo.content.slice(0, 50)}…
+            </span>
+            <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground ml-2">✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Input */}
+      <div className="px-4 pb-4 shrink-0">
+        <div className="flex gap-2 items-end border border-border rounded-xl overflow-hidden bg-background focus-within:border-foreground/30 transition-colors">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t("thread.placeholder")}
+            rows={1}
+            className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none resize-none min-h-[40px] max-h-32"
+            style={{ fieldSizing: "content" } as React.CSSProperties}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className="m-1.5 p-2 bg-foreground text-background rounded-lg disabled:opacity-40 hover:bg-foreground/80 transition-colors shrink-0"
+          >
+            {sending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Work Status Config ──────────────────────────────────────────────────────
+const WORK_STATUS = {
+  todo:      { label: "Not Started", color: "#94a3b8", bg: "#f1f5f9" },
+  doing:     { label: "In Progress", color: "#3b82f6", bg: "#eff6ff" },
+  stuck:     { label: "Stuck",       color: "#ef4444", bg: "#fef2f2" },
+  completed: { label: "Done",        color: "#22c55e", bg: "#f0fdf4" },
+} as const;
+
+// ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const t = useT();
   const router = useRouter();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     fetch(`/api/projects/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
+      .then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); })
       .then(setProject)
       .catch(() => setError("Project not found"))
       .finally(() => setLoading(false));
+    fetch("/api/auth/session").then(r => r.json()).then(s => {
+      if (s?.user?.id) setCurrentUserId(s.user.id);
+    });
   }, [id]);
 
   if (loading) {
@@ -137,260 +487,128 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         <p className="text-muted-foreground">{error ?? "Project not found"}</p>
         <Button variant="outline" onClick={() => router.push("/dashboard/projects")}>
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Projects
+          {t("common.back")} to Projects
         </Button>
       </div>
     );
   }
 
   const phaseColor = PHASE_COLORS[project.phase] ?? "#6b7280";
+  const ws = WORK_STATUS[(project as any).workStatus as keyof typeof WORK_STATUS] ?? WORK_STATUS.todo;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-border shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/projects")} className="gap-1.5">
-          <ArrowLeft className="w-4 h-4" />
-          Projects
-        </Button>
-        <div className="w-px h-5 bg-border" />
-        <div className="flex-1 min-w-0 flex items-center gap-3">
-          <div
-            className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0 text-white text-xs font-bold"
-            style={{ backgroundColor: phaseColor }}
-          >
-            {project.code.slice(0, 3)}
+    <div className="flex flex-col h-full overflow-hidden bg-background">
+      {/* ── Compact header ── */}
+      <div className="border-b border-border bg-background/95 backdrop-blur-sm shrink-0">
+        {/* Row 1: nav + title */}
+        <div className="flex items-center gap-3 px-5 py-3">
+          <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard/projects")} className="gap-1.5 shrink-0 h-8 text-xs">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Projects
+          </Button>
+          <div className="w-px h-4 bg-border" />
+          {project.image && <img src={project.image} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-semibold truncate leading-tight">{project.title}</h1>
+            <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold truncate">{project.title}</h1>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground font-mono">{project.code}</span>
-              <Badge
-                className="text-xs border-0 text-white"
-                style={{ backgroundColor: phaseColor }}
-              >
-                {project.phase}
-              </Badge>
-              <Badge variant="outline" className="text-xs capitalize">{project.status}</Badge>
-            </div>
+          {/* Badges */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
+              {project.phase}
+            </span>
+            <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full border" style={{ color: ws.color, background: ws.bg, borderColor: ws.color + "40" }}>
+              {ws.label}
+            </span>
+            {project.pageLink && (
+              <a href={project.pageLink} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                  <ExternalLink className="w-3 h-3" /> Notion
+                </Button>
+              </a>
+            )}
           </div>
         </div>
-        {project.pageLink && (
-          <a href={project.pageLink} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ExternalLink className="w-4 h-4" />
-              Notion
-            </Button>
-          </a>
-        )}
+
+        {/* Row 2: assignees + key meta + toggle details */}
+        <div className="flex items-center gap-4 px-5 pb-2.5">
+          {/* Assignees */}
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-1.5">
+              {project.assignments.slice(0, 5).map((a) => (
+                <Avatar key={a.userId} className="h-6 w-6 border-2 border-background" title={a.user.name ?? ""}>
+                  <AvatarImage src={a.user.image || ""} />
+                  <AvatarFallback className="text-[8px] font-bold bg-foreground text-background">
+                    {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+            {project.assignments.length === 0 && <span className="text-[11px] text-muted-foreground">No assignees</span>}
+          </div>
+
+          {/* Meta pills */}
+          {[project.category, project.commune, project.client, project.year ? String(project.year) : null].filter(Boolean).map((v) => (
+            <span key={v} className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{v}</span>
+          ))}
+
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="ml-auto text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+          >
+            <ChevronDown className={cn("w-3 h-3 transition-transform", showDetails && "rotate-180")} />
+            {showDetails ? "Hide" : "Show"} details
+          </button>
+        </div>
+
+        {/* Expandable details */}
+        <AnimatePresence>
+          {showDetails && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden border-t border-border"
+            >
+              <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2">
+                {[
+                  { label: "Category", value: project.category },
+                  { label: "Client", value: project.client },
+                  { label: "Year", value: project.year },
+                  { label: "Commune", value: project.commune },
+                  { label: "Typology", value: project.typology },
+                  { label: "Terrain", value: project.terrain },
+                  { label: "Roof", value: project.roof },
+                  { label: "Billing", value: project.billing },
+                  { label: "Area", value: project.area ? `${project.area} m²` : null },
+                  { label: "Floors", value: project.floors },
+                ].filter((r) => r.value).map((row) => (
+                  <div key={row.label}>
+                    <p className="text-[10px] text-muted-foreground">{row.label}</p>
+                    <p className="text-xs font-medium">{String(row.value)}</p>
+                  </div>
+                ))}
+                {project.notes && (
+                  <div className="col-span-2 md:col-span-4">
+                    <p className="text-[10px] text-muted-foreground mb-1">Notes</p>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{project.notes}</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 h-full">
-          {/* Left — main info */}
-          <div className="lg:col-span-2 p-6 space-y-6 border-r border-border">
-            {/* Hero image or placeholder */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative h-52 rounded-xl overflow-hidden bg-muted flex items-center justify-center border border-border"
-            >
-              {project.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={project.image} alt={project.title} className="w-full h-full object-cover" />
-              ) : (
-                <div className="flex flex-col items-center gap-3 text-muted-foreground/40">
-                  <Building2 className="w-16 h-16" />
-                  <span className="text-sm font-medium">{project.title}</span>
-                </div>
-              )}
-              {/* Phase badge overlay */}
-              <div
-                className="absolute top-3 left-3 px-2.5 py-1 rounded-lg text-xs font-semibold text-white"
-                style={{ backgroundColor: phaseColor }}
-              >
-                {project.phase}
-              </div>
-            </motion.div>
-
-            {/* Description */}
-            {project.description && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-                <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-muted-foreground" />
-                  Description
-                </h2>
-                <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 rounded-xl p-4">
-                  {project.description}
-                </p>
-              </motion.div>
-            )}
-
-            {/* Project details grid */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-              <h2 className="text-sm font-semibold mb-1 flex items-center gap-2">
-                <Tag className="w-4 h-4 text-muted-foreground" />
-                Project Details
-              </h2>
-              <div className="divide-y divide-border">
-                <InfoRow icon={Building2} label="Category" value={project.category} />
-                <InfoRow icon={User} label="Client" value={project.client} />
-                <InfoRow icon={Calendar} label="Year" value={project.year} />
-                <InfoRow icon={MapPin} label="Commune" value={project.commune} />
-                <InfoRow icon={Layers} label="Typology" value={project.typology} />
-                <InfoRow icon={Mountain} label="Terrain" value={project.terrain} />
-                <InfoRow icon={Home} label="Roof" value={project.roof} />
-                <InfoRow icon={SquareStack} label="Floors" value={project.floors} />
-                <InfoRow icon={Ruler} label="Area" value={project.area ? `${project.area} m²` : null} />
-                <InfoRow icon={CreditCard} label="Billing" value={project.billing} />
-              </div>
-            </motion.div>
-
-            {/* Notes */}
-            {project.notes && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-                <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                  <Edit3 className="w-4 h-4 text-muted-foreground" />
-                  Notes
-                </h2>
-                <p className="text-sm text-muted-foreground leading-relaxed bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30 rounded-xl p-4">
-                  {project.notes}
-                </p>
-              </motion.div>
-            )}
-
-            {/* Agenda items */}
-            {project.agendaItems.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-                <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
-                  Upcoming Tasks
-                  <Badge variant="secondary" className="text-xs">{project.agendaItems.length}</Badge>
-                </h2>
-                <div className="space-y-2">
-                  {project.agendaItems.slice(0, 5).map((item) => {
-                    const pc = PRIORITY_CONFIG[item.priority] ?? PRIORITY_CONFIG.low;
-                    return (
-                      <div key={item.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
-                        <CheckCircle2 className={cn("w-4 h-4 shrink-0", item.status === "done" ? "text-green-500" : "text-muted-foreground/30")} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{item.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(item.date).toLocaleDateString("it-CH")}
-                          </p>
-                        </div>
-                        <Badge className={cn("text-xs border-0 shrink-0", pc.bg, pc.color)}>
-                          {pc.label}
-                        </Badge>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
+      {/* ── Full-height Thread ── */}
+      <div className="flex-1 overflow-hidden">
+        {currentUserId ? (
+          <ProjectThread projectId={id} currentUserId={currentUserId} />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
-
-          {/* Right — team + activity */}
-          <div className="p-6 space-y-6">
-            {/* Team */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
-              <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <User className="w-4 h-4 text-muted-foreground" />
-                Team
-                <Badge variant="secondary" className="text-xs">{project.assignments.length}</Badge>
-              </h2>
-              {project.assignments.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No team members assigned</p>
-              ) : (
-                <div className="space-y-2">
-                  {project.assignments.map((a) => (
-                    <div key={a.userId} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-accent/30 transition-colors">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={a.user.image || ""} />
-                        <AvatarFallback className="text-xs bg-foreground text-background">
-                          {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{a.user.name ?? a.user.email}</p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          {a.role ?? a.user.role.replace("_", " ")}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-
-            <div className="h-px bg-border" />
-
-            {/* Meta */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-              <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                Timeline
-              </h2>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">Created</span>
-                  <span className="text-xs font-medium">
-                    {new Date(project.createdAt).toLocaleDateString("it-CH")}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">Last updated</span>
-                  <span className="text-xs font-medium">
-                    {formatDistanceToNow(new Date(project.updatedAt), { addSuffix: true })}
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-
-            <div className="h-px bg-border" />
-
-            {/* Recent activity */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-muted-foreground" />
-                  Recent Activity
-                </h2>
-                <Link href={`/dashboard/activity`}>
-                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 px-2">
-                    View all
-                  </Button>
-                </Link>
-              </div>
-              {project.activities.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No activity yet</p>
-              ) : (
-                <div className="space-y-3 pl-1 border-l-2 border-border ml-1">
-                  {project.activities.map((act) => (
-                    <div key={act.id} className="relative ml-4">
-                      <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-background border-2 border-border" />
-                      <div className="flex items-start gap-2">
-                        <Avatar className="h-5 w-5 shrink-0 mt-0.5">
-                          <AvatarImage src={act.user.image || ""} />
-                          <AvatarFallback className="text-[8px] bg-foreground text-background">
-                            {act.user.initials}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs leading-snug">{act.description}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            {formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
