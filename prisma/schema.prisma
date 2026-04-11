@@ -90,6 +90,7 @@ model Project {
   floors      Int?
   area        Float?
   status      String   @default("active")
+  workStatus  String   @default("todo")
   billing     String?
   notes       String?
   createdAt   DateTime @default(now())
