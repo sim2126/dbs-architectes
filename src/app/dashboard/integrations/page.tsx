@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useT } from "@/lib/translations";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ExternalLink, Plug, RefreshCw, Search, X, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -270,12 +271,12 @@ const INTEGRATIONS: Integration[] = [
 ];
 
 const CATEGORIES = [
-  { id: "all",           label: "All" },
-  { id: "communication", label: "Communication" },
-  { id: "calendar",      label: "Calendar" },
-  { id: "storage",       label: "Storage" },
-  { id: "productivity",  label: "Productivity" },
-  { id: "ai",            label: "AI & Automation" },
+  { id: "all",           tKey: "integrations.cat.all" },
+  { id: "communication", tKey: "integrations.cat.communication" },
+  { id: "calendar",      tKey: "integrations.cat.calendar" },
+  { id: "storage",       tKey: "integrations.cat.storage" },
+  { id: "productivity",  tKey: "integrations.cat.productivity" },
+  { id: "ai",            tKey: "integrations.cat.ai" },
 ] as const;
 
 // ── Integration card ─────────────────────────────────────────────────────────
@@ -285,6 +286,7 @@ function IntegrationCard({ integration, onToggle }: {
   onToggle: (id: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const t = useT();
 
   const handleToggle = async () => {
     if (integration.comingSoon) return;
@@ -318,12 +320,12 @@ function IntegrationCard({ integration, onToggle }: {
             <h3 className="text-sm font-bold text-foreground">{integration.name}</h3>
             {integration.comingSoon && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border uppercase tracking-wide shrink-0">
-                Soon
+                {t("common.coming_soon")}
               </span>
             )}
             {integration.connected && !integration.comingSoon && (
               <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shrink-0">
-                <Check className="w-2.5 h-2.5" /> Connected
+                <Check className="w-2.5 h-2.5" /> {t("common.connected")}
               </span>
             )}
           </div>
@@ -351,9 +353,9 @@ function IntegrationCard({ integration, onToggle }: {
           {loading ? (
             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
           ) : integration.connected ? (
-            <><X className="w-3.5 h-3.5" /> Disconnect</>
+            <><X className="w-3.5 h-3.5" /> {t("common.disconnect")}</>
           ) : (
-            <><Plug className="w-3.5 h-3.5" /> Connect</>
+            <><Plug className="w-3.5 h-3.5" /> {t("common.connect")}</>
           )}
         </button>
         <button className="p-2 hover:bg-muted rounded-xl transition-colors text-muted-foreground hover:text-foreground" title="Learn more">
@@ -367,6 +369,7 @@ function IntegrationCard({ integration, onToggle }: {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function IntegrationsPage() {
+  const t = useT();
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [integrations, setIntegrations] = useState(INTEGRATIONS);
@@ -391,16 +394,16 @@ export default function IntegrationsPage() {
       <div className="border-b border-border bg-background/95 backdrop-blur-sm px-6 py-4 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-lg font-bold text-foreground">Integrations</h1>
+            <h1 className="text-lg font-bold text-foreground">{t("integrations.title")}</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Connect DBS Architectes to your favourite tools
+              {t("integrations.subtitle")}
             </p>
           </div>
           {connectedCount > 0 && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
               <Zap className="w-4 h-4 text-emerald-600" />
               <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                {connectedCount} active
+                {connectedCount} {t("integrations.active")}
               </span>
             </div>
           )}
@@ -413,7 +416,7 @@ export default function IntegrationsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search integrations…"
+              placeholder={t("integrations.search")}
               className="w-full pl-9 pr-3 h-8 text-sm border border-border rounded-lg bg-background outline-none focus:border-foreground/30 transition-colors"
             />
           </div>
@@ -429,7 +432,7 @@ export default function IntegrationsPage() {
                     : "border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
                 )}
               >
-                {cat.label}
+                {t(cat.tKey)}
               </button>
             ))}
           </div>
@@ -441,7 +444,7 @@ export default function IntegrationsPage() {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
             <Plug className="w-10 h-10 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">No integrations match your search</p>
+            <p className="text-sm text-muted-foreground">{t("integrations.none")}</p>
           </div>
         ) : (
           <motion.div

@@ -23,6 +23,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PHASE_COLORS } from "@/lib/utils";
+import { useT } from "@/lib/translations";
 
 interface DashboardClientProps {
   user: { name?: string | null; role?: string; email?: string };
@@ -126,6 +127,7 @@ export function DashboardClient({
   recentActivity,
   upcomingAgenda,
 }: DashboardClientProps) {
+  const t = useT();
   const roleConfig = ROLE_CONFIG[user.role || "viewer"] || ROLE_CONFIG.viewer;
   const RoleIcon = roleConfig.icon;
 
@@ -171,7 +173,7 @@ export function DashboardClient({
             </div>
 
             <h1 className="mt-8 text-4xl font-semibold tracking-tight">
-              {user.name?.split(" ")[0] || "User"}, here is the operating picture for DBS today.
+              {user.name?.split(" ")[0] || "User"}, {t("dashboard.greeting")}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-white/75">
               This dashboard prioritizes delivery decisions, AI-assisted actions, and coordination signals before users dive into individual modules.
@@ -179,9 +181,9 @@ export function DashboardClient({
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {[
-                { label: "Total portfolio", value: stats.projectCount, detail: "tracked projects" },
-                { label: "Active delivery", value: stats.activeProjects, detail: "currently in progress" },
-                { label: "At risk", value: stats.blockedProjects, detail: "blocked or delayed" },
+                { label: t("dashboard.total_portfolio"), value: stats.projectCount, detail: t("dashboard.tracked_projects") },
+                { label: t("dashboard.active_delivery"), value: stats.activeProjects, detail: t("dashboard.in_progress") },
+                { label: t("dashboard.at_risk"), value: stats.blockedProjects, detail: t("dashboard.blocked_delayed") },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-white/10 bg-white/8 p-4 backdrop-blur-sm">
                   <p className="text-3xl font-semibold">{item.value}</p>
@@ -247,7 +249,7 @@ export function DashboardClient({
       >
         {[
           {
-            title: "Total Projects",
+            title: t("dashboard.total_projects"),
             value: stats.projectCount,
             sub: `${stats.assignedCount} assigned, ${stats.unassignedCount} unassigned`,
             icon: FolderOpen,
@@ -256,27 +258,27 @@ export function DashboardClient({
             bg: "bg-blue-50 dark:bg-blue-950/20",
           },
           {
-            title: "Active Team",
+            title: t("dashboard.active_team"),
             value: stats.userCount,
-            sub: "Users available in the workspace",
+            sub: t("dashboard.users_available"),
             icon: Users,
             href: "/dashboard/users",
             color: "text-emerald-600",
             bg: "bg-emerald-50 dark:bg-emerald-950/20",
           },
           {
-            title: "Avg. Load",
+            title: t("dashboard.avg_load"),
             value: avgPerPerson,
-            sub: "Assigned projects per teammate",
+            sub: t("dashboard.assigned_per_teammate"),
             icon: TrendingUp,
             href: "/dashboard/statistics",
             color: "text-purple-600",
             bg: "bg-purple-50 dark:bg-purple-950/20",
           },
           {
-            title: "Blocked",
+            title: t("dashboard.blocked"),
             value: stats.blockedProjects,
-            sub: "Projects currently in STUCK",
+            sub: t("dashboard.projects_stuck"),
             icon: AlertTriangle,
             href: "/dashboard/statistics",
             color: "text-amber-600",
@@ -313,7 +315,7 @@ export function DashboardClient({
         >
           <Card className="border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
-              <CardTitle className="text-base">Phase distribution</CardTitle>
+              <CardTitle className="text-base">{t("dashboard.phase_distribution")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-6">
@@ -363,11 +365,11 @@ export function DashboardClient({
         >
           <Card className="h-full border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
-              <CardTitle className="text-base">Upcoming agenda</CardTitle>
+              <CardTitle className="text-base">{t("dashboard.upcoming_agenda")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {upcomingAgenda.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">No upcoming items</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("dashboard.no_upcoming")}</p>
               ) : (
                 upcomingAgenda.map((item) => (
                   <div key={item.id} className="rounded-2xl border border-border bg-card p-3">
@@ -406,15 +408,15 @@ export function DashboardClient({
       >
         <Card className="border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Tasks by status</CardTitle>
+            <CardTitle className="text-base">{t("dashboard.tasks_by_status")}</CardTitle>
           </CardHeader>
           <CardContent>
             {(() => {
               const STATUS_META = [
-                { key: "todo",      label: "Not Started",   color: "#c4c4cf" },
-                { key: "doing",     label: "Working on it", color: "#fdab3d" },
-                { key: "stuck",     label: "Stuck",         color: "#e2445c" },
-                { key: "completed", label: "Done",          color: "#00c875" },
+                { key: "todo",      label: t("status.not_started"),   color: "#c4c4cf" },
+                { key: "doing",     label: t("status.working_on_it"), color: "#fdab3d" },
+                { key: "stuck",     label: t("status.stuck"),         color: "#e2445c" },
+                { key: "completed", label: t("status.done"),          color: "#00c875" },
               ];
               const rows = STATUS_META.map((s) => ({
                 ...s,
@@ -465,11 +467,11 @@ export function DashboardClient({
         >
           <Card className="h-full border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
-              <CardTitle className="text-base">Recent activity</CardTitle>
+              <CardTitle className="text-base">{t("dashboard.recent_activity")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {recentActivity.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">No recent activity</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">{t("dashboard.no_recent_activity")}</p>
               ) : (
                 recentActivity.slice(0, 6).map((activity) => (
                   <div key={activity.id} className="flex items-start gap-3">
@@ -496,28 +498,28 @@ export function DashboardClient({
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <h2 className="mb-3 text-base font-semibold">AI workflow</h2>
+          <h2 className="mb-3 text-base font-semibold">{t("dashboard.ai_workflow")}</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {[
               {
                 href: "/dashboard/ai/gpt",
                 icon: Sparkles,
                 title: "DBS OPS MANUAL GPT",
-                desc: "Compliance, standards, calculations, and internal playbooks in one AI assistant.",
+                desc: t("dashboard.gpt_desc"),
                 color: "from-blue-500/10 to-cyan-500/10",
               },
               {
                 href: "/dashboard/ai/gallery",
                 icon: Building2,
                 title: "Visual Gallery AI",
-                desc: "Search renders, facades, and materials with AI-tagged visual precedent intelligence.",
+                desc: t("dashboard.gallery_desc"),
                 color: "from-emerald-500/10 to-teal-500/10",
               },
               {
                 href: "/dashboard/ai/planning",
                 icon: FolderOpen,
                 title: "Planning AI",
-                desc: "Find planning precedents, apartment mixes, and layout archetypes instantly.",
+                desc: t("dashboard.planning_desc"),
                 color: "from-amber-500/10 to-orange-500/10",
               },
             ].map((item) => (
