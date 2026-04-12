@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ExternalLink, Plug, RefreshCw, Search, X, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -143,7 +143,7 @@ function OpenAILogo() {
 
 // ── Integration catalogue ────────────────────────────────────────────────────
 
-type LogoComponent = () => JSX.Element;
+type LogoComponent = () => React.ReactElement;
 
 interface Integration {
   id: string;
