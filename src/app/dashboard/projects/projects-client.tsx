@@ -18,7 +18,7 @@ import { AddProjectModal } from "@/components/projects/add-project-modal";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { useT } from "@/lib/translations";
+import { useT, translatePhase } from "@/lib/translations";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Project {
@@ -275,6 +275,7 @@ function TableView({
   currentUserId: string;
 }) {
   const t = useT();
+  const tp = (phase: string) => translatePhase(phase, t);
   return (
     <div className="min-w-[800px]">
       {/* Column headers */}
@@ -306,7 +307,7 @@ function TableView({
               >
                 <div className="w-1 h-4 rounded-full shrink-0" style={{ background: color }} />
                 <ChevronRight className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", !isCollapsed && "rotate-90")} />
-                <span className="text-xs font-semibold">{phase}</span>
+                <span className="text-xs font-semibold">{tp(phase)}</span>
                 <span className="text-[10px] text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 font-medium">{projects.length}</span>
               </div>
 
@@ -488,7 +489,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
       {/* Phase */}
       <div className="py-2.5 pr-3">
         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-white truncate block text-center" style={{ background: phaseColor }}>
-          {project.phase}
+          {translatePhase(project.phase, t)}
         </span>
       </div>
 
@@ -602,7 +603,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         {/* Phase + Status badges */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
           <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
-            {project.phase}
+            {translatePhase(project.phase, t)}
           </span>
           <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: ws.solid }}>
             {t(ws.tKey)}
@@ -761,7 +762,7 @@ function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSe
           </div>
         )}
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
-          {project.phase}
+          {translatePhase(project.phase, t)}
         </div>
         <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ws.solid }}>
           {t(ws.tKey)}
@@ -1001,7 +1002,7 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                <span className="text-xs font-semibold truncate">{phase}</span>
+                <span className="text-xs font-semibold truncate">{translatePhase(phase, t)}</span>
               </div>
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: color }}>{cols.length}</span>
             </div>

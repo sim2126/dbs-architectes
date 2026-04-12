@@ -130,6 +130,12 @@ const T: Record<Language, Record<string, string>> = {
     "status.working_on_it": "Working on it",
     "status.stuck": "Stuck",
     "status.done": "Done",
+    "phase.etude_ap": "Study / Prelim.",
+    "phase.mae": "Prelim. Design",
+    "phase.chantier": "Construction",
+    "phase.exe": "Execution / Mgmt",
+    "phase.terminato": "Completed",
+    "phase.stuck": "Blocked",
     // ── Project detail tabs ─────────────────────────────────────────────────
     "detail.tab.updates": "Updates",
     "detail.tab.files": "Files",
@@ -343,6 +349,12 @@ const T: Record<Language, Record<string, string>> = {
     "status.working_on_it": "In lavorazione",
     "status.stuck": "Bloccato",
     "status.done": "Fatto",
+    "phase.etude_ap": "Studio / Prelim.",
+    "phase.mae": "Prog. Preliminare",
+    "phase.chantier": "Cantiere",
+    "phase.exe": "Esecuzione / Dir.",
+    "phase.terminato": "Completato",
+    "phase.stuck": "Bloccato",
     "detail.tab.updates": "Aggiornamenti",
     "detail.tab.files": "File",
     "detail.tab.activity": "Registro Attività",
@@ -546,6 +558,12 @@ const T: Record<Language, Record<string, string>> = {
     "status.working_on_it": "En cours",
     "status.stuck": "Bloqué",
     "status.done": "Terminé",
+    "phase.etude_ap": "Étude / AP",
+    "phase.mae": "Avant-projet",
+    "phase.chantier": "Chantier",
+    "phase.exe": "Exécution / Dir.",
+    "phase.terminato": "Terminé",
+    "phase.stuck": "Bloqué",
     "detail.tab.updates": "Mises à jour",
     "detail.tab.files": "Fichiers",
     "detail.tab.activity": "Journal d'activité",
@@ -749,6 +767,12 @@ const T: Record<Language, Record<string, string>> = {
     "status.working_on_it": "In Bearbeitung",
     "status.stuck": "Blockiert",
     "status.done": "Erledigt",
+    "phase.etude_ap": "Studie / Vorentwurf",
+    "phase.mae": "Vorentwurf",
+    "phase.chantier": "Baustelle",
+    "phase.exe": "Ausführung / Ltg.",
+    "phase.terminato": "Abgeschlossen",
+    "phase.stuck": "Blockiert",
     "detail.tab.updates": "Updates",
     "detail.tab.files": "Dateien",
     "detail.tab.activity": "Aktivitätsprotokoll",
@@ -832,6 +856,21 @@ export function useT() {
   const language = useLanguageStore((s) => s.language);
   return (key: string, fallback?: string): string =>
     T[language]?.[key] ?? T.en[key] ?? fallback ?? key;
+}
+
+// Maps raw DB phase strings to translation keys
+const PHASE_KEY_MAP: Record<string, string> = {
+  "ETUDE / AP": "phase.etude_ap",
+  "MAE": "phase.mae",
+  "CHANTIER": "phase.chantier",
+  "EXE / DG / DV / 3D": "phase.exe",
+  "TERMINATO": "phase.terminato",
+  "STUCK": "phase.stuck",
+};
+
+export function translatePhase(phase: string, t: (key: string, fallback?: string) => string): string {
+  const key = PHASE_KEY_MAP[phase];
+  return key ? t(key, phase) : phase;
 }
 
 export const LANGUAGE_NAMES: Record<string, string> = {

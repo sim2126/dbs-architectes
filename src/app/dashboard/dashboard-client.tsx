@@ -23,7 +23,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PHASE_COLORS } from "@/lib/utils";
-import { useT } from "@/lib/translations";
+import { useT, translatePhase } from "@/lib/translations";
 
 interface DashboardClientProps {
   user: { name?: string | null; role?: string; email?: string };
@@ -132,7 +132,7 @@ export function DashboardClient({
   const RoleIcon = roleConfig.icon;
 
   const pieData = stats.phaseStats.map((s) => ({
-    name: s.phase,
+    name: translatePhase(s.phase, t),
     value: s.count,
     color: PHASE_COLORS[s.phase] || "#94a3b8",
   }));
