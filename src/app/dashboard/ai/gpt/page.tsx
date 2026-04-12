@@ -302,7 +302,7 @@ export default function DBSGPTPage() {
 
       <div className="grid gap-6 p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-4">
-          <Card className="border-white/80 bg-white/85 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+          <Card className="border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
             <CardContent className="p-5">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-emerald-600" />
@@ -324,7 +324,7 @@ export default function DBSGPTPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-white/80 bg-white/85 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+          <Card className="border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
             <CardContent className="p-5">
               <div className="flex items-center gap-2">
                 <FileSearch className="h-4 w-4 text-blue-600" />
@@ -357,7 +357,7 @@ export default function DBSGPTPage() {
           </Card>
         </div>
 
-        <div className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-[32px] border border-white/80 bg-white/90 shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
+        <div className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-[32px] border border-border bg-card shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
           {messages.length === 0 ? (
             <div className="flex-1 overflow-y-auto p-6">
               <motion.div
@@ -434,7 +434,7 @@ export default function DBSGPTPage() {
                         className={`max-w-[86%] rounded-[26px] px-4 py-4 ${
                           message.role === "user"
                             ? "bg-foreground text-background"
-                            : "border border-border bg-white shadow-sm"
+                            : "border border-border bg-card shadow-sm"
                         }`}
                       >
                         {message.role === "user" ? (
@@ -462,7 +462,7 @@ export default function DBSGPTPage() {
                                 </div>
                                 <div className="grid gap-3 md:grid-cols-2">
                                   {message.sources.map((source) => (
-                                    <div key={source.label} className="rounded-2xl border border-border bg-white p-3 dark:bg-background">
+                                    <div key={source.label} className="rounded-2xl border border-border bg-card p-3">
                                       <div className="flex items-center justify-between gap-2">
                                         <p className="text-sm font-medium">{source.label}</p>
                                         <Badge variant="outline" className="text-[10px]">
@@ -509,7 +509,7 @@ export default function DBSGPTPage() {
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-foreground text-background">
                       <Bot className="h-4 w-4" />
                     </div>
-                    <div className="rounded-[26px] border border-border bg-white px-4 py-4 shadow-sm">
+                    <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Generating a source-backed response
@@ -531,7 +531,7 @@ export default function DBSGPTPage() {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
-                  className="min-h-[56px] max-h-[140px] resize-none rounded-2xl border-white/80 bg-white"
+                  className="min-h-[56px] max-h-[140px] resize-none rounded-2xl border-white/80 bg-card"
                   rows={1}
                 />
                 <Button

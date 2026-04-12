@@ -39,9 +39,20 @@ export function Header({ title }: HeaderProps) {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const notifRef = useRef<HTMLDivElement>(null);
 
+  // Restore dark mode from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("dbs-dark-mode");
+    if (saved === "true") {
+      setDarkMode(true);
+      document.documentElement.classList.add("dark");
+    }
+  }, []);
+
   const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle("dark");
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("dbs-dark-mode", String(next));
   };
 
   const openSearch = () => {
