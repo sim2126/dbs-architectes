@@ -119,7 +119,7 @@ export default function PlanningAIPage() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f9fbff_0%,#ffffff_36%,#f7f7f8_100%)] p-6">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-white/80 bg-white/90 shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
+        <Card className="overflow-hidden border-border bg-card shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
           <CardContent className="p-0">
             <div className="bg-[linear-gradient(135deg,#0f172a_0%,#155e75_54%,#0f766e_100%)] px-6 py-8 text-white">
               <div className="flex flex-wrap items-center justify-between gap-4">
@@ -256,7 +256,7 @@ export default function PlanningAIPage() {
                     transition={{ delay: index * 0.08 }}
                   >
                     <Card
-                      className={`cursor-pointer border-white/80 bg-white/88 shadow-[0_18px_45px_rgba(15,23,42,0.05)] transition-all ${
+                      className={`cursor-pointer border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)] transition-all ${
                         selectedArchetype === archetype.id ? "ring-2 ring-slate-900/70" : ""
                       }`}
                       onClick={() =>
@@ -271,7 +271,7 @@ export default function PlanningAIPage() {
                               {archetype.efficiency}
                             </Badge>
                           </div>
-                          <div className="mt-5 flex h-28 items-center justify-center rounded-2xl border border-border/60 bg-white/45 dark:bg-black/10">
+                          <div className="mt-5 flex h-28 items-center justify-center rounded-2xl border border-border/60 bg-muted/40">
                             <Grid3X3 className="h-8 w-8 text-slate-500" />
                           </div>
                         </div>
@@ -289,7 +289,7 @@ export default function PlanningAIPage() {
                 ))}
               </div>
 
-              <Card className="border-white/80 bg-white/88 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+              <Card className="border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                 <CardContent className="grid gap-4 p-6 md:grid-cols-3">
                   {[
                     {
@@ -333,7 +333,7 @@ export default function PlanningAIPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.06 }}
               >
-                <Card className="overflow-hidden border-white/80 bg-white/88 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                <Card className="overflow-hidden border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                   <CardContent className="p-0">
                     <div className="flex aspect-[4/3] items-center justify-center border-b border-border bg-[linear-gradient(135deg,#eef2ff_0%,#f7fafc_50%,#edf7f1_100%)]">
                       <Grid3X3 className="h-10 w-10 text-slate-400" />

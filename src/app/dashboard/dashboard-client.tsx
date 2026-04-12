@@ -149,7 +149,7 @@ export function DashboardClient({
   ];
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(249,250,251,0.94)_100%)] p-6">
+    <div className="min-h-screen bg-background p-6">
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -195,7 +195,7 @@ export function DashboardClient({
           </div>
         </div>
 
-        <Card className="border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+        <Card className="border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Today at a glance</CardTitle>
           </CardHeader>
@@ -287,7 +287,7 @@ export function DashboardClient({
         ].map((card) => (
           <motion.div key={card.title} variants={itemVariants}>
             <Link href={card.href}>
-              <Card className="group cursor-pointer border-white/70 bg-white/85 transition-shadow hover:shadow-lg">
+              <Card className="group cursor-pointer border-border bg-card transition-shadow hover:shadow-md dark:hover:shadow-none dark:hover:border-foreground/20">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between">
                     <div className={`rounded-lg p-2 ${card.bg}`}>
@@ -313,7 +313,7 @@ export function DashboardClient({
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <Card className="border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+          <Card className="border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
               <CardTitle className="text-base">{t("dashboard.phase_distribution")}</CardTitle>
             </CardHeader>
@@ -363,7 +363,7 @@ export function DashboardClient({
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4 }}
         >
-          <Card className="h-full border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+          <Card className="h-full border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
               <CardTitle className="text-base">{t("dashboard.upcoming_agenda")}</CardTitle>
             </CardHeader>
@@ -406,7 +406,7 @@ export function DashboardClient({
         transition={{ delay: 0.42 }}
         className="mt-6"
       >
-        <Card className="border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+        <Card className="border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{t("dashboard.tasks_by_status")}</CardTitle>
           </CardHeader>
@@ -465,7 +465,7 @@ export function DashboardClient({
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
         >
-          <Card className="h-full border-white/70 bg-white/85 shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+          <Card className="h-full border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
               <CardTitle className="text-base">{t("dashboard.recent_activity")}</CardTitle>
             </CardHeader>
@@ -527,7 +527,7 @@ export function DashboardClient({
                 <motion.div
                   whileHover={{ scale: 1.02, y: -2 }}
                   whileTap={{ scale: 0.98 }}
-                  className={`cursor-pointer rounded-2xl border border-white/70 bg-gradient-to-br ${item.color} p-5 transition-shadow hover:shadow-lg`}
+                  className={`cursor-pointer rounded-2xl border border-border bg-gradient-to-br ${item.color} p-5 transition-shadow hover:shadow-lg`}
                 >
                   <div className="mb-2 flex items-center gap-3">
                     <item.icon className="h-5 w-5 text-foreground" />
