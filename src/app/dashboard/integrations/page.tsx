@@ -167,18 +167,7 @@ function IntegrationCard({ integration, onToggle }: {
         integration.comingSoon && "opacity-60"
       )}
     >
-      {integration.comingSoon && (
-        <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border uppercase tracking-wide">
-          Coming soon
-        </span>
-      )}
-      {integration.connected && !integration.comingSoon && (
-        <span className="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-          <Check className="w-2.5 h-2.5" /> Connected
-        </span>
-      )}
-
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         {/* Logo */}
         <div
           className="w-11 h-11 rounded-xl flex items-center justify-center text-white text-lg font-black shrink-0"
@@ -186,8 +175,20 @@ function IntegrationCard({ integration, onToggle }: {
         >
           {integration.logo}
         </div>
-        <div>
-          <h3 className="text-sm font-bold text-foreground">{integration.name}</h3>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-bold text-foreground">{integration.name}</h3>
+            {integration.comingSoon && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border uppercase tracking-wide shrink-0">
+                Soon
+              </span>
+            )}
+            {integration.connected && !integration.comingSoon && (
+              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shrink-0">
+                <Check className="w-2.5 h-2.5" /> Connected
+              </span>
+            )}
+          </div>
           <span className="text-[10px] text-muted-foreground capitalize">{integration.category}</span>
         </div>
       </div>
