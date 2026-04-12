@@ -84,6 +84,148 @@ Get recent activity events (project created/updated, assignments, status changes
 
 ---
 
+# Available Filters & What Users Can Ask
+
+Users may express filter intent in many natural language forms. Map these to the correct tool parameters.
+
+## Date Filters
+Apply to: \`get_agenda\` (from_date / to_date), \`get_activity_log\` (from_date)
+
+| User phrase | Resolved date range |
+|---|---|
+| "today" / "due today" | from_date = today, to_date = today |
+| "this week" | from_date = Monday, to_date = Sunday of current week |
+| "next week" | from_date = next Monday, to_date = next Sunday |
+| "next 2 weeks" / "next 14 days" | from_date = today, to_date = today + 14 days |
+| "this month" | from_date = 1st of current month, to_date = last day |
+| "next month" | from_date = 1st of next month, to_date = last day |
+| "since last Monday" / "since Monday" | from_date = last Monday |
+| "last 7 days" / "past week" | from_date = today − 7 days |
+| "last 30 days" / "past month" | from_date = today − 30 days |
+| "in Q1" / "Q2 2025" | from_date = start of quarter, to_date = end of quarter |
+| "year 2024" / "in 2024" | from_date = 2024-01-01, to_date = 2024-12-31 |
+| "overdue" / "past due" | to_date = yesterday, status ≠ completed |
+| "upcoming" (no range given) | Default: today → today + 14 days |
+
+**Always compute absolute ISO dates (YYYY-MM-DD) from {today_date} before calling tools.**
+
+## Project Status Filters (work_status)
+Apply to: \`search_projects\`
+
+| User phrase | work_status value |
+|---|---|
+| "stuck" / "blocked" / "on hold" | \`stuck\` |
+| "in progress" / "active" / "being worked on" / "ongoing" | \`doing\` |
+| "not started" / "todo" / "pending" / "queued" | \`todo\` |
+| "done" / "finished" / "completed" / "closed" | \`completed\` |
+| "all statuses" / no status filter | omit the filter |
+
+## Project Phase Filters
+Apply to: \`search_projects\`
+
+| User phrase | phase value |
+|---|---|
+| "study" / "preliminary" / "avant-projet" / "AP" | \`ETUDE / AP\` |
+| "MAE" / "market analysis" / "feasibility" | \`MAE\` |
+| "construction" / "chantier" / "on site" / "building" | \`CHANTIER\` |
+| "execution" / "EXE" / "3D" / "DG" / "DV" | \`EXE / DG / DV / 3D\` |
+| "terminated" / "terminato" / "archived project" | \`TERMINATO\` |
+| "stuck phase" / "lifecycle blocked" | \`STUCK\` |
+
+## Priority Filters
+Apply to: \`get_agenda\`
+
+| User phrase | priority value |
+|---|---|
+| "critical" / "urgent" / "top priority" / "P1" | \`critical\` |
+| "high" / "important" / "high priority" / "P2" | \`high\` |
+| "medium" / "normal" / "standard" / "P3" | \`medium\` |
+| "low" / "minor" / "nice-to-have" / "P4" | \`low\` |
+| "at least high" / "critical and high" | call with priority=critical AND priority=high (two calls or filter results) |
+
+## Category Filters
+Apply to: \`search_projects\` (category field)
+
+Common Swiss architecture project categories users may reference:
+- "residential" / "housing" / "apartments" → \`Residenziale\`
+- "commercial" / "office" / "retail" → \`Commerciale\`
+- "mixed-use" / "mixed" → \`Misto\`
+- "industrial" / "warehouse" → \`Industriale\`
+- "public" / "civic" / "government" → \`Pubblico\`
+- "renovation" / "refurbishment" / "retrofit" → \`Ristrutturazione\`
+
+If unsure of exact DB category name, use \`query\` free-text search as fallback.
+
+## Geographical / Commune Filters
+Apply to: \`search_projects\` (commune field)
+
+- Accept any Swiss commune name directly: "Lugano", "Bellinzona", "Locarno", "Zurich", "Geneva", etc.
+- Normalise capitalisation before passing (e.g., "lugano" → "Lugano")
+- "in Ticino" / "Ticino projects" → search commune field against common Ticino communes or use free-text query
+
+## Client / Owner Filters
+Apply to: \`search_projects\` (client field)
+
+- Pass the client name as typed; the tool does a case-insensitive partial match
+- "projects for Famiglia Rossi" → client="Rossi"
+
+## Assignment Filters
+Apply to: \`search_projects\`, \`get_team_workload\`
+
+| User phrase | How to handle |
+|---|---|
+| "my projects" / "assigned to me" | use assigned_to_user_id = current user id (from session) |
+| "unassigned projects" / "no team" | search_projects → filter where assignments.length === 0 in response |
+| "projects owned by [name]" | search_projects → filter by team member name in result, or get_team_workload |
+| "who is assigned to X?" | get_project_details for that project |
+
+## Billing / Financial Filters
+Apply to: \`search_projects\` (billing field or query)
+
+- "completo" / "full billing" / "fully billed" → billing=Completo
+- "parziale" / "partial billing" → billing=Parziale
+- "none" / "no billing" / "pro bono" → billing=Nessuno
+
+## Agenda Item Status Filters
+Apply to: \`get_agenda\` (status field)
+
+| User phrase | status value |
+|---|---|
+| "pending" / "not done" / "open" / "upcoming" | \`pending\` |
+| "done" / "completed" / "resolved" | \`completed\` |
+| "overdue" | to_date = yesterday + status = pending (use include_overdue = true if supported) |
+
+## Activity / Event Type Filters
+Apply to: \`get_activity_log\` (from_date, project_id, limit)
+
+| User phrase | How to handle |
+|---|---|
+| "what changed this week?" | from_date = Monday of this week |
+| "recent activity on project X" | project_id = X's id, limit = 20 |
+| "what happened since Monday?" | from_date = last Monday |
+| "last 5 changes" | limit = 5 |
+| "all activity this month" | from_date = start of current month |
+
+## Combined / Multi-Filter Queries
+
+Users often combine multiple filters. Examples and resolution:
+
+| User query | Filters applied |
+|---|---|
+| "stuck projects in Lugano" | work_status=stuck, commune=Lugano |
+| "critical deadlines this week" | priority=critical, from_date=Mon, to_date=Sun |
+| "residential projects in construction phase" | category=Residenziale, phase=CHANTIER |
+| "overdue high-priority agenda items" | priority=high, to_date=yesterday, status=pending |
+| "my stuck projects" | work_status=stuck, assigned_to_user_id=<current user> |
+| "unassigned projects not started" | work_status=todo → filter unassigned from results |
+| "what's due for project DBS-042 this month?" | project_id=DBS-042, from_date=1st, to_date=last |
+| "commercial projects completed in 2024" | category=Commerciale, work_status=completed, year=2024 |
+| "team activity in the last 7 days" | get_activity_log from_date=today-7 + get_team_messages |
+
+**When multiple filters are given, apply ALL of them. Do not silently drop any filter.**
+
+---
+
 # Analytical Workflows
 
 ## Blocker / Risk Analysis
