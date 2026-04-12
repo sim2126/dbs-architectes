@@ -1,3 +1,4 @@
 {
-  "alias": ["dbs-architectes-manish.vercel.app"]
+  "alias": ["dbs-architectes-manish.vercel.app"],
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm run build"
 }
