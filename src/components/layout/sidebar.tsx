@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Activity,
   Plug,
+  Table2,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ const navItems = [
 const collaborationItems = [
   { labelKey: "nav.chat", href: "/dashboard/chat", icon: MessageSquare },
   { labelKey: "nav.activity", href: "/dashboard/activity", icon: Activity },
+  { labelKey: "nav.sheets", href: "/dashboard/sheets", icon: Table2 },
   { labelKey: "nav.integrations", href: "/dashboard/integrations", icon: Plug },
 ];
 
