@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
-  Bot,
   Check,
   ChevronDown,
   ChevronRight,
@@ -25,11 +24,11 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+import { AriaLogo } from "@/components/aria-logo";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -248,8 +247,8 @@ function MessageBubble({
       animate={{ opacity: 1, y: 0 }}
       className="flex gap-3 justify-start"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-foreground text-background mt-1">
-        <Bot className="h-4 w-4" />
+      <div className="shrink-0 mt-1">
+        <AriaLogo variant="icon" size={36} />
       </div>
 
       <div className="flex-1 min-w-0 max-w-[90%] space-y-1">
@@ -684,8 +683,8 @@ export default function DBSGPTPage() {
           ) : messages.length === 0 ? (
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl px-6 py-10">
               <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#155e75_100%)] px-8 py-10 text-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
-                <Badge className="bg-white/12 text-[11px] text-white">Project Intelligence · Aria</Badge>
-                <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+                <AriaLogo variant="hero" size={56} />
+                <h2 className="mt-6 text-3xl font-semibold tracking-tight">
                   Ask anything about DBS projects, deadlines, team, or regulations.
                 </h2>
               </div>
