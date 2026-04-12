@@ -669,8 +669,6 @@ export default function DBSGPTPage() {
             {activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title ?? "Chat" : "DBS GPT — Aria"}
           </span>
           <div className="flex items-center gap-2">
-            <Badge variant="success" className="text-xs">Live</Badge>
-            <Badge variant="outline" className="text-xs">GPT-4o</Badge>
             {messages.length > 0 && (
               <Button variant="outline" size="sm" className="text-xs h-7" onClick={handleNew}>New chat</Button>
             )}
