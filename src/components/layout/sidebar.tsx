@@ -27,7 +27,6 @@ import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/command-palette";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import { useT } from "@/lib/translations";
 
 const navItems = [
@@ -243,21 +242,6 @@ export function Sidebar({ user }: SidebarProps) {
           </div>
         </div>
       </nav>
-
-      {/* Language switcher */}
-      <AnimatePresence>
-        {!collapsed && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="px-3 py-2 border-t border-border flex items-center justify-between"
-          >
-            <span className="text-xs text-muted-foreground">Language</span>
-            <LanguageSwitcher />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* User section */}
       <div className="px-3 py-3 border-t border-border">
