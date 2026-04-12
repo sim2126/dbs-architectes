@@ -18,6 +18,7 @@ import { AddProjectModal } from "@/components/projects/add-project-modal";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { useT } from "@/lib/translations";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Project {
@@ -65,10 +66,10 @@ interface ProjectsClientProps {
 // ─── Work Status Config — monday.com palette ─────────────────
 // Solid full-bleed colors, white text (just like monday.com)
 const WORK_STATUS = {
-  todo:      { label: "Not Started",   solid: "#c4c4cf", text: "#fff" },
-  doing:     { label: "Working on it", solid: "#fdab3d", text: "#fff" },
-  stuck:     { label: "Stuck",         solid: "#e2445c", text: "#fff" },
-  completed: { label: "Done",          solid: "#00c875", text: "#fff" },
+  todo:      { tKey: "status.not_started",   solid: "#c4c4cf", text: "#fff" },
+  doing:     { tKey: "status.working_on_it", solid: "#fdab3d", text: "#fff" },
+  stuck:     { tKey: "status.stuck",         solid: "#e2445c", text: "#fff" },
+  completed: { tKey: "status.done",          solid: "#00c875", text: "#fff" },
 } as const;
 
 // Legacy compat — some components still read .color / .bg
@@ -85,6 +86,7 @@ const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TER
 
 // ─── Main Component ───────────────────────────────────────────
 export function ProjectsClient({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
+  const t = useT();
   const [projects, setProjects] = useState(initialProjects);
   const [view, setView] = useState<"table" | "grid" | "kanban">("table");
   const [searchQuery, setSearchQuery] = useState("");
@@ -160,24 +162,24 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
           <div className="flex items-center gap-3 px-5 py-3">
             <div className="relative flex-1 max-w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input placeholder="Search projects..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-8 h-8 text-sm" />
+              <Input placeholder={t("projects.search")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-8 h-8 text-sm" />
             </div>
 
             {/* Filter chips */}
             <div className="flex items-center gap-1.5 flex-1 flex-wrap">
-              <FilterPopover label="Phase" options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
-              <FilterPopover label="Category" options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
-              <FilterSelect label="Client" value={filters.client} options={clients.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, client: v })} />
-              <FilterSelect label="Commune" value={filters.commune} options={communes.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, commune: v })} />
-              <FilterSelect label="Year" value={filters.year} options={years.map((y) => ({ value: String(y), label: String(y) }))} onChange={(v) => setFilters({ ...filters, year: v })} />
+              <FilterPopover label={t("projects.filter.phase")} options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
+              <FilterPopover label={t("projects.filter.category")} options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
+              <FilterSelect label={t("projects.filter.client")} value={filters.client} options={clients.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, client: v })} />
+              <FilterSelect label={t("projects.filter.commune")} value={filters.commune} options={communes.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, commune: v })} />
+              <FilterSelect label={t("projects.filter.year")} value={filters.year} options={years.map((y) => ({ value: String(y), label: String(y) }))} onChange={(v) => setFilters({ ...filters, year: v })} />
               {hasActiveFilters && (
                 <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0 ml-1">
-                  <X className="w-3 h-3" /> Clear
+                  <X className="w-3 h-3" /> {t("common.clear")}
                 </button>
               )}
             </div>
 
-            <span className="text-xs text-muted-foreground shrink-0">{filteredProjects.length} projects</span>
+            <span className="text-xs text-muted-foreground shrink-0">{filteredProjects.length} {t("projects.count")}</span>
 
             <div className="flex items-center gap-0.5 shrink-0">
               <button onClick={() => setView("table")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "table" && "bg-accent text-foreground")} title="Table">
@@ -193,7 +195,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
 
             {permissions.canCreate && (
               <Button onClick={() => setAddModalOpen(true)} size="sm" className="h-8 shrink-0">
-                <Plus className="w-3.5 h-3.5" /> Add Project
+                <Plus className="w-3.5 h-3.5" /> {t("projects.add")}
               </Button>
             )}
           </div>
@@ -272,24 +274,25 @@ function TableView({
   canDelete: boolean;
   currentUserId: string;
 }) {
+  const t = useT();
   return (
     <div className="min-w-[800px]">
       {/* Column headers */}
       <div className="sticky top-0 z-10 bg-background border-b border-border grid grid-cols-[24px_1fr_120px_130px_110px_100px_90px_70px] gap-0 px-4 py-2">
         <div />
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Project</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assignees</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Status</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Phase</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Category</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Billing</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.project")}</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.assignees")}</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.status")}</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.phase")}</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.category")}</div>
+        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.billing")}</div>
         <div />
       </div>
 
       {grouped.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center">
           <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">No projects found</p>
+          <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
         </div>
       ) : (
         grouped.map(({ phase, color, projects }) => {
@@ -338,6 +341,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
   onSelect: () => void; onUpdate: (p: Partial<Project>) => void;
   onDelete: (id: string) => void; canEdit: boolean; canDelete: boolean; currentUserId: string;
 }) {
+  const t = useT();
   const [showActions, setShowActions] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
@@ -449,7 +453,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
           style={{ background: ws.solid, color: ws.text }}
           disabled={updatingStatus}
         >
-          {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : ws.label}
+          {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : t(ws.tKey)}
         </button>
         <PortalDropdown coords={statusCoords} open={showStatusMenu}>
           <div
@@ -458,7 +462,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-3 py-2 border-b border-border">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Change status</span>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.change_status")}</span>
             </div>
             {WORK_STATUS_KEYS.map((key) => {
               const s = WORK_STATUS[key];
@@ -472,7 +476,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                   )}
                   style={{ background: s.solid }}
                 >
-                  {s.label}
+                  {t(s.tKey)}
                   {wsKey === key && <Check className="w-4 h-4 opacity-80" />}
                 </button>
               );
@@ -514,7 +518,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                 href={`/dashboard/projects/${project.id}`}
                 onClick={(e) => e.stopPropagation()}
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                title="Open full page"
+                title={t("projects.open_full")}
               >
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </Link>
@@ -522,7 +526,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                 <button
                   onClick={async (e) => {
                     e.stopPropagation();
-                    if (confirm("Delete this project?")) {
+                    if (confirm(t("common.confirm_delete"))) {
                       await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
                       onDelete(project.id);
                     }
@@ -549,6 +553,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
   canEdit: boolean;
   currentUserId: string;
 }) {
+  const t = useT();
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
@@ -600,14 +605,14 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
             {project.phase}
           </span>
           <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: ws.solid }}>
-            {ws.label}
+            {t(ws.tKey)}
           </span>
         </div>
 
         {/* Status selector (monday.com full-color buttons) */}
         {canUpdateStatus && (
           <div className="mt-3">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5">Update status</p>
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5">{t("projects.update_status")}</p>
             <div className="grid grid-cols-2 gap-1">
               {WORK_STATUS_KEYS.map((key) => {
                 const s = WORK_STATUS[key];
@@ -625,7 +630,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                   >
                     {isActive && updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                     {isActive && !updatingStatus ? <Check className="w-3 h-3" /> : null}
-                    {s.label}
+                    {t(s.tKey)}
                   </button>
                 );
               })}
@@ -639,10 +644,10 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         {/* Assignees */}
         <div className="px-5 py-4 border-b border-border">
           <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <Users className="w-3 h-3" /> Team ({project.assignments.length})
+            <Users className="w-3 h-3" /> {t("projects.team")} ({project.assignments.length})
           </p>
           {project.assignments.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No assignees</p>
+            <p className="text-xs text-muted-foreground">{t("projects.detail.no_assignees")}</p>
           ) : (
             <div className="space-y-2">
               {project.assignments.map((a) => (
@@ -668,14 +673,14 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         {/* Details */}
         <div className="px-5 py-4 border-b border-border space-y-3">
           <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
-            <FileText className="w-3 h-3" /> Details
+            <FileText className="w-3 h-3" /> {t("projects.details")}
           </p>
           {[
-            { icon: Tag, label: "Category", value: project.category },
-            { icon: MapPin, label: "Commune", value: project.commune },
-            { icon: Users, label: "Client", value: project.client },
-            { icon: Clock, label: "Year", value: project.year },
-            { icon: CreditCard, label: "Billing", value: project.billing },
+            { icon: Tag, label: t("projects.detail.category"), value: project.category },
+            { icon: MapPin, label: t("projects.detail.commune"), value: project.commune },
+            { icon: Users, label: t("projects.detail.client"), value: project.client },
+            { icon: Clock, label: t("projects.detail.year"), value: project.year },
+            { icon: CreditCard, label: t("projects.detail.billing"), value: project.billing },
           ].filter((r) => r.value).map((row) => (
             <div key={row.label} className="flex items-center gap-2.5">
               <row.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -688,7 +693,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         {/* Notes */}
         {project.notes && (
           <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">Notes</p>
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.notes")}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">{project.notes}</p>
           </div>
         )}
@@ -696,7 +701,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         {/* Description */}
         {project.description && (
           <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">Description</p>
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.description")}</p>
             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">{project.description}</p>
           </div>
         )}
@@ -706,12 +711,12 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
       <div className="px-5 py-3 border-t border-border bg-muted/20 flex gap-2">
         <Link href={`/dashboard/projects/${project.id}`} className="flex-1">
           <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">
-            <MessageSquare className="w-3.5 h-3.5" /> Open Thread
+            <MessageSquare className="w-3.5 h-3.5" /> {t("projects.open_thread")}
           </Button>
         </Link>
         <Link href={`/dashboard/projects/${project.id}`}>
           <Button size="sm" className="h-8 text-xs gap-1.5">
-            <ArrowUpRight className="w-3.5 h-3.5" /> Full Page
+            <ArrowUpRight className="w-3.5 h-3.5" /> {t("projects.full_page")}
           </Button>
         </Link>
       </div>
@@ -721,17 +726,19 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
 
 // ─── Empty State ──────────────────────────────────────────────
 function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
+  const t = useT();
   return (
     <div className="col-span-full flex flex-col items-center justify-center h-64 text-center">
       <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
-      <p className="text-sm text-muted-foreground">No projects found</p>
-      {hasFilters && <button onClick={onClear} className="text-xs text-foreground underline mt-2">Clear filters</button>}
+      <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
+      {hasFilters && <button onClick={onClear} className="text-xs text-foreground underline mt-2">{t("projects.clear_filters")}</button>}
     </div>
   );
 }
 
 // ─── Project Card (grid view) ─────────────────────────────────
 function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSelect: () => void; isSelected: boolean }) {
+  const t = useT();
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
   const ws = WORK_STATUS[wsKey];
@@ -757,7 +764,7 @@ function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSe
           {project.phase}
         </div>
         <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ws.solid }}>
-          {ws.label}
+          {t(ws.tKey)}
         </div>
         {project.assignments.length > 0 && (
           <div className="absolute bottom-2 right-2 flex -space-x-1">
@@ -888,6 +895,7 @@ function FilterPopover({ label, options, selected, onToggle }: {
 function FilterSelect({ label, value, options, onChange }: {
   label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -936,7 +944,7 @@ function FilterSelect({ label, value, options, onChange }: {
             <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", !isActive ? "bg-foreground border-foreground" : "border-border")}>
               {!isActive && <Check className="w-2.5 h-2.5 text-background" />}
             </div>
-            <span className="text-muted-foreground">All {label.toLowerCase()}s</span>
+            <span className="text-muted-foreground">{t("common.all")} {label}</span>
           </button>
           {options.map((opt) => (
             <button
@@ -963,6 +971,7 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
   projects: Project[]; canEdit: boolean;
   onUpdate: (p: Partial<Project>) => void; onSelect: (p: Project) => void;
 }) {
+  const t = useT();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overPhase, setOverPhase] = useState<string | null>(null);
   const byPhase = KANBAN_PHASES.reduce<Record<string, Project[]>>((acc, phase) => { acc[phase] = projects.filter((p) => p.phase === phase); return acc; }, {});
@@ -1014,7 +1023,7 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
                       <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
                       <p className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">{project.title.replace(project.code + " ", "")}</p>
                       <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white" style={{ background: ws.solid }}>{ws.label}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white" style={{ background: ws.solid }}>{t(ws.tKey)}</span>
                         <div className="flex -space-x-1">
                           {project.assignments.slice(0, 3).map((a) => (
                             <Avatar key={a.userId} className="h-5 w-5 border border-background">
@@ -1028,7 +1037,7 @@ function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
                 })}
               </AnimatePresence>
               {cols.length === 0 && !isOver && (
-                <div className="flex items-center justify-center h-16 text-xs text-muted-foreground/40 border-2 border-dashed border-border/40 rounded-lg">Drop here</div>
+                <div className="flex items-center justify-center h-16 text-xs text-muted-foreground/40 border-2 border-dashed border-border/40 rounded-lg">{t("projects.drop_here")}</div>
               )}
             </div>
           </div>

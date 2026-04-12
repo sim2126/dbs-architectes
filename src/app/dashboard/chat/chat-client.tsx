@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getPusherClient } from "@/lib/pusher-client";
 import { PUSHER_EVENTS } from "@/lib/pusher";
+import { useT } from "@/lib/translations";
 
 // ─── Types ───────────────────────────────────────────────────
 interface User {
@@ -95,6 +96,7 @@ function MessageItem({
   isThread?: boolean;
   isGrouped?: boolean;
 }) {
+  const t = useT();
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const isDeleted = !!message.deletedAt;
@@ -168,7 +170,7 @@ function MessageItem({
 
         {/* Text */}
         {isDeleted ? (
-          <p className="text-sm text-muted-foreground italic">This message was deleted.</p>
+          <p className="text-sm text-muted-foreground italic">{t("chat.message_deleted")}</p>
         ) : (
           <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
             {renderContent(message.content)}
@@ -270,7 +272,7 @@ function MessageItem({
               <button
                 onClick={() => onReply(message)}
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                title="Reply in thread"
+                title={t("chat.reply_thread")}
               >
                 <Reply className="w-3.5 h-3.5" />
               </button>
@@ -281,14 +283,14 @@ function MessageItem({
                 <button
                   onClick={() => onEdit(message)}
                   className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                  title="Edit message"
+                  title={t("chat.edit")}
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => onDelete(message.id)}
                   className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-muted-foreground hover:text-red-500"
-                  title="Delete message"
+                  title={t("chat.delete")}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -303,8 +305,9 @@ function MessageItem({
 
 // ─── Date Separator ───────────────────────────────────────────
 function DateSeparator({ date }: { date: string }) {
+  const t = useT();
   const d = new Date(date);
-  const label = isToday(d) ? "Today" : isYesterday(d) ? "Yesterday" : format(d, "MMMM d, yyyy");
+  const label = isToday(d) ? t("common.today") : isYesterday(d) ? t("common.yesterday") : format(d, "MMMM d, yyyy");
   return (
     <div className="flex items-center gap-3 px-4 my-4">
       <div className="flex-1 h-px bg-border" />
@@ -334,6 +337,7 @@ function MessageInput({
   onCancelEdit?: () => void;
   users?: { id: string; name?: string | null; initials?: string | null }[];
 }) {
+  const t = useT();
   const [value, setValue] = useState(editMessage?.content ?? "");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -493,19 +497,19 @@ function MessageInput({
           <div className="flex items-center gap-0.5">
             <button
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title="Attach file"
+              title={t("chat.attach")}
             >
               <Paperclip className="w-4 h-4" />
             </button>
             <button
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title="Add emoji"
+              title={t("chat.emoji")}
             >
               <Smile className="w-4 h-4" />
             </button>
             <button
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title="Mention someone"
+              title={t("chat.mention")}
               onClick={() => {
                 setValue((v) => v + "@");
                 textareaRef.current?.focus();
@@ -532,7 +536,7 @@ function MessageInput({
             )}
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-            {!loading && "Send"}
+            {!loading && t("chat.send")}
           </button>
         </div>
       </div>
@@ -542,6 +546,7 @@ function MessageInput({
 
 // ─── Main Component ───────────────────────────────────────────
 export function ChatClient({ initialChannels, users, currentUser }: ChatClientProps) {
+  const t = useT();
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(
     initialChannels.find((c) => c.name === "general")?.id ?? initialChannels[0]?.id ?? null
@@ -803,7 +808,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
         <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
           <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Channels
+              {t("chat.channels")}
             </span>
             <button
               onClick={() => setShowNewChannel(true)}
@@ -842,7 +847,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           {/* Direct Messages */}
           <div className="flex items-center justify-between px-2 py-1.5 mt-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Direct Messages
+              {t("chat.direct")}
             </span>
           </div>
 
@@ -1012,8 +1017,8 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-bold mb-1">No channel selected</h3>
-              <p className="text-sm text-muted-foreground">Choose a channel to start messaging</p>
+              <h3 className="font-bold mb-1">{t("chat.no_channel")}</h3>
+              <p className="text-sm text-muted-foreground">{t("chat.no_channel")}</p>
             </div>
           </div>
         )}
