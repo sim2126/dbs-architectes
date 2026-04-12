@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Activity,
   Plug,
+  Bot,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ const collaborationItems = [
 ];
 
 const aiItems = [
+  { labelKey: "nav.ai_agent", href: "/dashboard/ai/agent", icon: Bot },
   { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
   { labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image },
   { labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch },
