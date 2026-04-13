@@ -43,16 +43,16 @@ interface UsersClientProps {
 
 // ─── Role badge styling ───────────────────────────────────────
 const ROLE_STYLE: Record<string, string> = {
-  admin:           "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  director:        "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  manager:         "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  employee:        "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  intern:          "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  admin:           "bg-violet-600 text-white",
+  director:        "bg-blue-600 text-white",
+  manager:         "bg-teal-600 text-white",
+  employee:        "bg-slate-500 text-white",
+  intern:          "bg-amber-500 text-white",
   // legacy
-  super_admin:     "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-  project_manager: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-  viewer:          "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  collaborator:    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  super_admin:     "bg-violet-600 text-white",
+  project_manager: "bg-teal-600 text-white",
+  viewer:          "bg-slate-500 text-white",
+  collaborator:    "bg-indigo-500 text-white",
 };
 
 const COUNTRY_FLAG: Record<string, string> = { CH: "🇨🇭", IT: "🇮🇹", IN: "🇮🇳" };
