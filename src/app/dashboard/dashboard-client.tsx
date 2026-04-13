@@ -231,16 +231,16 @@ export function DashboardClient({
             <CardTitle className="text-base">Today at a glance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4 dark:border-blue-900/40 dark:bg-blue-950/20">
+            <div className="rounded-2xl bg-slate-900 p-4">
               <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-blue-600" />
-                <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">AI recommendations</p>
+                <Bot className="h-4 w-4 text-blue-400" />
+                <p className="text-sm font-semibold text-white">AI recommendations</p>
               </div>
               <div className="mt-3 space-y-2">
                 {aiActions.map((item) => (
                   <div key={item} className="flex items-start gap-2">
-                    <Sparkles className="mt-0.5 h-3.5 w-3.5 text-blue-500" />
-                    <p className="text-xs leading-6 text-blue-800 dark:text-blue-200">{item}</p>
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 text-blue-400 shrink-0" />
+                    <p className="text-xs leading-6 text-slate-300">{item}</p>
                   </div>
                 ))}
               </div>
