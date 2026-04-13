@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS } from "@/lib/utils";
+import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
 
 interface User {
   id: string;
@@ -58,6 +58,8 @@ export function AddProjectModal({
     roof: "",
     description: "",
     pageLink: "",
+    country: "",
+    operatingRegion: "",
   });
 
   const handleImageDrop = (e: React.DragEvent) => {
@@ -111,6 +113,8 @@ export function AddProjectModal({
           roof: "",
           description: "",
           pageLink: "",
+          country: "",
+          operatingRegion: "",
         });
         setImagePreview(null);
       }
@@ -314,6 +318,34 @@ export function AddProjectModal({
                   {ROOFS.map((r) => (
                     <SelectItem key={r} value={r}>{r}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Country + Region */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Country</Label>
+              <Select value={form.country || "_none"} onValueChange={(v) => setForm({ ...form, country: v === "_none" ? "" : v, operatingRegion: "" })}>
+                <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {COUNTRIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.flag} {c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Region</Label>
+              <Select
+                value={form.operatingRegion || "_none"}
+                onValueChange={(v) => setForm({ ...form, operatingRegion: v === "_none" ? "" : v })}
+                disabled={!form.country}
+              >
+                <SelectTrigger><SelectValue placeholder={form.country ? "Select region" : "Select country first"} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {(OPERATING_REGIONS[form.country] ?? []).map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

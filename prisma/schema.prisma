@@ -7,37 +7,51 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          String    @default("viewer")
-  initials      String?
-  phone         String?
-  department    String?
-  isActive      Boolean   @default(true)
-  canCreate     Boolean   @default(false)
-  canEdit       Boolean   @default(false)
-  canDelete     Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String?
+  email            String    @unique
+  emailVerified    DateTime?
+  image            String?
+  password         String?
+  // Roles: admin | director | manager | employee | intern
+  // Legacy compat: super_admin | project_manager | viewer | collaborator
+  role             String    @default("employee")
+  initials         String?
+  phone            String?
+  isActive         Boolean   @default(true)
+  canCreate        Boolean   @default(false)
+  canEdit          Boolean   @default(false)
+  canDelete        Boolean   @default(false)
+  // HR lifecycle
+  employmentStatus String    @default("active") // invited | active | on_leave | suspended | terminated
+  departmentId     String?
+  managerId        String?
+  defaultCountry   String?   // CH | IT | IN
+  defaultRegion    String?
+  deactivatedAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   accounts         Account[]
   sessions         Session[]
   projects         ProjectAssignment[]
   agendaItems      AgendaItem[]
   activities       Activity[]
-  channelsCreated  Channel[]         @relation("ChannelCreator")
+  channelsCreated  Channel[]           @relation("ChannelCreator")
   channelMembers   ChannelMember[]
   messages         Message[]
   messageReactions MessageReaction[]
-  callsStarted     Call[]            @relation("CallStarter")
+  callsStarted     Call[]              @relation("CallStarter")
   callParticipants CallParticipant[]
   googleCalToken   GoogleCalendarToken?
   aiChatSessions   AiChatSession[]
   sheets           Sheet[]
+  department       Department?         @relation(fields: [departmentId], references: [id])
+  manager          User?               @relation("UserManager", fields: [managerId], references: [id])
+  reports          User[]              @relation("UserManager")
+  regionAccess     UserRegionAccess[]
+  roleChangesFrom  RoleChangeLog[]     @relation("RoleChangeTarget")
+  roleChangesBy    RoleChangeLog[]     @relation("RoleChangeActor")
 }
 
 model Account {
@@ -75,28 +89,32 @@ model VerificationToken {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  title       String
-  category    String   @default("Residenziale")
-  phase       String   @default("ETUDE/AP")
-  client      String?
-  year        Int?
-  commune     String?
-  typology    String?
-  terrain     String?
-  roof        String?
-  description String?
-  pageLink    String?
-  image       String?
-  floors      Int?
-  area        Float?
-  status      String   @default("active")
-  workStatus  String   @default("todo")
-  billing     String?
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  code            String   @unique
+  title           String
+  category        String   @default("Residenziale")
+  phase           String   @default("ETUDE/AP")
+  client          String?
+  year            Int?
+  commune         String?
+  typology        String?
+  terrain         String?
+  roof            String?
+  description     String?
+  pageLink        String?
+  image           String?
+  floors          Int?
+  area            Float?
+  status          String   @default("active")
+  workStatus      String   @default("todo")
+  billing         String?
+  notes           String?
+  // Regional fields
+  country         String?  // CH | IT | IN
+  operatingRegion String?  // e.g. "Ticino", "Lombardia", "Maharashtra"
+  regionCode      String?  // e.g. "CH-TI", "IT-LOM", "IN-MH"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   assignments ProjectAssignment[]
   agendaItems AgendaItem[]
@@ -333,4 +351,42 @@ model GoogleCalendarToken {
   updatedAt    DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── ORGANISATION ─────────────────────────────────────────────
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  country     String?  // CH | IT | IN — primary country of the department
+  description String?
+  createdAt   DateTime @default(now())
+
+  users User[]
+}
+
+model UserRegionAccess {
+  id              String  @id @default(cuid())
+  userId          String
+  country         String  // CH | IT | IN
+  operatingRegion String? // specific sub-region (optional — null means whole country)
+  accessLevel     String  // view | manage
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, country, operatingRegion])
+}
+
+model RoleChangeLog {
+  id        String   @id @default(cuid())
+  userId    String   // the user whose role changed
+  changedBy String   // the admin who made the change
+  fromRole  String
+  toRole    String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user    User @relation("RoleChangeTarget", fields: [userId], references: [id], onDelete: Cascade)
+  actor   User @relation("RoleChangeActor", fields: [changedBy], references: [id])
 }

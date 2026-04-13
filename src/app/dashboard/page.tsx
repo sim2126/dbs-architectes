@@ -5,7 +5,7 @@ import { DashboardClient } from "./dashboard-client";
 export default async function DashboardPage() {
   const session = await auth();
 
-  const [projectCount, userCount, phaseStats, workStatusStats, recentActivity, upcomingAgenda] = await Promise.all([
+  const [projectCount, userCount, phaseStats, workStatusStats, recentActivity, upcomingAgenda, regionStats] = await Promise.all([
     prisma.project.count(),
     prisma.user.count({ where: { isActive: true } }),
     prisma.project.groupBy({
@@ -29,6 +29,11 @@ export default async function DashboardPage() {
       },
       orderBy: { date: "asc" },
       include: { project: true },
+    }),
+    prisma.project.groupBy({
+      by: ["country"],
+      _count: { country: true },
+      where: { country: { not: null } },
     }),
   ]);
 
@@ -73,6 +78,10 @@ export default async function DashboardPage() {
         workStatusStats: workStatusStats.map((s) => ({
           status: s.workStatus ?? "todo",
           count: s._count.workStatus,
+        })),
+        regionStats: regionStats.map((r) => ({
+          country: r.country ?? "Unknown",
+          count: r._count.country,
         })),
       }}
       recentActivity={recentActivity.map((a) => ({

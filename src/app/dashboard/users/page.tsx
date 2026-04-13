@@ -1,39 +1,48 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { isAdmin } from "@/lib/permissions";
 import { UsersClient } from "./users-client";
 
 export default async function UsersPage() {
   const session = await auth();
+  if (!session || !isAdmin(session.user.role)) redirect("/dashboard");
 
-  const isAdmin =
-    session?.user.role === "super_admin" || session?.user.role === "admin";
-  if (!isAdmin) redirect("/dashboard");
-
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "asc" },
-    include: {
-      _count: { select: { projects: true } },
-    },
-  });
+  const [users, departments] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      include: {
+        _count: { select: { projects: true } },
+        department: { select: { id: true, name: true, code: true } },
+        regionAccess: { select: { country: true, operatingRegion: true, accessLevel: true } },
+      },
+    }),
+    prisma.department.findMany({ orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <UsersClient
       users={users.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        initials: u.initials,
-        isActive: u.isActive,
-        canCreate: u.canCreate,
-        canEdit: u.canEdit,
-        canDelete: u.canDelete,
-        createdAt: u.createdAt.toISOString(),
-        projectCount: u._count.projects,
+        id:               u.id,
+        name:             u.name,
+        email:            u.email,
+        role:             u.role,
+        initials:         u.initials,
+        isActive:         u.isActive,
+        canCreate:        u.canCreate,
+        canEdit:          u.canEdit,
+        canDelete:        u.canDelete,
+        employmentStatus: u.employmentStatus,
+        defaultCountry:   u.defaultCountry,
+        defaultRegion:    u.defaultRegion,
+        departmentId:     u.departmentId,
+        createdAt:        u.createdAt.toISOString(),
+        projectCount:     u._count.projects,
+        department:       u.department,
+        regionAccess:     u.regionAccess,
       }))}
-      isSuperAdmin={session?.user.role === "super_admin"}
-      currentUserId={session!.user.id}
+      currentUserId={session.user.id}
+      departments={departments}
     />
   );
 }

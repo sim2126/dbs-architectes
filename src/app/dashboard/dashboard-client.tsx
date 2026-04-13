@@ -22,7 +22,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PHASE_COLORS } from "@/lib/utils";
+import { PHASE_COLORS, COUNTRIES } from "@/lib/utils";
 import { useT, translatePhase } from "@/lib/translations";
 
 interface DashboardClientProps {
@@ -36,6 +36,7 @@ interface DashboardClientProps {
     blockedProjects: number;
     phaseStats: { phase: string; count: number }[];
     workStatusStats: { status: string; count: number }[];
+    regionStats: { country: string; count: number }[];
   };
   recentActivity: Array<{
     id: string;
@@ -74,16 +75,46 @@ const ROLE_CONFIG: Record<
     badge: "default" | "info" | "success" | "warning" | "secondary" | "purple";
   }
 > = {
-  super_admin: {
-    label: "Executive Workspace",
-    summary: "Cross-team visibility, governance, and portfolio control.",
+  // New role set
+  admin: {
+    label: "Admin Workspace",
+    summary: "Full platform control — users, permissions, system settings, and all portfolio data.",
     icon: ShieldCheck,
     accent: "from-slate-950 via-slate-900 to-slate-800",
     badge: "default",
   },
-  admin: {
-    label: "Admin Workspace",
-    summary: "Operations oversight, permissions, and delivery health.",
+  director: {
+    label: "Director Workspace",
+    summary: "Cross-region visibility, analytics, staffing, and portfolio oversight.",
+    icon: TrendingUp,
+    accent: "from-blue-900 via-blue-800 to-indigo-800",
+    badge: "info",
+  },
+  manager: {
+    label: "Manager Workspace",
+    summary: "Your projects, team assignments, agenda, and delivery pacing.",
+    icon: TimerReset,
+    accent: "from-teal-800 via-teal-700 to-cyan-700",
+    badge: "success",
+  },
+  employee: {
+    label: "Workspace",
+    summary: "Your assigned projects, tasks, messages, and upcoming deadlines.",
+    icon: CheckCircle2,
+    accent: "from-violet-800 via-violet-700 to-indigo-700",
+    badge: "purple",
+  },
+  intern: {
+    label: "Workspace",
+    summary: "Your assigned projects and tasks for this period.",
+    icon: BarChart3,
+    accent: "from-slate-900 via-slate-800 to-slate-700",
+    badge: "secondary",
+  },
+  // Legacy aliases
+  super_admin: {
+    label: "Executive Workspace",
+    summary: "Cross-team visibility, governance, and portfolio control.",
     icon: ShieldCheck,
     accent: "from-slate-950 via-slate-900 to-slate-800",
     badge: "default",
@@ -306,6 +337,55 @@ export function DashboardClient({
           </motion.div>
         ))}
       </motion.div>
+
+      {/* ── Regional portfolio breakdown ── */}
+      {stats.regionStats.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28 }}
+          className="mt-6"
+        >
+          <Card className="border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                Regional Portfolio Overview
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {COUNTRIES.map((c) => {
+                  const stat = stats.regionStats.find((r) => r.country === c.value);
+                  const total = stats.projectCount || 1;
+                  const pct = stat ? Math.round((stat.count / total) * 100) : 0;
+                  return (
+                    <div key={c.value} className="rounded-2xl border border-border bg-muted/20 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">{c.flag}</span>
+                          <div>
+                            <p className="text-sm font-semibold">{c.label}</p>
+                            <p className="text-xs text-muted-foreground">{c.value}</p>
+                          </div>
+                        </div>
+                        <p className="text-3xl font-bold">{stat?.count ?? 0}</p>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">{pct}% of portfolio</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <motion.div

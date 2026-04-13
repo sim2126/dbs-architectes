@@ -40,6 +40,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           image: user.image,
+          employmentStatus: user.employmentStatus,
+          defaultCountry: user.defaultCountry,
+          defaultRegion: user.defaultRegion,
         };
       },
     }),
@@ -47,8 +50,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = (user as { role?: string }).role;
+        const u = user as { role?: string; employmentStatus?: string; defaultCountry?: string | null; defaultRegion?: string | null };
+        token.role = u.role;
         token.id = user.id;
+        token.employmentStatus = u.employmentStatus;
+        token.defaultCountry = u.defaultCountry ?? null;
+        token.defaultRegion = u.defaultRegion ?? null;
       }
       return token;
     },
@@ -56,6 +63,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
+        session.user.employmentStatus = (token.employmentStatus as string) ?? "active";
+        session.user.defaultCountry = (token.defaultCountry as string | null) ?? null;
+        session.user.defaultRegion = (token.defaultRegion as string | null) ?? null;
       }
       return session;
     },
@@ -65,6 +75,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 declare module "next-auth" {
   interface User {
     role?: string;
+    employmentStatus?: string;
+    defaultCountry?: string | null;
+    defaultRegion?: string | null;
   }
   interface Session {
     user: {
@@ -73,6 +86,9 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       role: string;
+      employmentStatus: string;
+      defaultCountry: string | null;
+      defaultRegion: string | null;
     };
   }
 }
