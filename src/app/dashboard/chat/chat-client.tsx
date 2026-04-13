@@ -348,7 +348,9 @@ function MessageInput({
     : [];
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (editMessage) setValue(editMessage.content);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     else setValue("");
     textareaRef.current?.focus();
   }, [editMessage, replyTo]);

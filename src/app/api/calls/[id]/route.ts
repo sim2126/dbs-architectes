@@ -30,10 +30,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   );
 
   await prisma.callParticipant.upsert({
-    where: { id: `${id}-${session.user.id}` },
+    where: { callId_userId: { callId: id, userId: session.user.id } },
     update: {},
     create: { callId: id, userId: session.user.id },
-  }).catch(() => {});
+  });
 
   return Response.json({ ...call, token });
 }

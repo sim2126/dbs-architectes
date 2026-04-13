@@ -24,6 +24,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!user || !user.password) return null;
 
+        // Reject deactivated accounts before even comparing the password
+        if (!user.isActive) return null;
+
         const isValid = await bcrypt.compare(
           credentials.password as string,
           user.password

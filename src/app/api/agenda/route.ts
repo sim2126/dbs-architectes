@@ -6,7 +6,29 @@ export async function GET() {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { id: userId, role } = session.user;
+  const isAdmin = role === "admin" || role === "super_admin";
+
+  // Admins see all items. Everyone else sees their own items plus items
+  // on projects they are assigned to (so they see their team's deadlines).
+  let where = {};
+  if (!isAdmin) {
+    const assignments = await prisma.projectAssignment.findMany({
+      where:  { userId },
+      select: { projectId: true },
+    });
+    const projectIds = assignments.map((a) => a.projectId);
+
+    where = {
+      OR: [
+        { userId },
+        { projectId: { in: projectIds } },
+      ],
+    };
+  }
+
   const items = await prisma.agendaItem.findMany({
+    where,
     orderBy: { date: "asc" },
     include: {
       project: { select: { id: true, title: true, code: true } },

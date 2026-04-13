@@ -25,6 +25,12 @@ export async function POST(request: NextRequest) {
 
     if (!item) return Response.json({ error: "Item not found" }, { status: 404 });
 
+    // Only the item owner (or admins) may sync it to their calendar
+    const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
+    if (item.userId !== session.user.id && !isAdmin) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const event = await createGoogleEvent(token.accessToken, token.refreshToken ?? undefined, {
       title: item.project ? `[${item.project.title}] ${item.title}` : item.title,
       description: item.description ?? undefined,
@@ -44,6 +50,11 @@ export async function POST(request: NextRequest) {
   if (action === "unsync") {
     const item = await prisma.agendaItem.findUnique({ where: { id: agendaItemId } });
     if (!item?.googleEventId) return Response.json({ success: true });
+
+    const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
+    if (item.userId !== session.user.id && !isAdmin) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     await deleteGoogleEvent(token.accessToken, token.refreshToken ?? undefined, item.googleEventId);
     await prisma.agendaItem.update({ where: { id: agendaItemId }, data: { googleEventId: null } });
