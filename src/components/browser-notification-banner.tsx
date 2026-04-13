@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,25 +11,8 @@ const PREF_KEY = "dbs-notif-pref"; // "granted" | "denied" | "deferred"
 export function BrowserNotificationBanner() {
   const [visible, setVisible] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-
-    const pref = localStorage.getItem(PREF_KEY);
-    // Show banner only if the browser permission is still "default" and user hasn't deferred
-    if (Notification.permission === "default" && pref !== "deferred" && pref !== "denied") {
-      // Small delay so it doesn't immediately pop on load
-      const t = setTimeout(() => setVisible(true), 2500);
-      return () => clearTimeout(t);
-    }
-
-    // If already granted, wire up Pusher listener for new messages
-    if (Notification.permission === "granted") {
-      subscribeToNotifications();
-    }
-  }, []);
-
-  const subscribeToNotifications = () => {
+  // Defined before the useEffect that calls it to satisfy no-use-before-define
+  const subscribeToNotifications = useCallback(() => {
     try {
       const client = getPusherClient();
       const channel = client.subscribe("private-global-notifications");
@@ -44,7 +27,22 @@ export function BrowserNotificationBanner() {
     } catch {
       // Pusher not configured — silent fail
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+
+    const pref = localStorage.getItem(PREF_KEY);
+    if (Notification.permission === "default" && pref !== "deferred" && pref !== "denied") {
+      const t = setTimeout(() => setVisible(true), 2500);
+      return () => clearTimeout(t);
+    }
+
+    if (Notification.permission === "granted") {
+      subscribeToNotifications();
+    }
+  }, [subscribeToNotifications]);
 
   const handleEnable = async () => {
     setVisible(false);

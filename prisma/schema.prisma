@@ -280,6 +280,8 @@ model CallParticipant {
 
   call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([callId, userId])
 }
 
 // ─── AI CHAT ─────────────────────────────────────────────────

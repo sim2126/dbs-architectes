@@ -120,7 +120,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@dbsarc.com"
+                    placeholder="you@dbsarc.com"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
@@ -173,17 +173,6 @@ export default function LoginPage() {
                 </Button>
               </form>
 
-              <div className="mt-6 rounded-[24px] border border-border bg-slate-50 p-5 dark:bg-slate-950/30">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Demo credentials</p>
-                <div className="mt-3 space-y-2 text-sm">
-                  <p>
-                    <span className="font-medium text-foreground">Email:</span> admin@dbsarc.com
-                  </p>
-                  <p>
-                    <span className="font-medium text-foreground">Password:</span> admin123
-                  </p>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </motion.div>
