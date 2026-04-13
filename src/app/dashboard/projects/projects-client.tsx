@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AddProjectModal } from "@/components/projects/add-project-modal";
-import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS } from "@/lib/utils";
+import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/lib/translations";
@@ -39,6 +39,9 @@ interface Project {
   workStatus: string;
   billing?: string | null;
   notes?: string | null;
+  country?: string | null;
+  operatingRegion?: string | null;
+  regionCode?: string | null;
   createdAt: string;
   updatedAt: string;
   assignments: Array<{
@@ -99,14 +102,21 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
     typologies: [] as string[],
     terrains: [] as string[],
     roofs: [] as string[],
+    countries: [] as string[],
     client: "all",
     year: "all",
     commune: "all",
+    region: "all",
   });
 
   const clients = Array.from(new Set(projects.map((p) => p.client).filter(Boolean)));
   const years = Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).sort((a, b) => (b || 0) - (a || 0));
   const communes = Array.from(new Set(projects.map((p) => p.commune).filter(Boolean))).sort();
+
+  // Available regions based on selected countries (for sub-region filter)
+  const availableRegions = filters.countries.length > 0
+    ? filters.countries.flatMap((c) => OPERATING_REGIONS[c] ?? [])
+    : Object.values(OPERATING_REGIONS).flat();
 
   const filteredProjects = projects.filter((p) => {
     const q = searchQuery.toLowerCase();
@@ -116,10 +126,12 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
     const matchesClient = filters.client === "all" || p.client === filters.client;
     const matchesYear = filters.year === "all" || String(p.year) === filters.year;
     const matchesCommune = filters.commune === "all" || p.commune === filters.commune;
-    return matchesSearch && matchesCategory && matchesPhase && matchesClient && matchesYear && matchesCommune;
+    const matchesCountry = filters.countries.length === 0 || (p.country != null && filters.countries.includes(p.country));
+    const matchesRegion = filters.region === "all" || p.operatingRegion === filters.region;
+    return matchesSearch && matchesCategory && matchesPhase && matchesClient && matchesYear && matchesCommune && matchesCountry && matchesRegion;
   });
 
-  const hasActiveFilters = filters.phases.length > 0 || filters.categories.length > 0 || filters.client !== "all" || filters.year !== "all" || filters.commune !== "all" || !!searchQuery;
+  const hasActiveFilters = filters.phases.length > 0 || filters.categories.length > 0 || filters.countries.length > 0 || filters.client !== "all" || filters.year !== "all" || filters.commune !== "all" || filters.region !== "all" || !!searchQuery;
 
   const toggleFilter = (key: keyof typeof filters, value: string) => {
     if (Array.isArray(filters[key])) {
@@ -129,7 +141,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
   };
 
   const clearFilters = () => {
-    setFilters({ phases: [], categories: [], typologies: [], terrains: [], roofs: [], client: "all", year: "all", commune: "all" });
+    setFilters({ phases: [], categories: [], typologies: [], terrains: [], roofs: [], countries: [], client: "all", year: "all", commune: "all", region: "all" });
     setSearchQuery("");
   };
 
@@ -169,6 +181,20 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
             <div className="flex items-center gap-1.5 flex-1 flex-wrap">
               <FilterPopover label={t("projects.filter.phase")} options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
               <FilterPopover label={t("projects.filter.category")} options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
+              <FilterPopover
+                label="Country"
+                options={COUNTRIES.map((c) => ({ value: c.value, label: `${c.flag} ${c.label}` }))}
+                selected={filters.countries}
+                onToggle={(v) => toggleFilter("countries", v)}
+              />
+              {filters.countries.length > 0 && (
+                <FilterSelect
+                  label="Region"
+                  value={filters.region}
+                  options={availableRegions.map((r) => ({ value: r.value, label: r.label }))}
+                  onChange={(v) => setFilters({ ...filters, region: v })}
+                />
+              )}
               <FilterSelect label={t("projects.filter.client")} value={filters.client} options={clients.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, client: v })} />
               <FilterSelect label={t("projects.filter.commune")} value={filters.commune} options={communes.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, commune: v })} />
               <FilterSelect label={t("projects.filter.year")} value={filters.year} options={years.map((y) => ({ value: String(y), label: String(y) }))} onChange={(v) => setFilters({ ...filters, year: v })} />
