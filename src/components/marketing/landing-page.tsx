@@ -407,15 +407,8 @@ export function LandingPage({ hasSession }: LandingPageProps) {
           <section className="rounded-[36px] border border-[#e7ebf1] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-8 shadow-[0_18px_50px_rgba(17,24,39,0.05)] sm:p-10">
             <div className="grid gap-8 lg:grid-cols-[1fr_0.9fr] lg:items-end">
               <div>
-                <Badge variant="warning" className="rounded-full px-3 py-1 text-[11px]">
-                  Demo narrative
-                </Badge>
-                <h2 className="mt-5 font-display text-4xl font-semibold tracking-[-0.03em] text-[#111827]">
-                  Designed to impress in a live client walkthrough.
-                </h2>
-                <p className="mt-4 max-w-2xl text-base leading-8 text-[#4b5563]">
-                  The homepage establishes credibility, the dashboard shows operational depth, and the AI layer makes the platform
-                  feel proprietary. That sequence is what turns a feature list into a convincing product story.
+                <p className="max-w-2xl text-base leading-8 text-[#4b5563]">
+                  Demo Only.(Static and Not Live For Use)
                 </p>
               </div>
 
