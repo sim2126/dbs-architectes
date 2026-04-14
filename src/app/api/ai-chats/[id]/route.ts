@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  AiArtifact,
+  parseStoredAssistantMessage,
+  PersistedToolStep,
+  serializeAssistantMessage,
+} from "@/lib/agent/artifacts";
 
 // GET /api/ai-chats/[id] — get messages for a session
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -18,7 +24,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!chatSession) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json(chatSession);
+  return NextResponse.json({
+    ...chatSession,
+    messages: chatSession.messages.map((message) => {
+      if (message.role !== "assistant") {
+        return {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          artifacts: [],
+          steps: [],
+        };
+      }
+
+      const parsed = parseStoredAssistantMessage(message.content);
+      return {
+        id: message.id,
+        role: message.role,
+        content: parsed.text,
+        artifacts: parsed.artifacts,
+        steps: parsed.steps,
+      };
+    }),
+  });
 }
 
 // PATCH /api/ai-chats/[id] — update session title
@@ -57,9 +85,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const { userContent, assistantContent, title } = await req.json() as {
+  const { userContent, assistantContent, assistantArtifacts, assistantSteps, title } = await req.json() as {
     userContent: string;
     assistantContent: string;
+    assistantArtifacts?: AiArtifact[];
+    assistantSteps?: PersistedToolStep[];
     title?: string;
   };
 
@@ -71,7 +101,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   await prisma.$transaction([
     prisma.aiChatMessage.create({ data: { sessionId: id, role: "user", content: userContent } }),
-    prisma.aiChatMessage.create({ data: { sessionId: id, role: "assistant", content: assistantContent } }),
+    prisma.aiChatMessage.create({
+      data: {
+        sessionId: id,
+        role: "assistant",
+        content: serializeAssistantMessage({
+          text: assistantContent,
+          artifacts: assistantArtifacts ?? [],
+          steps: assistantSteps ?? [],
+        }),
+      },
+    }),
     prisma.aiChatSession.update({
       where: { id },
       data: { updatedAt: new Date(), ...(title ? { title } : {}) },

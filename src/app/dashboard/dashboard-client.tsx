@@ -144,12 +144,12 @@ const ROLE_CONFIG: Record<
 
 function getPriorityTone(priority: string) {
   if (priority === "critical" || priority === "high") {
-    return "bg-red-50 text-red-600 dark:bg-red-950/20";
+    return "bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400";
   }
   if (priority === "medium") {
-    return "bg-amber-50 text-amber-600 dark:bg-amber-950/20";
+    return "bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400";
   }
-  return "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20";
+  return "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400";
 }
 
 export function DashboardClient({
@@ -231,7 +231,7 @@ export function DashboardClient({
             <CardTitle className="text-base">Today at a glance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl bg-slate-900 p-4">
+            <div className="rounded-2xl bg-slate-900 p-4 overflow-hidden">
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4 text-blue-400" />
                 <p className="text-sm font-semibold text-white">AI recommendations</p>
@@ -240,7 +240,7 @@ export function DashboardClient({
                 {aiActions.map((item) => (
                   <div key={item} className="flex items-start gap-2">
                     <Sparkles className="mt-0.5 h-3.5 w-3.5 text-blue-400 shrink-0" />
-                    <p className="text-xs leading-6 text-slate-300">{item}</p>
+                    <p className="text-xs leading-4 text-slate-300">{item}</p>
                   </div>
                 ))}
               </div>
@@ -285,8 +285,8 @@ export function DashboardClient({
             sub: `${stats.assignedCount} assigned, ${stats.unassignedCount} unassigned`,
             icon: FolderOpen,
             href: "/dashboard/projects",
-            color: "text-blue-600",
-            bg: "bg-blue-50 dark:bg-blue-950/20",
+            color: "text-blue-600 dark:text-blue-400",
+            bg: "bg-blue-50 dark:bg-blue-950/30",
           },
           {
             title: t("dashboard.active_team"),
@@ -294,8 +294,8 @@ export function DashboardClient({
             sub: t("dashboard.users_available"),
             icon: Users,
             href: "/dashboard/users",
-            color: "text-emerald-600",
-            bg: "bg-emerald-50 dark:bg-emerald-950/20",
+            color: "text-emerald-600 dark:text-emerald-400",
+            bg: "bg-emerald-50 dark:bg-emerald-950/30",
           },
           {
             title: t("dashboard.avg_load"),
@@ -303,8 +303,8 @@ export function DashboardClient({
             sub: t("dashboard.assigned_per_teammate"),
             icon: TrendingUp,
             href: "/dashboard/statistics",
-            color: "text-purple-600",
-            bg: "bg-purple-50 dark:bg-purple-950/20",
+            color: "text-purple-600 dark:text-purple-400",
+            bg: "bg-purple-50 dark:bg-purple-950/30",
           },
           {
             title: t("dashboard.blocked"),
@@ -312,8 +312,8 @@ export function DashboardClient({
             sub: t("dashboard.projects_stuck"),
             icon: AlertTriangle,
             href: "/dashboard/statistics",
-            color: "text-amber-600",
-            bg: "bg-amber-50 dark:bg-amber-950/20",
+            color: "text-amber-600 dark:text-amber-400",
+            bg: "bg-amber-50 dark:bg-amber-950/30",
           },
         ].map((card) => (
           <motion.div key={card.title} variants={itemVariants}>

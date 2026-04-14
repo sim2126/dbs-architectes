@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
+import { useSearchParams } from "next/navigation";
 import {
   Download,
   RefreshCw,
@@ -216,6 +217,7 @@ function EditableCell({
 // ─── Main page ─────────────────────────────────────────────────
 
 export default function SheetsPage() {
+  const searchParams = useSearchParams();
   const [activeView, setActiveView] = useState<ActiveView>("projects");
   const [projectRows, setProjectRows] = useState<ProjectRow[]>([]);
   const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
@@ -227,6 +229,7 @@ export default function SheetsPage() {
   const [dirtyProjectIds, setDirtyProjectIds] = useState<Set<string>>(new Set());
   const [newSheetName, setNewSheetName] = useState("");
   const [creatingSheet, setCreatingSheet] = useState(false);
+  const requestedSheetId = searchParams.get("sheet");
 
   // ── Load projects ──────────────────────────────────────────
 
@@ -323,6 +326,12 @@ export default function SheetsPage() {
     loadCustomSheets();
     loadProjects();
   }, [loadCustomSheets, loadProjects]);
+
+  useEffect(() => {
+    if (requestedSheetId) {
+      setActiveView(requestedSheetId);
+    }
+  }, [requestedSheetId]);
 
   useEffect(() => {
     if (activeView === "projects") loadProjects();
@@ -430,9 +439,19 @@ export default function SheetsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: activeCustomSheet.name, columns: activeCustomSheet.columns, rows: activeCustomSheet.rows }),
     });
+    setCustomSheets((prev) => prev.map((sheet) =>
+      sheet.id === activeCustomSheet.id ? { ...sheet, name: activeCustomSheet.name } : sheet
+    ));
     setSyncing(false);
     setSyncResult("Saved");
     setTimeout(() => setSyncResult(null), 3000);
+  };
+
+  const updateCustomSheetName = (value: string) => {
+    setActiveCustomSheet((prev) => prev ? { ...prev, name: value.slice(0, 100) } : prev);
+    setCustomSheets((prev) => prev.map((sheet) =>
+      sheet.id === activeCustomSheet?.id ? { ...sheet, name: value.slice(0, 100) } : sheet
+    ));
   };
 
   const addCustomRow = () => {
@@ -537,9 +556,18 @@ export default function SheetsPage() {
         {/* Toolbar */}
         <div className="shrink-0 border-b border-border bg-card/80 px-5 py-3 flex items-center gap-3">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold">
-              {activeView === "projects" ? "Projects Status" : activeView === "workload" ? "Team Workload" : (activeCustomSheet?.name ?? "Sheet")}
-            </h3>
+            {activeView === "projects" || activeView === "workload" ? (
+              <h3 className="text-sm font-semibold">
+                {activeView === "projects" ? "Projects Status" : "Team Workload"}
+              </h3>
+            ) : (
+              <input
+                value={activeCustomSheet?.name ?? ""}
+                onChange={(e) => updateCustomSheetName(e.target.value)}
+                placeholder="Sheet name"
+                className="w-full max-w-[320px] rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold outline-none transition-colors focus:border-border focus:bg-background"
+              />
+            )}
             <p className="text-[11px] text-muted-foreground">
               {activeView === "projects" ? `${projectRows.length} projects · ${dirtyProjectIds.size} unsaved changes` : activeView === "workload" ? `${teamRows.length} team members` : `${activeCustomSheet?.rows.length ?? 0} rows`}
             </p>
