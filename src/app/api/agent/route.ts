@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { auth } from "@/lib/auth";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
+import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -18,6 +19,16 @@ export async function POST(req: NextRequest) {
   const { messages } = await req.json() as {
     messages: OpenAI.Chat.ChatCompletionMessageParam[];
   };
+  const latestUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user" && message.content);
+  const latestUserPrompt = typeof latestUserMessage?.content === "string"
+    ? latestUserMessage.content
+    : Array.isArray(latestUserMessage?.content)
+    ? latestUserMessage.content
+        .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
+        .join(" ")
+    : "";
 
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT
     .replace("{today_date}", new Date().toISOString().split("T")[0])
@@ -130,6 +141,11 @@ export async function POST(req: NextRequest) {
                   result = await executeTool(tc.function.name, args);
                 } catch (err) {
                   result = { error: `Tool execution failed: ${String(err)}` };
+                }
+
+                const artifacts = buildArtifactsFromToolResult(tc.function.name, args, result, latestUserPrompt);
+                for (const artifact of artifacts) {
+                  send({ type: "artifact", artifact });
                 }
 
                 send({ type: "tool_result", name: tc.function.name });

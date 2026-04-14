@@ -173,6 +173,14 @@ export default function LoginPage() {
                 </Button>
               </form>
 
+              <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+                <p className="text-xs font-semibold text-blue-700 mb-1.5">Demo credentials</p>
+                <div className="space-y-0.5 font-mono text-xs text-blue-800">
+                  <p>Email: <span className="font-semibold">admin@dbsarc.com</span></p>
+                  <p>Password: <span className="font-semibold">admin123</span></p>
+                </div>
+              </div>
+
             </CardContent>
           </Card>
         </motion.div>

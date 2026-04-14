@@ -8,6 +8,8 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Download,
+  ExternalLink,
   Loader2,
   MessageSquarePlus,
   MoreHorizontal,
@@ -15,35 +17,34 @@ import {
   RotateCcw,
   Send,
   Sparkles,
+  Table2,
   Trash2,
   User,
-  Wrench,
-  X,
   CheckCircle2,
-  Circle,
 } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { AriaLogo } from "@/components/aria-logo";
+import {
+  AiArtifact,
+  generateSessionTitle,
+  PersistedToolStep,
+} from "@/lib/agent/artifacts";
 
 // ─── Types ────────────────────────────────────────────────────
 
-interface ToolStep {
-  name: string;
-  label: string;
-  args: Record<string, unknown>;
-  status: "running" | "done";
-}
+type ToolStep = PersistedToolStep;
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   steps?: ToolStep[];
+  artifacts?: AiArtifact[];
   isStreaming?: boolean;
 }
 
@@ -55,12 +56,13 @@ interface ChatSession {
 }
 
 interface SSEEvent {
-  type: "text" | "tool_start" | "tool_call" | "tool_result" | "done" | "error";
+  type: "text" | "tool_start" | "tool_call" | "tool_result" | "artifact" | "done" | "error";
   content?: string;
   tools?: string[];
   name?: string;
   args?: Record<string, unknown>;
   message?: string;
+  artifact?: AiArtifact;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -95,12 +97,6 @@ const TOOL_ICONS: Record<string, string> = {
   get_statistics: "📊",
   get_activity_log: "📝",
 };
-
-function generateTitle(content: string): string {
-  const words = content.trim().split(/\s+/);
-  const short = words.slice(0, 6).join(" ");
-  return short.length < content.trim().length ? short + "…" : short;
-}
 
 // Format args for display — hide nulls/empty, humanize keys
 function formatArgs(args: Record<string, unknown>): string | null {
@@ -206,12 +202,127 @@ function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?
 
 // ─── Message bubble ───────────────────────────────────────────
 
+function ArtifactTableCard({
+  artifact,
+  onExport,
+  onOpenSheet,
+}: {
+  artifact: AiArtifact;
+  onExport: (artifactId: string) => void;
+  onOpenSheet?: (sheetId: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const previewRows = open ? artifact.rows : artifact.rows.slice(0, 6);
+  const isExporting = "isExporting" in artifact && Boolean(artifact.isExporting);
+  const sheetId = "sheetId" in artifact && typeof artifact.sheetId === "string" ? artifact.sheetId : null;
+
+  return (
+    <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <Table2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{artifact.title}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {artifact.rowCount} row{artifact.rowCount === 1 ? "" : "s"}
+              {artifact.description ? ` · ${artifact.description}` : ""}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setOpen((value) => !value)}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            {open ? "Collapse" : "Preview"}
+          </button>
+
+          {sheetId && onOpenSheet ? (
+            <button
+              onClick={() => onOpenSheet(sheetId)}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Open In Sheets
+            </button>
+          ) : (
+            <button
+              onClick={() => onExport(artifact.id)}
+              disabled={isExporting}
+              className="inline-flex items-center gap-1 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isExporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Export To Sheets
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead className="bg-muted/70">
+            <tr>
+              {artifact.columns.map((column) => (
+                <th
+                  key={column}
+                  className="whitespace-nowrap border-b border-border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {previewRows.length > 0 ? (
+              previewRows.map((row, rowIndex) => (
+                <tr key={`${artifact.id}-${rowIndex}`} className="border-b border-border/50 hover:bg-accent/20">
+                  {artifact.columns.map((column) => (
+                    <td key={`${artifact.id}-${rowIndex}-${column}`} className="max-w-[220px] px-3 py-2 align-top text-foreground">
+                      <span className="block whitespace-pre-wrap break-words leading-5">
+                        {row[column] || "—"}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={artifact.columns.length} className="px-3 py-8 text-center text-xs text-muted-foreground">
+                  No rows returned for this view.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!open && artifact.rows.length > 6 && (
+        <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+          Showing 6 of {artifact.rowCount} row{artifact.rowCount === 1 ? "" : "s"}.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   onRetry,
+  onExportArtifact,
+  onOpenSheet,
 }: {
   message: ChatMessage;
   onRetry?: () => void;
+  onExportArtifact?: (artifactId: string) => void;
+  onOpenSheet?: (sheetId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -255,6 +366,19 @@ function MessageBubble({
         {/* Thinking / tool steps panel */}
         {((message.steps && message.steps.length > 0) || message.isStreaming) && (
           <ThinkingPanel steps={message.steps ?? []} isStreaming={message.isStreaming} />
+        )}
+
+        {message.artifacts && message.artifacts.length > 0 && (
+          <div className="space-y-3">
+            {message.artifacts.map((artifact) => (
+              <ArtifactTableCard
+                key={artifact.id}
+                artifact={artifact}
+                onExport={(artifactId) => onExportArtifact?.(artifactId)}
+                onOpenSheet={onOpenSheet}
+              />
+            ))}
+          </div>
         )}
 
         {/* Response text */}
@@ -433,7 +557,7 @@ function ChatHistorySidebar({
 // ─── Main page ────────────────────────────────────────────────
 
 export default function DBSGPTPage() {
-  const { data: userSession } = useSession();
+  const router = useRouter();
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -447,6 +571,8 @@ export default function DBSGPTPage() {
   const seqRef = useRef(0);
   const pendingUserContent = useRef("");
   const pendingAssistantContent = useRef("");
+  const pendingAssistantArtifacts = useRef<AiArtifact[]>([]);
+  const pendingAssistantSteps = useRef<ToolStep[]>([]);
 
   const makeId = (role: string) => `${role}-${++seqRef.current}`;
 
@@ -465,8 +591,14 @@ export default function DBSGPTPage() {
     setLoadingSession(true);
     fetch(`/api/ai-chats/${activeSessionId}`)
       .then((r) => r.json())
-      .then((d: { messages: { id: string; role: string; content: string }[] }) => {
-        setMessages((d.messages ?? []).map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
+      .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[] }[] }) => {
+        setMessages((d.messages ?? []).map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          artifacts: m.artifacts ?? [],
+          steps: m.steps ?? [],
+        })));
       })
       .catch(() => {})
       .finally(() => setLoadingSession(false));
@@ -496,12 +628,25 @@ export default function DBSGPTPage() {
     setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title } : s));
   }, []);
 
-  const saveMessages = useCallback(async (sessionId: string, userContent: string, assistantContent: string, isFirst: boolean) => {
-    const title = isFirst ? generateTitle(userContent) : undefined;
+  const saveMessages = useCallback(async (
+    sessionId: string,
+    userContent: string,
+    assistantContent: string,
+    assistantArtifacts: AiArtifact[],
+    assistantSteps: ToolStep[],
+    isFirst: boolean
+  ) => {
+    const title = isFirst ? generateSessionTitle(userContent) : undefined;
     await fetch(`/api/ai-chats/${sessionId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userContent, assistantContent, title }),
+      body: JSON.stringify({
+        userContent,
+        assistantContent,
+        assistantArtifacts,
+        assistantSteps,
+        title,
+      }),
     });
     setSessions((prev) => prev.map((s) => s.id === sessionId
       ? { ...s, updatedAt: new Date().toISOString(), ...(title ? { title } : {}) }
@@ -513,6 +658,64 @@ export default function DBSGPTPage() {
     msgs.filter((m) => !m.isStreaming).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     []
   );
+
+  const openSheet = useCallback((sheetId: string) => {
+    router.push(`/dashboard/sheets?sheet=${sheetId}`);
+  }, [router]);
+
+  const exportArtifactToSheets = useCallback(async (messageId: string, artifactId: string) => {
+    const targetMessage = messages.find((message) => message.id === messageId);
+    const artifact = targetMessage?.artifacts?.find((item) => item.id === artifactId);
+    if (!artifact) return;
+
+    setMessages((prev) => prev.map((message) => (
+      message.id !== messageId
+        ? message
+        : {
+            ...message,
+            artifacts: (message.artifacts ?? []).map((item) =>
+              item.id === artifactId ? { ...item, isExporting: true } : item
+            ),
+          }
+    )));
+
+    try {
+      const res = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: artifact.title,
+          columns: artifact.columns,
+          rows: artifact.rows,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created = await res.json() as { id: string };
+
+      setMessages((prev) => prev.map((message) => (
+        message.id !== messageId
+          ? message
+          : {
+              ...message,
+              artifacts: (message.artifacts ?? []).map((item) =>
+                item.id === artifactId ? { ...item, isExporting: false, sheetId: created.id } : item
+              ),
+            }
+      )));
+    } catch {
+      setMessages((prev) => prev.map((message) => (
+        message.id !== messageId
+          ? message
+          : {
+              ...message,
+              artifacts: (message.artifacts ?? []).map((item) =>
+                item.id === artifactId ? { ...item, isExporting: false } : item
+              ),
+            }
+      )));
+    }
+  }, [messages]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || loading) return;
@@ -530,6 +733,8 @@ export default function DBSGPTPage() {
     setLoading(true);
     pendingUserContent.current = content;
     pendingAssistantContent.current = "";
+    pendingAssistantArtifacts.current = [];
+    pendingAssistantSteps.current = [];
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
@@ -565,29 +770,49 @@ export default function DBSGPTPage() {
               pendingAssistantContent.current += event.content;
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: m.content + event.content, isStreaming: false }
+                  ? { ...m, content: m.content + event.content }
                   : m
               ));
             } else if (event.type === "tool_call" && event.name) {
               // Individual tool call starting — add as a running step
+              const nextStep: ToolStep = {
+                name: event.name,
+                label: TOOL_LABELS[event.name] ?? event.name,
+                args: event.args ?? {},
+                status: "running",
+              };
+              pendingAssistantSteps.current = [...pendingAssistantSteps.current, nextStep];
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
                       steps: [
                         ...(m.steps ?? []),
-                        {
-                          name: event.name!,
-                          label: TOOL_LABELS[event.name!] ?? event.name!,
-                          args: event.args ?? {},
-                          status: "running" as const,
-                        },
+                        nextStep,
                       ],
+                    }
+                  : m
+              ));
+            } else if (event.type === "artifact" && event.artifact) {
+              pendingAssistantArtifacts.current = [...pendingAssistantArtifacts.current, event.artifact];
+              setMessages((prev) => prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      artifacts: [...(m.artifacts ?? []), event.artifact as AiArtifact],
                     }
                   : m
               ));
             } else if (event.type === "tool_result" && event.name) {
               // Mark the first "running" step with this tool name as done
+              let markedRef = false;
+              pendingAssistantSteps.current = pendingAssistantSteps.current.map((step) => {
+                if (!markedRef && step.name === event.name && step.status === "running") {
+                  markedRef = true;
+                  return { ...step, status: "done" };
+                }
+                return step;
+              });
               setMessages((prev) => prev.map((m) => {
                 if (m.id !== assistantId) return m;
                 let marked = false;
@@ -615,8 +840,15 @@ export default function DBSGPTPage() {
         }
       }
 
-      if (sessionId && pendingAssistantContent.current) {
-        await saveMessages(sessionId, pendingUserContent.current, pendingAssistantContent.current, isFirst);
+      if (sessionId && (pendingAssistantContent.current || pendingAssistantArtifacts.current.length > 0)) {
+        await saveMessages(
+          sessionId,
+          pendingUserContent.current,
+          pendingAssistantContent.current,
+          pendingAssistantArtifacts.current,
+          pendingAssistantSteps.current,
+          isFirst
+        );
       }
     } catch (err) {
       setMessages((prev) => prev.map((m) =>
@@ -708,6 +940,8 @@ export default function DBSGPTPage() {
                   <MessageBubble
                     key={message.id}
                     message={message}
+                    onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
+                    onOpenSheet={openSheet}
                     onRetry={
                       message.role === "assistant" && idx === messages.length - 1 && lastUserMsg
                         ? () => { setMessages((prev) => prev.slice(0, -1)); sendMessage(lastUserMsg.content); }
