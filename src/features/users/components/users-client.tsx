@@ -268,7 +268,7 @@ export function UsersClient({ users: initialUsers, isSuperAdmin, currentUserId }
               <Label>Email</Label>
               <Input
                 type="email"
-                placeholder="email@dbsarc.com"
+                placeholder="email@friday.com"
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                 required

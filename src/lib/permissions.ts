@@ -1,5 +1,5 @@
 /**
- * DBS Architectes — Role & Permission Model
+ * Friday.com — Role & Permission Model
  *
  * permission = role capability + scope + region
  *

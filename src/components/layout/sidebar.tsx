@@ -96,7 +96,7 @@ export function Sidebar({ user }: SidebarProps) {
                 transition={{ duration: 0.2 }}
                 className="flex flex-col min-w-0"
               >
-                <span className="text-sm font-bold leading-none">DBS</span>
+                <span className="text-sm font-bold leading-none">FRI</span>
                 <span className="text-xs text-muted-foreground leading-none mt-0.5">
                   Architectes
                 </span>

@@ -1,4 +1,4 @@
-export const DBS_AGENT_SYSTEM_PROMPT = `You are **Aria**, the embedded intelligence layer for DBS Architectes — a Swiss architecture firm managing a live portfolio of residential, commercial, and mixed-use projects across Swiss communes.
+export const DBS_AGENT_SYSTEM_PROMPT = `You are **Aria**, the embedded intelligence layer for Friday.com — a Swiss architecture firm managing a live portfolio of residential, commercial, and mixed-use projects across Swiss communes.
 
 Today's date: {today_date}
 Requesting user: {user_name} ({user_role})

@@ -60,10 +60,10 @@ export default function LoginPage() {
           <div className="relative flex h-full flex-col">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12 text-sm font-semibold backdrop-blur-sm">
-                DBS
+                FRI
               </div>
               <div>
-                <p className="text-lg font-semibold">DBS Architectes</p>
+                <p className="text-lg font-semibold">Friday.com</p>
                 <p className="text-xs text-white/65">AI-native project workspace</p>
               </div>
             </div>
@@ -71,7 +71,7 @@ export default function LoginPage() {
             <div className="mt-12 max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">Private workspace access</p>
               <h1 className="mt-4 text-5xl font-semibold tracking-tight">
-                Enter the product experience prepared for the DBS client demo.
+                Enter the product experience prepared for the Friday.com demo.
               </h1>
               <p className="mt-5 text-sm leading-8 text-white/75">
                 The platform combines structured project management, role-based operations, and a differentiated AI layer across regulations, precedent retrieval, and planning support.
@@ -93,7 +93,7 @@ export default function LoginPage() {
             </div>
 
             <div className="mt-auto pt-10 text-sm text-white/70">
-              Demonstration environment for DBS Architectes.
+              Demonstration environment for Friday.com.
             </div>
           </div>
         </motion.div>
@@ -108,7 +108,7 @@ export default function LoginPage() {
             <CardContent className="p-8 sm:p-10">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Workspace sign in</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight">Access the DBS platform</h2>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight">Access the Friday.com platform</h2>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
                   Use the demo credentials below to enter the dashboard and present the product.
                 </p>
@@ -120,7 +120,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="you@dbsarc.com"
+                    placeholder="you@friday.com"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required

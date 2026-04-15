@@ -114,7 +114,7 @@ export function LandingPage({ hasSession }: LandingPageProps) {
               DBS
             </div>
             <div>
-              <p className="font-display text-lg font-semibold tracking-tight">DBS Architectes</p>
+              <p className="font-display text-lg font-semibold tracking-tight">Friday.com</p>
               <p className="text-xs text-muted-foreground">AI-native project workspace</p>
             </div>
           </Link>
@@ -137,7 +137,7 @@ export function LandingPage({ hasSession }: LandingPageProps) {
           <section className="grid gap-10 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
             <div className="max-w-3xl">
               <Badge className="mb-5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-[#1f2937] shadow-sm">
-                Built exclusively for DBS Architectes
+                Built exclusively for Friday.com
               </Badge>
               <h1 className="font-display text-5xl font-semibold tracking-[-0.04em] text-[#111827] sm:text-6xl lg:text-7xl">
                 A professional operating system for architecture delivery.
