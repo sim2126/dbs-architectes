@@ -113,16 +113,19 @@ model Project {
   country         String?  // CH | IT | IN
   operatingRegion String?  // e.g. "Ticino", "Lombardia", "Maharashtra"
   regionCode      String?  // e.g. "CH-TI", "IT-LOM", "IN-MH"
+  sourceSystem    String?
+  sourceId        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  assignments ProjectAssignment[]
-  agendaItems AgendaItem[]
-  gallery     GalleryImage[]
-  floorPlans  FloorPlan[]
-  activities  Activity[]
-  channels    Channel[]
-  calls       Call[]
+  assignments    ProjectAssignment[]
+  agendaItems    AgendaItem[]
+  gallery        GalleryImage[]
+  floorPlans     FloorPlan[]
+  activities     Activity[]
+  channels       Channel[]
+  calls          Call[]
+  importedAssets ImportedAsset[]
 }
 
 model ProjectAssignment {
@@ -151,6 +154,8 @@ model AgendaItem {
   color       String?
   allDay      Boolean   @default(false)
   googleEventId String?
+  sourceSystem String?
+  sourceId     String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   project     Project?  @relation(fields: [projectId], references: [id])
@@ -214,6 +219,8 @@ model Channel {
   type        String   @default("public") // public | private | direct
   projectId   String?
   createdBy   String
+  sourceSystem String?
+  sourceId     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -246,15 +253,19 @@ model Message {
   fileUrl   String?
   fileName  String?
   parentId  String?
+  sourceSystem String?
+  sourceId     String?
+  importedAt   DateTime?
   editedAt  DateTime?
   deletedAt DateTime?
   createdAt DateTime  @default(now())
 
-  channel   Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  user      User              @relation(fields: [userId], references: [id])
-  parent    Message?          @relation("MessageThread", fields: [parentId], references: [id])
-  replies   Message[]         @relation("MessageThread")
-  reactions MessageReaction[]
+  channel        Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id])
+  parent         Message?          @relation("MessageThread", fields: [parentId], references: [id])
+  replies        Message[]         @relation("MessageThread")
+  reactions      MessageReaction[]
+  importedAssets ImportedAsset[]
 }
 
 model MessageReaction {
@@ -326,6 +337,56 @@ model AiChatMessage {
 }
 
 // ─── SHEETS ──────────────────────────────────────────────────
+
+model ExternalImportRun {
+  id          String   @id @default(cuid())
+  source      String   // monday
+  status      String   // pending | running | completed | failed
+  triggeredBy String?
+  summary     String?
+  errorLog    String?
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  idMaps ExternalIdMap[]
+}
+
+model ExternalIdMap {
+  id          String   @id @default(cuid())
+  source      String   // monday
+  sourceType  String   // board | item | subitem | update | reply | asset | user
+  sourceId    String
+  targetType  String   // user | project | agenda_item | message | channel | asset
+  targetId    String
+  importRunId String?
+  createdAt   DateTime @default(now())
+
+  importRun ExternalImportRun? @relation(fields: [importRunId], references: [id], onDelete: SetNull)
+
+  @@unique([source, sourceType, sourceId])
+}
+
+model ImportedAsset {
+  id            String   @id @default(cuid())
+  source        String   // monday
+  sourceAssetId String
+  projectId     String?
+  messageId     String?
+  fileName      String?
+  originalUrl   String?
+  storedUrl     String?
+  mimeType      String?
+  sizeBytes     Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@unique([source, sourceAssetId])
+}
 
 model Sheet {
   id        String   @id @default(cuid())

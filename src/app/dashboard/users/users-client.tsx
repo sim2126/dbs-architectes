@@ -446,7 +446,7 @@ export function UsersClient({ users: initialUsers, currentUserId, departments }:
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
-              <Input type="email" placeholder="email@dbsarc.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required />
+              <Input type="email" placeholder="email@friday.com" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required />
             </div>
             <div className="space-y-1.5">
               <Label>Temporary Password</Label>

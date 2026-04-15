@@ -19,9 +19,9 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "DBS Architectes | AI-Native Project Workspace",
+  title: "Friday.com | AI-Native Project Workspace",
   description:
-    "A centralized project management and AI workflow platform built exclusively for DBS Architectes.",
+    "A centralized project management and AI workflow platform built exclusively for Friday.com.",
   icons: {
     icon: "/favicon.ico",
   },

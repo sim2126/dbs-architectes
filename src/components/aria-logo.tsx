@@ -163,7 +163,7 @@ export function AriaLogo({ variant = "icon", size, className }: AriaLogoProps) {
             className="text-muted-foreground tracking-widest uppercase mt-0.5"
             style={{ fontSize: iconSize * 0.24 }}
           >
-            by DBS Architectes
+            by Friday.com
           </span>
         </div>
       </div>
