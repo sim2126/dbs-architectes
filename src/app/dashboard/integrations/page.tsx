@@ -303,7 +303,7 @@ function IntegrationCard({ integration, onToggle }: {
       animate={{ opacity: 1, y: 0 }}
       className={cn(
         "relative flex flex-col gap-4 p-5 rounded-2xl border bg-card transition-all hover:shadow-md",
-        integration.connected && "border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-900/10",
+        integration.connected && "border-emerald-400 dark:border-emerald-700 bg-emerald-50/60 dark:bg-emerald-900/15",
         integration.comingSoon && "opacity-60"
       )}
     >
@@ -324,7 +324,7 @@ function IntegrationCard({ integration, onToggle }: {
               </span>
             )}
             {integration.connected && !integration.comingSoon && (
-              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shrink-0">
+              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shrink-0">
                 <Check className="w-2.5 h-2.5" /> {t("common.connected")}
               </span>
             )}
@@ -400,9 +400,9 @@ export default function IntegrationsPage() {
             </p>
           </div>
           {connectedCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
-              <Zap className="w-4 h-4 text-emerald-600" />
-              <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 rounded-xl">
+              <Zap className="w-4 h-4 text-white" />
+              <span className="text-sm font-semibold text-white">
                 {connectedCount} {t("integrations.active")}
               </span>
             </div>
