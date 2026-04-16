@@ -539,11 +539,12 @@ export function DashboardClient({
         </Card>
       </motion.div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
+          className="h-full"
         >
           <Card className="h-full border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
             <CardHeader>
@@ -577,47 +578,54 @@ export function DashboardClient({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
+          className="h-full"
         >
-          <h2 className="mb-3 text-base font-semibold">{t("dashboard.ai_workflow")}</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                href: "/dashboard/ai/gpt",
-                icon: Sparkles,
-                title: "DBS OPS MANUAL GPT",
-                desc: t("dashboard.gpt_desc"),
-                color: "from-blue-500/10 to-cyan-500/10",
-              },
-              {
-                href: "/dashboard/ai/gallery",
-                icon: Building2,
-                title: "Visual Gallery AI",
-                desc: t("dashboard.gallery_desc"),
-                color: "from-emerald-500/10 to-teal-500/10",
-              },
-              {
-                href: "/dashboard/ai/planning",
-                icon: FolderOpen,
-                title: "Planning AI",
-                desc: t("dashboard.planning_desc"),
-                color: "from-amber-500/10 to-orange-500/10",
-              },
-            ].map((item) => (
-              <Link key={item.href} href={item.href}>
-                <motion.div
-                  whileHover={{ scale: 1.02, y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  className={`cursor-pointer rounded-2xl border border-border bg-gradient-to-br ${item.color} p-5 transition-shadow hover:shadow-lg`}
-                >
-                  <div className="mb-2 flex items-center gap-3">
-                    <item.icon className="h-5 w-5 text-foreground" />
-                    <span className="text-sm font-semibold">{item.title}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
-                </motion.div>
-              </Link>
-            ))}
-          </div>
+          <Card className="h-full border-border bg-card shadow-[0_20px_60px_rgba(15,23,42,0.06)]">
+            <CardHeader>
+              <CardTitle className="text-base">{t("dashboard.ai_workflow")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    href: "/dashboard/ai/gpt",
+                    icon: Sparkles,
+                    title: "DBS OPS MANUAL GPT",
+                    desc: t("dashboard.gpt_desc"),
+                    color: "from-blue-500/10 to-cyan-500/10",
+                  },
+                  {
+                    href: "/dashboard/ai/gallery",
+                    icon: Building2,
+                    title: "Visual Gallery AI",
+                    desc: t("dashboard.gallery_desc"),
+                    color: "from-emerald-500/10 to-teal-500/10",
+                  },
+                  {
+                    href: "/dashboard/ai/planning",
+                    icon: FolderOpen,
+                    title: "Planning AI",
+                    desc: t("dashboard.planning_desc"),
+                    color: "from-amber-500/10 to-orange-500/10",
+                  },
+                ].map((item) => (
+                  <Link key={item.href} href={item.href}>
+                    <motion.div
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`cursor-pointer rounded-2xl border border-border bg-gradient-to-br ${item.color} p-4 transition-shadow hover:shadow-lg h-full`}
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        <item.icon className="h-4 w-4 shrink-0 text-foreground" />
+                        <span className="text-xs font-semibold leading-tight">{item.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+                    </motion.div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
       </div>
     </div>
