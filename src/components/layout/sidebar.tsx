@@ -111,7 +111,9 @@ export function Sidebar({ user }: SidebarProps) {
         <div className="space-y-0.5">
           {navItems.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive = item.href === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
                 key={item.href}
@@ -288,7 +290,7 @@ export function Sidebar({ user }: SidebarProps) {
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-20 z-10 flex items-center justify-center w-6 h-6 bg-background border border-border rounded-full shadow-sm hover:bg-accent transition-colors"
+        className="absolute -right-3.5 top-20 z-20 flex items-center justify-center w-7 h-7 bg-foreground text-background rounded-full shadow-lg hover:opacity-80 transition-opacity border-2 border-background"
       >
         {collapsed ? (
           <ChevronRight className="w-3 h-3" />

@@ -328,7 +328,7 @@ function TableView({
             <div key={phase}>
               {/* Group header */}
               <div
-                className="flex items-center gap-2 px-4 py-2 bg-muted/30 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors sticky top-[37px] z-[9]"
+                className="flex items-center gap-2 px-4 py-2 bg-muted/30 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onToggleGroup(phase)}
               >
                 <div className="w-1 h-4 rounded-full shrink-0" style={{ background: color }} />
