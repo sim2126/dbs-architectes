@@ -245,7 +245,12 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
             />
           )}
           {view === "grid" && (
-            <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className={cn(
+              "p-5 grid gap-4",
+              selectedProject
+                ? "grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
+                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+            )}>
               <AnimatePresence mode="popLayout">
                 {filteredProjects.map((project) => (
                   <ProjectCard key={project.id} project={project} onSelect={() => setSelectedProject(project)} isSelected={selectedProject?.id === project.id} />
