@@ -19,6 +19,7 @@ import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIE
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/lib/translations";
+import { useUserPrefs } from "@/lib/user-prefs-store";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Project {
@@ -91,7 +92,7 @@ const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TER
 export function ProjectsClient({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
   const t = useT();
   const [projects, setProjects] = useState(initialProjects);
-  const [view, setView] = useState<"table" | "grid" | "kanban">("table");
+  const { projectsView: view, setProjectsView: setView } = useUserPrefs();
   const [searchQuery, setSearchQuery] = useState("");
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);

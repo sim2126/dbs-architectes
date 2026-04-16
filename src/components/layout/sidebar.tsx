@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -29,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/command-palette";
 import { useT } from "@/lib/translations";
+import { useUserPrefs } from "@/lib/user-prefs-store";
 
 const navItems = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -61,7 +61,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ user }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } = useUserPrefs();
   const pathname = usePathname();
   const t = useT();
 
