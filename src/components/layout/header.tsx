@@ -183,7 +183,7 @@ export function Header({ title }: { title?: string }) {
     (activeTab === "all" && (loadingActivities || loadingMentions));
 
   return (
-    <header className="h-14 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-30 flex items-center justify-between px-4 gap-3">
+    <header className="h-14 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-5 gap-3 shrink-0">
       {title && (
         <h1 className="text-base font-semibold text-foreground shrink-0">{title}</h1>
       )}
