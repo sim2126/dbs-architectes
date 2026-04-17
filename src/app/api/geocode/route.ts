@@ -23,6 +23,9 @@ export async function POST(request: NextRequest) {
       }>;
     };
 
+    if (data.status === "REQUEST_DENIED") {
+      return Response.json({ error: "Geocoding API not enabled — enable it in Google Cloud Console" }, { status: 503 });
+    }
     if (data.status !== "OK" || !data.results?.[0]) {
       return Response.json({ error: "Address not found" }, { status: 404 });
     }
