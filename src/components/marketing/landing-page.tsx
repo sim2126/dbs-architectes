@@ -232,7 +232,7 @@ export function LandingPage({ hasSession }: LandingPageProps) {
                           </div>
                           <Badge className="rounded-full bg-white/10 text-[10px] text-white">Today</Badge>
                         </div>
-                        <p className="mt-4 text-2xl font-semibold leading-tight">
+                        <p className="mt-4 text-base font-semibold leading-snug">
                           3 deadlines require attention and 2 precedent matches are ready for review.
                         </p>
                         <div className="mt-5 grid gap-3 sm:grid-cols-2">
