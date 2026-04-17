@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ProjectsView = "table" | "grid" | "kanban";
+export type ProjectsView = "table" | "grid" | "kanban" | "map";
 export type DensityMode = "compact" | "default" | "comfortable";
 
 interface UserPrefs {

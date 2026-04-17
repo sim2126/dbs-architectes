@@ -8,7 +8,9 @@ import {
   LayoutTemplate, Check, GripVertical, ChevronRight, Users,
   MapPin, Tag, CreditCard, FileText, Clock, ArrowUpRight,
   Circle, Loader2, MessageSquare, MoreHorizontal, Trash2,
+  Globe, Navigation,
 } from "lucide-react";
+import { ProjectsMapView } from "@/components/projects/projects-map";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +45,9 @@ interface Project {
   country?: string | null;
   operatingRegion?: string | null;
   regionCode?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   createdAt: string;
   updatedAt: string;
   assignments: Array<{
@@ -97,6 +102,18 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [focusProjectId, setFocusProjectId] = useState<string | null>(null);
+
+  // Read ?view=map&project=<id> from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "map") {
+      setView("map");
+      const pid = params.get("project");
+      if (pid) setFocusProjectId(pid);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filters, setFilters] = useState({
     phases: [] as string[],
     categories: [] as string[],
@@ -191,6 +208,9 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
               <button onClick={() => setView("kanban")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "kanban" && "bg-accent text-foreground")} title="Kanban">
                 <LayoutTemplate className="w-4 h-4" />
               </button>
+              <button onClick={() => setView("map")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "map" && "bg-accent text-foreground")} title="Map">
+                <Globe className="w-4 h-4" />
+              </button>
             </div>
 
             {permissions.canCreate && (
@@ -264,6 +284,21 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
             <div className="p-5">
               <KanbanBoard projects={filteredProjects} canEdit={permissions.canEdit} onUpdate={updateProject} onSelect={setSelectedProject} />
             </div>
+          )}
+          {view === "map" && (
+            <ProjectsMapView
+              projects={filteredProjects}
+              canEdit={permissions.canEdit}
+              focusProjectId={focusProjectId}
+              onUpdateLocation={async (id, lat, lng, address) => {
+                await fetch(`/api/projects/${id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ latitude: lat, longitude: lng, address }),
+                });
+                updateProject({ id, latitude: lat, longitude: lng, address });
+              }}
+            />
           )}
         </div>
       </div>
@@ -589,6 +624,52 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
 }) {
   const t = useT();
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [addressInput, setAddressInput] = useState(project.address || project.commune || "");
+  const [geocoding, setGeocoding] = useState(false);
+  const [geoError, setGeoError] = useState("");
+  const [locationEditing, setLocationEditing] = useState(false);
+  const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+
+  const geocodeAndSave = async () => {
+    if (!addressInput.trim() || !API_KEY) return;
+    setGeocoding(true);
+    setGeoError("");
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressInput)}&key=${API_KEY}`
+      );
+      const data = await res.json() as {
+        status: string;
+        results: Array<{ geometry: { location: { lat: number; lng: number } }; formatted_address: string }>;
+      };
+      if (data.status !== "OK" || !data.results[0]) {
+        setGeoError("Address not found. Try a more specific location.");
+        return;
+      }
+      const { lat, lng } = data.results[0].geometry.location;
+      const formatted = data.results[0].formatted_address;
+      await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: lat, longitude: lng, address: formatted }),
+      });
+      onUpdate({ id: project.id, latitude: lat, longitude: lng, address: formatted });
+      setLocationEditing(false);
+    } catch {
+      setGeoError("Geocoding failed. Check your API key.");
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  const removeLocation = async () => {
+    await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ latitude: null, longitude: null, address: null }),
+    });
+    onUpdate({ id: project.id, latitude: null, longitude: null, address: null });
+  };
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
   const ws = WORK_STATUS[wsKey];
@@ -722,6 +803,101 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
               <span className="text-xs font-medium truncate">{String(row.value)}</span>
             </div>
           ))}
+        </div>
+
+        {/* Location */}
+        <div className="px-5 py-4 border-b border-border">
+          <div className="flex items-center justify-between mb-2.5">
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <Globe className="w-3 h-3" /> Location
+            </p>
+            {project.latitude != null && canEdit && !locationEditing && (
+              <button
+                onClick={() => setLocationEditing(true)}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+
+          {project.latitude != null && project.longitude != null && !locationEditing ? (
+            <div className="space-y-2">
+              {project.address && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-snug">{project.address}</p>
+                </div>
+              )}
+              <p className="text-[10px] font-mono text-muted-foreground/60">
+                {project.latitude.toFixed(5)}, {project.longitude.toFixed(5)}
+              </p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => window.open(`https://earth.google.com/web/@${project.latitude},${project.longitude},0a,800d,35y,0h,0t,0r`, "_blank")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
+                >
+                  <Globe className="w-3 h-3" /> Google Earth
+                </button>
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/dashboard/projects?view=map&project=${project.id}`;
+                    navigator.clipboard.writeText(url);
+                  }}
+                  title="Copy map link"
+                  className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs transition-colors flex items-center gap-1"
+                >
+                  <Navigation className="w-3 h-3" /> Share
+                </button>
+                {canEdit && (
+                  <button
+                    onClick={removeLocation}
+                    className="px-2.5 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-xs transition-colors"
+                    title="Remove pin"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : canEdit ? (
+            <div className="space-y-2">
+              <input
+                value={addressInput}
+                onChange={(e) => setAddressInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && geocodeAndSave()}
+                placeholder={API_KEY ? "Address or place name…" : "API key required"}
+                disabled={!API_KEY}
+                className="w-full h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30 disabled:opacity-50"
+              />
+              {geoError && <p className="text-[10px] text-red-500">{geoError}</p>}
+              {!API_KEY && (
+                <p className="text-[10px] text-muted-foreground">
+                  Add <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to enable geocoding.
+                </p>
+              )}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={geocodeAndSave}
+                  disabled={geocoding || !addressInput.trim() || !API_KEY}
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium disabled:opacity-50 transition-colors"
+                >
+                  {geocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />}
+                  {geocoding ? "Pinning…" : "Pin on map"}
+                </button>
+                {locationEditing && (
+                  <button
+                    onClick={() => { setLocationEditing(false); setGeoError(""); }}
+                    className="px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No location set.</p>
+          )}
         </div>
 
         {/* Notes */}

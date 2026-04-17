@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
       country:         body.country         || null,
       operatingRegion: body.operatingRegion || null,
       regionCode:      body.regionCode      || null,
+      address:         body.address         || null,
+      latitude:        body.latitude        != null ? parseFloat(body.latitude) : null,
+      longitude:       body.longitude       != null ? parseFloat(body.longitude) : null,
     },
     include: {
       assignments: {
