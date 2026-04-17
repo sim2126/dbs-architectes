@@ -87,9 +87,16 @@ export function Sidebar({ user }: SidebarProps) {
           {/* ── Logo — height matches the top header (h-14 = 56px) ── */}
           <div className="flex items-center h-14 px-4 border-b border-border shrink-0">
             <Link href="/dashboard" className="flex items-center gap-3 min-w-0">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 bg-gradient-to-br from-slate-900 to-slate-700 dark:from-white dark:to-slate-200">
-                <span className="text-white dark:text-slate-900 font-bold text-sm leading-none">[</span>
-              </div>
+              {/* DBS | Friday logo mark — Logo 2 */}
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 shrink-0">
+                {/* Square frame */}
+                <rect x="2" y="2" width="28" height="28" stroke="currentColor" strokeWidth="2.8" className="text-foreground"/>
+                {/* Gold corner accents — top-right and bottom-left */}
+                <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e"/>
+                <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e"/>
+                {/* DBS monogram */}
+                <text x="16" y="20.5" textAnchor="middle" fontSize="9.5" fontWeight="800" fill="currentColor" fontFamily="system-ui, -apple-system, sans-serif" className="text-foreground">DBS</text>
+              </svg>
               <AnimatePresence>
                 {!collapsed && (
                   <motion.div
@@ -99,9 +106,9 @@ export function Sidebar({ user }: SidebarProps) {
                     transition={{ duration: 0.18 }}
                     className="flex flex-col min-w-0"
                   >
-                    <span className="text-sm font-bold leading-none tracking-tight">FRI</span>
-                    <span className="text-[11px] text-muted-foreground leading-none mt-0.5">
-                      Architectes
+                    <span className="text-sm font-bold leading-none tracking-tight">DBS</span>
+                    <span className="text-[11px] text-muted-foreground leading-none mt-0.5 tracking-wide">
+                      Friday
                     </span>
                   </motion.div>
                 )}
