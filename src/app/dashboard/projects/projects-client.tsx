@@ -628,35 +628,31 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
   const [geocoding, setGeocoding] = useState(false);
   const [geoError, setGeoError] = useState("");
   const [locationEditing, setLocationEditing] = useState(false);
-  const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
   const geocodeAndSave = async () => {
-    if (!addressInput.trim() || !API_KEY) return;
+    if (!addressInput.trim()) return;
     setGeocoding(true);
     setGeoError("");
     try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressInput)}&key=${API_KEY}`
-      );
-      const data = await res.json() as {
-        status: string;
-        results: Array<{ geometry: { location: { lat: number; lng: number } }; formatted_address: string }>;
-      };
-      if (data.status !== "OK" || !data.results[0]) {
+      const res = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addressInput }),
+      });
+      const data = await res.json() as { lat?: number; lng?: number; formatted?: string; error?: string };
+      if (!res.ok || data.error || data.lat == null) {
         setGeoError("Address not found. Try a more specific location.");
         return;
       }
-      const { lat, lng } = data.results[0].geometry.location;
-      const formatted = data.results[0].formatted_address;
       await fetch(`/api/projects/${project.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: lat, longitude: lng, address: formatted }),
+        body: JSON.stringify({ latitude: data.lat, longitude: data.lng, address: data.formatted }),
       });
-      onUpdate({ id: project.id, latitude: lat, longitude: lng, address: formatted });
+      onUpdate({ id: project.id, latitude: data.lat, longitude: data.lng, address: data.formatted });
       setLocationEditing(false);
     } catch {
-      setGeoError("Geocoding failed. Check your API key.");
+      setGeoError("Geocoding failed. Please try again.");
     } finally {
       setGeocoding(false);
     }
@@ -866,20 +862,14 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                 value={addressInput}
                 onChange={(e) => setAddressInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && geocodeAndSave()}
-                placeholder={API_KEY ? "Address or place name…" : "API key required"}
-                disabled={!API_KEY}
-                className="w-full h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30 disabled:opacity-50"
+                placeholder="Address or place name…"
+                className="w-full h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30"
               />
               {geoError && <p className="text-[10px] text-red-500">{geoError}</p>}
-              {!API_KEY && (
-                <p className="text-[10px] text-muted-foreground">
-                  Add <code className="font-mono bg-muted px-1 rounded">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to enable geocoding.
-                </p>
-              )}
               <div className="flex gap-1.5">
                 <button
                   onClick={geocodeAndSave}
-                  disabled={geocoding || !addressInput.trim() || !API_KEY}
+                  disabled={geocoding || !addressInput.trim()}
                   className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium disabled:opacity-50 transition-colors"
                 >
                   {geocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />}
