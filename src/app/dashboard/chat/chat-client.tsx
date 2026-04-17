@@ -6,8 +6,9 @@ import {
   Hash, Plus, Send, Smile, Paperclip, Search, Settings,
   MoreHorizontal, Reply, Edit2, Trash2, MessageSquare,
   Users, X, Video, Phone,
-  AtSign, Loader2, Lock, UserPlus, BookUser,
+  AtSign, Loader2, Lock, UserPlus, BookUser, Languages,
 } from "lucide-react";
+import { useLanguageStore } from "@/lib/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,10 +98,31 @@ function MessageItem({
   isGrouped?: boolean;
 }) {
   const t = useT();
+  const { translationLang } = useLanguageStore();
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [translated, setTranslated] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
   const isDeleted = !!message.deletedAt;
   const isOwn = message.userId === currentUserId;
+
+  const handleTranslate = async () => {
+    if (translated) { setShowTranslation((v) => !v); return; }
+    setTranslating(true);
+    setShowTranslation(true);
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: message.content, targetLang: translationLang }),
+      });
+      const data = await res.json() as { translated?: string };
+      if (data.translated) setTranslated(data.translated);
+    } finally {
+      setTranslating(false);
+    }
+  };
 
   const groupedReactions = message.reactions.reduce<Record<string, Reaction[]>>((acc, r) => {
     if (!acc[r.emoji]) acc[r.emoji] = [];
@@ -172,9 +194,37 @@ function MessageItem({
         {isDeleted ? (
           <p className="text-sm text-muted-foreground italic">{t("chat.message_deleted")}</p>
         ) : (
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
-            {renderContent(message.content)}
-          </p>
+          <>
+            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+              {renderContent(message.content)}
+            </p>
+
+            {/* Inline translation block */}
+            {translating && (
+              <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" /> Translating…
+              </div>
+            )}
+            {showTranslation && translated && (
+              <div className="mt-2 rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-950/20 px-3 py-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Languages className="w-3 h-3 text-blue-500 shrink-0" />
+                    <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
+                      Translated · {translationLang.toUpperCase()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowTranslation(false)}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <p className="text-sm text-foreground/85 leading-relaxed whitespace-pre-wrap">{translated}</p>
+              </div>
+            )}
+          </>
         )}
 
         {/* Reactions */}
@@ -267,6 +317,20 @@ function MessageItem({
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Translate */}
+            <button
+              onClick={handleTranslate}
+              className={cn(
+                "p-1.5 rounded-lg transition-colors",
+                showTranslation && translated
+                  ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
+              )}
+              title={showTranslation && translated ? "Hide translation" : `Translate to ${translationLang.toUpperCase()}`}
+            >
+              <Languages className="w-3.5 h-3.5" />
+            </button>
 
             {!isThread && (
               <button
