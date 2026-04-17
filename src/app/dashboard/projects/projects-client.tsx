@@ -167,7 +167,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
   })).filter((g) => g.projects.length > 0);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background">
       {/* ── Main area ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
@@ -608,7 +608,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: "100%", opacity: 0 }}
       transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="w-[400px] shrink-0 border-l border-border flex flex-col bg-background overflow-hidden"
+      className="w-[400px] shrink-0 border-l border-border flex flex-col bg-background overflow-hidden h-full"
     >
       {/* Header */}
       <div className="px-5 py-4 border-b border-border">
@@ -739,20 +739,20 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">{project.description}</p>
           </div>
         )}
-      </div>
 
-      {/* Footer */}
-      <div className="px-5 py-3 border-t border-border bg-muted/20 flex gap-2">
-        <Link href={`/dashboard/projects/${project.id}`} className="flex-1">
-          <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">
-            <MessageSquare className="w-3.5 h-3.5" /> {t("projects.open_thread")}
-          </Button>
-        </Link>
-        <Link href={`/dashboard/projects/${project.id}`}>
-          <Button size="sm" className="h-8 text-xs gap-1.5">
-            <ArrowUpRight className="w-3.5 h-3.5" /> {t("projects.full_page")}
-          </Button>
-        </Link>
+        {/* Action buttons — inside scroll area, right after last detail */}
+        <div className="px-5 py-4 flex gap-2 sticky bottom-0 bg-background border-t border-border mt-auto">
+          <Link href={`/dashboard/projects/${project.id}`} className="flex-1">
+            <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5" /> {t("projects.open_thread")}
+            </Button>
+          </Link>
+          <Link href={`/dashboard/projects/${project.id}`}>
+            <Button size="sm" className="h-8 text-xs gap-1.5">
+              <ArrowUpRight className="w-3.5 h-3.5" /> {t("projects.full_page")}
+            </Button>
+          </Link>
+        </div>
       </div>
     </motion.div>
   );
