@@ -13,7 +13,6 @@ import {
   Clock3,
   FolderOpen,
   ShieldCheck,
-  Sparkles,
   TimerReset,
   TrendingUp,
   Users,
@@ -232,9 +231,9 @@ export function DashboardClient({ user, stats, recentActivity, upcomingAgenda }:
               </div>
               <div className="flex-1 space-y-2">
                 {aiSignals.map((sig, i) => (
-                  <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${sig.urgent ? "bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40" : "bg-muted/40"}`}>
-                    <sig.icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${sig.urgent ? "text-amber-500" : "text-muted-foreground"}`} />
-                    <p className={`text-xs leading-relaxed ${sig.urgent ? "text-amber-700 dark:text-amber-300 font-medium" : "text-muted-foreground"}`}>{sig.text}</p>
+                  <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${sig.urgent ? "bg-amber-50 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40" : "bg-muted/40"}`}>
+                    <sig.icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${sig.urgent ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} />
+                    <p className={`text-xs leading-relaxed ${sig.urgent ? "text-amber-950 dark:text-amber-200 font-semibold" : "text-muted-foreground"}`}>{sig.text}</p>
                   </div>
                 ))}
               </div>
@@ -319,73 +318,41 @@ export function DashboardClient({ user, stats, recentActivity, upcomingAgenda }:
           </div>
         </motion.div>
 
-        {/* ── Row 5: Activity | AI Workflow ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-          {/* Recent activity */}
-          <motion.div {...fade(0.28)}>
-            <div className="bg-card border border-border rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold">{t("dashboard.recent_activity")}</p>
-                <Link href="/dashboard/activity" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                  View all <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-              {recentActivity.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-6 text-center">{t("dashboard.no_recent_activity")}</p>
-              ) : (
-                <div className="space-y-0">
-                  {recentActivity.slice(0, 6).map((act, i) => (
-                    <div key={act.id} className="flex items-start gap-3 py-2.5 border-b border-border/40 last:border-0">
-                      <Avatar className="h-6 w-6 shrink-0 mt-0.5">
-                        <AvatarFallback className="text-[9px] font-bold bg-muted text-foreground">
-                          {act.user?.initials || act.user?.name?.slice(0, 2).toUpperCase() || "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-foreground leading-snug line-clamp-1">{act.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {act.project && <span className="text-[10px] font-mono text-muted-foreground">{act.project.code}</span>}
-                          <span className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        {/* ── Row 5: Recent activity (full width) ── */}
+        <motion.div {...fade(0.28)}>
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold">{t("dashboard.recent_activity")}</p>
+              <Link href="/dashboard/activity" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+                View all <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
-          </motion.div>
-
-          {/* AI Workflow */}
-          <motion.div {...fade(0.32)}>
-            <div className="bg-card border border-border rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">{t("dashboard.ai_workflow")}</p>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { href: "/dashboard/ai/gpt",      icon: Bot,        title: "DBS OPS Manual GPT",  desc: t("dashboard.gpt_desc"),      accent: "#3b82f6" },
-                  { href: "/dashboard/ai/gallery",   icon: Building2,  title: "Visual Gallery AI",   desc: t("dashboard.gallery_desc"),  accent: "#10b981" },
-                  { href: "/dashboard/ai/planning",  icon: BarChart3,  title: "Planning AI",         desc: t("dashboard.planning_desc"), accent: "#f59e0b" },
-                ].map((item) => (
-                  <Link key={item.href} href={item.href}>
-                    <div className="group flex items-center gap-3 px-3 py-3 rounded-xl border border-border hover:border-foreground/15 hover:bg-accent/50 transition-all cursor-pointer">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: item.accent + "15" }}>
-                        <item.icon className="w-4 h-4" style={{ color: item.accent }} />
+            {recentActivity.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-6 text-center">{t("dashboard.no_recent_activity")}</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                {recentActivity.slice(0, 8).map((act) => (
+                  <div key={act.id} className="flex items-start gap-3 py-3 border-b border-border/40 last:border-0 md:[&:nth-last-child(2)]:border-0">
+                    <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                      <AvatarFallback className="text-[9px] font-bold bg-muted text-foreground">
+                        {act.user?.initials || act.user?.name?.slice(0, 2).toUpperCase() || "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground leading-snug">{act.description}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {act.project && (
+                          <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{act.project.code}</span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}</span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold leading-tight">{item.title}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{item.desc}</p>
-                      </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
-            </div>
-          </motion.div>
-        </div>
+            )}
+          </div>
+        </motion.div>
 
         {/* ── Row 6: Regional portfolio ── */}
         {stats.regionStats.length > 0 && (
