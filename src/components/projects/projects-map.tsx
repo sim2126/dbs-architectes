@@ -173,35 +173,31 @@ export function ProjectsMapView({
     );
   };
 
-  // ── Geocode address → lat/lng ────────────────────────────────
+  // ── Geocode address → lat/lng (server-side proxy) ───────────
   const geocodeAndSave = async () => {
     if (!addressInput.trim() || !selected) return;
     setGeocoding(true);
     setGeoError("");
     try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressInput)}&key=${API_KEY}`
-      );
-      const data = await res.json() as {
-        status: string;
-        results: Array<{ geometry: { location: { lat: number; lng: number } }; formatted_address: string }>;
-      };
-      if (data.status !== "OK" || !data.results[0]) {
+      const res = await fetch("/api/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addressInput }),
+      });
+      const data = await res.json() as { lat?: number; lng?: number; formatted?: string; error?: string };
+      if (!res.ok || data.error || data.lat == null) {
         setGeoError("Address not found. Try a more specific location.");
         return;
       }
-      const { lat, lng } = data.results[0].geometry.location;
-      const formatted = data.results[0].formatted_address;
-      await onUpdateLocation(selected.id, lat, lng, formatted);
-      // Pan map to new pin
+      await onUpdateLocation(selected.id, data.lat!, data.lng!, data.formatted!);
       if (mapInstance.current) {
-        mapInstance.current.setCenter({ lat, lng });
+        mapInstance.current.setCenter({ lat: data.lat, lng: data.lng });
         mapInstance.current.setZoom(14);
       }
       setSettingLocation(false);
-      setSelected({ ...selected, latitude: lat, longitude: lng, address: formatted });
+      setSelected({ ...selected, latitude: data.lat, longitude: data.lng, address: data.formatted! });
     } catch {
-      setGeoError("Geocoding failed. Check your API key.");
+      setGeoError("Geocoding failed. Please try again.");
     } finally {
       setGeocoding(false);
     }
