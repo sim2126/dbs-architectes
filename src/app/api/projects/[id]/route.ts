@@ -72,6 +72,9 @@ export async function PATCH(
       ...(body.billing !== undefined && { billing: body.billing }),
       ...(body.image !== undefined && { image: body.image }),
       ...(body.workStatus !== undefined && { workStatus: body.workStatus }),
+      ...(body.address   !== undefined && { address: body.address }),
+      ...(body.latitude  !== undefined && { latitude: body.latitude != null ? parseFloat(body.latitude) : null }),
+      ...(body.longitude !== undefined && { longitude: body.longitude != null ? parseFloat(body.longitude) : null }),
     },
   });
 
