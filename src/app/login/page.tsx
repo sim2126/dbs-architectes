@@ -59,12 +59,16 @@ export default function LoginPage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
           <div className="relative flex h-full flex-col">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12 text-sm font-semibold backdrop-blur-sm">
-                FRI
-              </div>
+              {/* DBS | Friday logo mark — white version for dark bg */}
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-11 h-11 shrink-0">
+                <rect x="2" y="2" width="28" height="28" stroke="white" strokeWidth="2.8"/>
+                <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e"/>
+                <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e"/>
+                <text x="16" y="20.5" textAnchor="middle" fontSize="9.5" fontWeight="800" fill="white" fontFamily="system-ui, -apple-system, sans-serif">DBS</text>
+              </svg>
               <div>
-                <p className="text-lg font-semibold">Friday.com</p>
-                <p className="text-xs text-white/65">AI-native project workspace</p>
+                <p className="text-lg font-semibold tracking-tight">DBS <span className="font-light text-white/60">| Friday</span></p>
+                <p className="text-xs text-white/55">AI-native project workspace</p>
               </div>
             </div>
 
