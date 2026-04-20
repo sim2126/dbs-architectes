@@ -33,7 +33,10 @@ declare global {
   interface Window { google?: { maps: GMaps } }
 }
 
-const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+// Build-time fallback; runtime key is fetched from /api/maps/config so that
+// the feature works even when NEXT_PUBLIC_GOOGLE_MAPS_API_KEY wasn't set during
+// the Vercel build.
+const BUILD_TIME_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
 // ─── Map View Component ───────────────────────────────────────
 
@@ -53,6 +56,8 @@ export function ProjectsMapView({
   const mapInstance = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<any[]>([]);
+  const [apiKey, setApiKey] = useState<string | null>(BUILD_TIME_KEY || null);
+  const [keyChecked, setKeyChecked] = useState(!!BUILD_TIME_KEY);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<MappedProject | null>(null);
   const [copied, setCopied] = useState(false);
@@ -65,17 +70,41 @@ export function ProjectsMapView({
   const pinned = projects.filter((p) => p.latitude != null && p.longitude != null);
   const unpinned = projects.filter((p) => p.latitude == null || p.longitude == null);
 
+  // ── Fetch API key from server (covers missing build-time env) ───
+  useEffect(() => {
+    if (apiKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/maps/config");
+        const data = (await res.json()) as { apiKey?: string };
+        if (!cancelled) setApiKey(data.apiKey ?? "");
+      } catch {
+        if (!cancelled) setApiKey("");
+      } finally {
+        if (!cancelled) setKeyChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [apiKey]);
+
   // ── Load Google Maps script ──────────────────────────────────
   useEffect(() => {
-    if (!API_KEY) return;
+    if (!apiKey) return;
     if (window.google?.maps) { setLoaded(true); return; }
+    const existing = document.querySelector<HTMLScriptElement>('script[data-gmaps="1"]');
+    if (existing) {
+      existing.addEventListener("load", () => setLoaded(true));
+      return;
+    }
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
     s.async = true;
     s.defer = true;
+    s.dataset.gmaps = "1";
     s.onload = () => setLoaded(true);
     document.head.appendChild(s);
-  }, []);
+  }, [apiKey]);
 
   // ── Build markers ────────────────────────────────────────────
   const buildMarkers = useCallback(() => {
@@ -203,19 +232,32 @@ export function ProjectsMapView({
     }
   };
 
+  // ── Waiting for runtime key check ────────────────────────────
+  if (!keyChecked) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-muted/10">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   // ── No API key fallback ──────────────────────────────────────
-  if (!API_KEY) {
+  if (!apiKey) {
     return (
       <div className="flex-1 flex items-center justify-center bg-muted/10">
         <div className="text-center max-w-sm p-8 rounded-2xl border border-border bg-card">
           <Globe className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
           <h3 className="text-sm font-semibold mb-2">Google Maps API key required</h3>
           <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-            Add{" "}
+            Set{" "}
+            <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">
+              GOOGLE_MAPS_API_KEY
+            </code>{" "}
+            (or{" "}
             <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">
               NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-            </code>{" "}
-            to your Vercel environment variables and redeploy.
+            </code>
+            ) in your Vercel environment and redeploy.
           </p>
           <p className="text-[11px] text-muted-foreground">
             Enable: Maps JavaScript API · Geocoding API · Places API
