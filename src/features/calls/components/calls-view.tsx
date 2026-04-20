@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Video, Phone, PhoneOff, Users, Clock, Plus, Mic, MicOff,
   VideoOff, ScreenShare, Maximize2, X, Loader2, PhoneIncoming,
-  Calendar, Building2, ExternalLink,
+  Calendar, Building2, ExternalLink, FileText, Sparkles, Copy, Send, Check,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Button } from "@/shared/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/components/ui/avatar";
 import { Badge } from "@/shared/components/ui/badge";
 import { cn } from "@/shared/lib/utils";
+import { SummaryModal } from "@/features/calls/components/summary-modal";
 import { getPusherClient } from "@/shared/lib/pusher-client";
 import { PUSHER_EVENTS } from "@/server/services/pusher";
 import { useSession } from "next-auth/react";
@@ -36,6 +37,10 @@ interface CallRecord {
   starter: { id: string; name?: string | null; initials?: string | null; image?: string | null };
   project?: { id: string; title: string; code: string } | null;
   participants: Participant[];
+  summary?: unknown;
+  summaryMode?: string | null;
+  shareToken?: string | null;
+  summarizedAt?: string | null;
 }
 
 export function CallsView() {
@@ -48,6 +53,7 @@ export function CallsView() {
   const [callType, setCallType] = useState<"video" | "audio">("video");
   const [creating, setCreating] = useState(false);
   const [incomingCall, setIncomingCall] = useState<CallRecord | null>(null);
+  const [summaryCall, setSummaryCall] = useState<CallRecord | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -271,6 +277,24 @@ export function CallsView() {
                         Started by {call.starter.name} · {call.participants.length} joined
                       </p>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs"
+                      onClick={() => setSummaryCall(call)}
+                    >
+                      {call.summary ? (
+                        <>
+                          <FileText className="w-3.5 h-3.5" />
+                          View summary
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Summarize
+                        </>
+                      )}
+                    </Button>
                     <div className="text-right shrink-0">
                       <p className="text-xs text-muted-foreground">
                         {format(new Date(call.createdAt), "MMM d, HH:mm")}
@@ -354,6 +378,15 @@ export function CallsView() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ─── Summary Modal ─── */}
+      <SummaryModal
+        call={summaryCall}
+        onClose={() => setSummaryCall(null)}
+        onUpdated={(updated) =>
+          setCalls((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
+        }
+      />
 
       {/* ─── Incoming Call Toast ─── */}
       <AnimatePresence>

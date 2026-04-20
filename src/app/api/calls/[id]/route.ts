@@ -64,8 +64,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     data: { leftAt: new Date() },
   });
 
-  await deleteDailyRoom(call.roomName).catch(() => {});
+  // Defer deleting the Daily room so transcription has time to post-process.
+  // Summarization will be triggered manually by the host from the UI.
   await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_ENDED, { id });
+
+  // Fire-and-forget room cleanup after 10 min so transcripts/recordings land.
+  setTimeout(() => {
+    deleteDailyRoom(call.roomName).catch(() => {});
+  }, 10 * 60 * 1000);
 
   return Response.json({ success: true });
 }
