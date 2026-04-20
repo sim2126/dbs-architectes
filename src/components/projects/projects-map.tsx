@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   X, MapPin, Globe, Building2, Copy, Check,
   ExternalLink, AlertCircle, Loader2, Navigation,
+  Compass, Sparkles, Coffee, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import { PHASE_COLORS } from "@/lib/utils";
@@ -59,6 +60,7 @@ export function ProjectsMapView({
   const [apiKey, setApiKey] = useState<string | null>(BUILD_TIME_KEY || null);
   const [keyChecked, setKeyChecked] = useState(!!BUILD_TIME_KEY);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<MappedProject | null>(null);
   const [copied, setCopied] = useState(false);
   // Location setter state (for unpinned projects)
@@ -92,9 +94,15 @@ export function ProjectsMapView({
   useEffect(() => {
     if (!apiKey) return;
     if (window.google?.maps) { setLoaded(true); return; }
+
+    // Google calls this when the key is invalid / billing off / referer blocked
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).gm_authFailure = () => setLoadError(true);
+
     const existing = document.querySelector<HTMLScriptElement>('script[data-gmaps="1"]');
     if (existing) {
       existing.addEventListener("load", () => setLoaded(true));
+      existing.addEventListener("error", () => setLoadError(true));
       return;
     }
     const s = document.createElement("script");
@@ -103,6 +111,7 @@ export function ProjectsMapView({
     s.defer = true;
     s.dataset.gmaps = "1";
     s.onload = () => setLoaded(true);
+    s.onerror = () => setLoadError(true);
     document.head.appendChild(s);
   }, [apiKey]);
 
@@ -241,28 +250,107 @@ export function ProjectsMapView({
     );
   }
 
-  // ── No API key fallback ──────────────────────────────────────
+  // ── Map failed to load (invalid key / billing / blocked referer) ──
+  if (loadError) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-amber-50/40 via-background to-background p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-center max-w-md p-8 rounded-3xl border border-border bg-card shadow-lg"
+        >
+          <div className="relative w-16 h-16 mx-auto mb-5">
+            <motion.div
+              animate={{ rotate: [0, -8, 8, -4, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-0 flex items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100"
+            >
+              <Coffee className="w-7 h-7 text-amber-700" />
+            </motion.div>
+          </div>
+          <h3 className="text-base font-semibold mb-1.5">
+            Hey — it&apos;s not you, it&apos;s us.
+          </h3>
+          <p className="text-xs text-muted-foreground leading-relaxed mb-5">
+            The atlas is taking a short coffee break. Your 48 projects from
+            Sion to Srinagar are safe on our servers — the map just needs a
+            second. Give it a nudge below.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-foreground text-background text-xs font-medium hover:opacity-90 transition"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Try again
+          </button>
+          <p className="mt-5 text-[10px] tracking-[0.2em] uppercase text-muted-foreground/60">
+            DBS Architectes · Sion · Milano · Srinagar
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ── No API key configured — "coming soon" framing ────────────
   if (!apiKey) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/10">
-        <div className="text-center max-w-sm p-8 rounded-2xl border border-border bg-card">
-          <Globe className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-          <h3 className="text-sm font-semibold mb-2">Google Maps API key required</h3>
-          <p className="text-xs text-muted-foreground leading-relaxed mb-3">
-            Set{" "}
-            <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">
-              GOOGLE_MAPS_API_KEY
-            </code>{" "}
-            (or{" "}
-            <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">
-              NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-            </code>
-            ) in your Vercel environment and redeploy.
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50/60 via-background to-background p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="text-center max-w-md p-8 rounded-3xl border border-border bg-card shadow-lg"
+        >
+          <div className="relative w-20 h-20 mx-auto mb-6">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 24, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full border border-dashed border-foreground/20"
+            />
+            <motion.div
+              animate={{ scale: [1, 1.08, 1] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-2 flex items-center justify-center rounded-full bg-gradient-to-br from-slate-100 to-slate-200"
+            >
+              <Compass className="w-8 h-8 text-slate-700" strokeWidth={1.4} />
+            </motion.div>
+            <motion.div
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.8, repeat: Infinity }}
+              className="absolute -top-1 -right-1"
+            >
+              <Sparkles className="w-4 h-4 text-amber-500" />
+            </motion.div>
+          </div>
+
+          <p className="text-[10px] tracking-[0.25em] uppercase text-muted-foreground mb-2">
+            On the drawing board
           </p>
-          <p className="text-[11px] text-muted-foreground">
-            Enable: Maps JavaScript API · Geocoding API · Places API
+          <h3 className="text-lg font-light mb-2">
+            It&apos;s not you — <span className="italic">it&apos;s us</span>.
+          </h3>
+          <p className="text-xs text-muted-foreground leading-relaxed mb-5">
+            Our architects are still drafting this interactive atlas. Soon
+            you&apos;ll see every DBS project pinned on a living map — from
+            the Valais alps to the streets of Milano.
           </p>
-        </div>
+
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border bg-muted/40">
+            <motion.span
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.6, repeat: Infinity }}
+              className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+            />
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Coming soon
+            </span>
+          </div>
+
+          <p className="mt-6 text-[10px] tracking-[0.2em] uppercase text-muted-foreground/60">
+            DBS Architectes · since 2014
+          </p>
+        </motion.div>
       </div>
     );
   }
