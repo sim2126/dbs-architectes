@@ -8,7 +8,7 @@ export async function GET() {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const calls = await prisma.call.findMany({
+  const rawCalls = await prisma.call.findMany({
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
@@ -19,6 +19,9 @@ export async function GET() {
       },
     },
   });
+
+  // Flatten fields the client cares about; strip heavy transcript text
+  const calls = rawCalls.map(({ transcriptText: _t, ...c }) => c);
 
   return Response.json(calls);
 }

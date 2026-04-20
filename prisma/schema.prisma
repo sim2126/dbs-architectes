@@ -130,6 +130,7 @@ model Project {
   channels       Channel[]
   calls          Call[]
   importedAssets ImportedAsset[]
+  meetingMemory  ProjectMeetingMemory?
 }
 
 model ProjectAssignment {
@@ -299,6 +300,18 @@ model Call {
   createdAt DateTime  @default(now())
   endedAt   DateTime?
 
+  // Post-call artefacts
+  recordingUrl   String?
+  transcriptId   String?
+  transcriptText String?   // cached raw transcript
+  summaryMode    String?   // "simple" | "detailed"
+  summary        Json?     // full structured summary
+  summaryHtml    String?   // rendered markdown for quick display
+  shareToken     String?   @unique
+  summarizedAt   DateTime?
+  summaryError   String?
+  detectedLang   String?   // auto-detected transcript language
+
   starter      User              @relation("CallStarter", fields: [startedBy], references: [id])
   project      Project?          @relation(fields: [projectId], references: [id])
   participants CallParticipant[]
@@ -315,6 +328,20 @@ model CallParticipant {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([callId, userId])
+}
+
+// Rolling condensed knowledge of decisions/risks/open items per project,
+// grown after each meeting — consumed as context by future summarizations.
+model ProjectMeetingMemory {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  condensed     String   // rolling narrative of prior decisions
+  openItems     Json?    // unresolved questions/blockers
+  keyDecisions  Json?    // canonical decisions with dates
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 // ─── AI CHAT ─────────────────────────────────────────────────
