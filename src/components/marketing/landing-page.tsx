@@ -2,432 +2,155 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import {
-  ArrowRight,
-  Bot,
-  Brain,
-  Building2,
-  CalendarClock,
-  CheckCircle2,
-  FolderOpen,
-  Layers3,
-  LayoutDashboard,
-  LineChart,
-  MessageSquareText,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  Users,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ArrowRight } from "lucide-react";
 
-const platformPillars = [
-  {
-    icon: FolderOpen,
-    title: "Project command center",
-    description:
-      "Search, filter, assign, and manage the full lifecycle of DBS projects from one structured workspace.",
-    tone: "from-[#dce7ff] via-white to-[#f1f7ff]",
-  },
-  {
-    icon: Brain,
-    title: "AI-native workflow",
-    description:
-      "Bring regulations, precedent images, floor plans, and internal know-how into a unified AI layer.",
-    tone: "from-[#e7f7ed] via-white to-[#f5fbf7]",
-  },
-  {
-    icon: Users,
-    title: "Role-based operations",
-    description:
-      "Admins, project managers, and collaborators each get the right level of visibility and control.",
-    tone: "from-[#fff1db] via-white to-[#fff8ef]",
-  },
-];
-
-const aiProducts = [
-  {
-    label: "DBS OPS MANUAL GPT",
-    description:
-      "Instant answers across Swiss regulations, DBS standards, SOPs, and calculation logic.",
-    chip: "Operational AI",
-  },
-  {
-    label: "Visual Gallery AI",
-    description:
-      "A precedent engine for renders, facades, materials, and design references with auto-tagging.",
-    chip: "Visual Intelligence",
-  },
-  {
-    label: "Planning AI",
-    description:
-      "Searchable plan intelligence for layouts, building depth, apartment mixes, and typology patterns.",
-    chip: "Planning Intelligence",
-  },
-];
-
-const roleCards = [
-  {
-    title: "Admin Workspace",
-    description:
-      "Govern the full platform, team permissions, workload visibility, and operational oversight.",
-    bullets: ["Permissions and governance", "Portfolio-wide visibility", "Team capacity balancing"],
-    accent: "bg-[#111827]",
-  },
-  {
-    title: "Project Manager Workspace",
-    description:
-      "Track deadlines, resourcing, updates, and project-specific decisions without management overhead.",
-    bullets: ["Delivery priorities", "Upcoming milestones", "AI-assisted coordination"],
-    accent: "bg-[#0f766e]",
-  },
-  {
-    title: "Collaborator Workspace",
-    description:
-      "Focus on assigned work, communicate quickly, and access the right project context instantly.",
-    bullets: ["Assigned tasks and agenda", "Fast project search", "Chat, calls, and handoffs"],
-    accent: "bg-[#7c3aed]",
-  },
-];
-
-const liveMoments = [
-  { label: "Projects in motion", value: "148", detail: "across study, execution, chantier, and closeout" },
-  { label: "AI lookups this week", value: "382", detail: "regulations, standards, and precedent retrieval" },
-  { label: "Deadlines coordinated", value: "27", detail: "tasks, milestones, and reviews aligned in agenda" },
-];
-
-interface LandingPageProps {
-  hasSession: boolean;
-}
-
-export function LandingPage({ hasSession }: LandingPageProps) {
+export function LandingPage({ hasSession }: { hasSession: boolean }) {
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f8fa_0%,#ffffff_34%,#f7f4ef_100%)] text-foreground">
-      <div className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[720px] bg-[radial-gradient(circle_at_top_left,rgba(46,94,255,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(17,24,39,0.12),transparent_34%),radial-gradient(circle_at_65%_30%,rgba(15,118,110,0.12),transparent_28%)]" />
-
-        <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#111827] text-sm font-semibold text-white shadow-[0_10px_30px_rgba(17,24,39,0.18)]">
-              DBS
-            </div>
-            <div>
-              <p className="font-display text-lg font-semibold tracking-tight">Friday.com</p>
-              <p className="text-xs text-muted-foreground">AI-native project workspace</p>
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-3">
-            <Link href={hasSession ? "/dashboard" : "/login"}>
-              <Button variant="ghost" className="hidden sm:inline-flex">
-                {hasSession ? "Open Workspace" : "Sign In"}
-              </Button>
-            </Link>
-            <Link href={hasSession ? "/dashboard" : "/login"}>
-              <Button className="rounded-full px-5">
-                {hasSession ? "Go to Dashboard" : "Request Demo Access"}
-              </Button>
-            </Link>
-          </div>
-        </header>
-
-        <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-16 px-6 pb-16 lg:px-10">
-          <section className="grid gap-10 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-14">
-            <div className="max-w-3xl">
-              <Badge className="mb-5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-medium text-[#1f2937] shadow-sm">
-                Built exclusively for Friday.com
-              </Badge>
-              <h1 className="font-display text-5xl font-semibold tracking-[-0.04em] text-[#111827] sm:text-6xl lg:text-7xl">
-                A professional operating system for architecture delivery.
-              </h1>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4b5563]">
-                One platform for project search, delivery coordination, team collaboration, and AI-assisted knowledge retrieval.
-                Designed to make DBS look structured, modern, and technically ahead of the market.
-              </p>
-
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link href={hasSession ? "/dashboard" : "/login"}>
-                  <Button size="xl" className="rounded-full bg-[#111827] px-7">
-                    {hasSession ? "Enter Workspace" : "Open Demo Login"}
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link href="/dashboard/ai/gpt">
-                  <Button size="xl" variant="outline" className="rounded-full border-white/60 bg-white/70 px-7 backdrop-blur">
-                    Explore AI Layer
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="mt-10 grid gap-3 sm:grid-cols-3">
-                {liveMoments.map((item) => (
-                  <Card
-                    key={item.label}
-                    className="border-white/70 bg-white/75 shadow-[0_20px_60px_rgba(17,24,39,0.06)] backdrop-blur"
-                  >
-                    <CardContent className="p-5">
-                      <p className="text-3xl font-semibold tracking-tight text-[#111827]">{item.value}</p>
-                      <p className="mt-2 text-sm font-medium text-[#111827]">{item.label}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.55 }}
-              className="relative"
+    <div className="min-h-screen bg-[#fafaf8] text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 flex flex-col">
+      {/* ─── Top bar ─── */}
+      <header className="flex items-center justify-between px-8 md:px-12 py-6">
+        <Link href="/" className="flex items-center gap-3">
+          <svg
+            viewBox="0 0 32 32"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-8 h-8"
+          >
+            <rect x="2" y="2" width="28" height="28" stroke="currentColor" strokeWidth="2.8" />
+            <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e" />
+            <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e" />
+            <text
+              x="16"
+              y="20.5"
+              textAnchor="middle"
+              fontSize="9.5"
+              fontWeight="800"
+              fill="currentColor"
+              fontFamily="system-ui, -apple-system, sans-serif"
             >
-              <div className="absolute -inset-6 rounded-[40px] bg-[radial-gradient(circle_at_top,rgba(46,94,255,0.18),transparent_40%),radial-gradient(circle_at_bottom_right,rgba(15,118,110,0.18),transparent_35%)] blur-3xl" />
-              <div className="relative overflow-hidden rounded-[32px] border border-white/80 bg-white/80 p-4 shadow-[0_30px_80px_rgba(17,24,39,0.12)] backdrop-blur">
-                <div className="rounded-[26px] border border-[#e5e7eb] bg-[#f8fafc] p-4">
-                  <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-4">
-                    <div>
-                      <p className="text-sm font-semibold text-[#111827]">DBS Workspace Preview</p>
-                      <p className="text-xs text-muted-foreground">Search, act, assign, and analyze in one system</p>
-                    </div>
-                    <Badge variant="success" className="rounded-full px-2.5 py-1 text-[11px]">
-                      Live demo ready
-                    </Badge>
-                  </div>
+              DBS
+            </text>
+          </svg>
+          <div className="flex flex-col leading-none">
+            <span className="text-sm font-bold tracking-tight">DBS Architectes</span>
+            <span className="text-[11px] text-neutral-500 tracking-wider mt-0.5">
+              Friday · Workspace
+            </span>
+          </div>
+        </Link>
 
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-                    <div className="rounded-3xl border border-[#e5e7eb] bg-white p-4">
-                      <div className="flex items-center gap-2 rounded-2xl border border-[#dbe1ea] bg-[#f8fafc] px-3 py-2.5 text-sm text-muted-foreground">
-                        <Search className="h-4 w-4" />
-                        Search “3.5 room projects in Sion”
-                      </div>
-
-                      <div className="mt-4 space-y-3">
-                        {[
-                          ["DBS283-10", "Condominium / MAE", "8 units / 2 deadlines this week"],
-                          ["DBS328", "Villa / EXE", "Planning AI precedent available"],
-                          ["DBS2024-66", "Residential / ETUDE", "Pending client review"],
-                        ].map(([code, phase, detail]) => (
-                          <div key={code} className="rounded-2xl border border-[#e5e7eb] bg-[#fcfcfd] p-3">
-                            <div className="flex items-center justify-between">
-                              <p className="font-mono text-xs text-muted-foreground">{code}</p>
-                              <Badge variant="secondary" className="text-[10px]">
-                                matched
-                              </Badge>
-                            </div>
-                            <p className="mt-2 text-sm font-medium text-[#111827]">{phase}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="rounded-3xl border border-[#dbe1ea] bg-[#111827] p-5 text-white">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Sparkles className="h-4 w-4 text-[#93c5fd]" />
-                            <p className="text-sm font-semibold">AI workspace summary</p>
-                          </div>
-                          <Badge className="rounded-full bg-white/10 text-[10px] text-white">Today</Badge>
-                        </div>
-                        <p className="mt-4 text-base font-semibold leading-snug">
-                          3 deadlines require attention and 2 precedent matches are ready for review.
-                        </p>
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                          {[
-                            ["Delivery risk", "2 projects"],
-                            ["AI recommendations", "5 actions"],
-                            ["Pending assignments", "4 people"],
-                            ["Recent decisions", "9 updates"],
-                          ].map(([label, value]) => (
-                            <div key={label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <p className="text-xs text-white/70">{label}</p>
-                              <p className="mt-1 text-lg font-semibold">{value}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="rounded-3xl border border-[#e5e7eb] bg-white p-4">
-                          <div className="flex items-center gap-2">
-                            <CalendarClock className="h-4 w-4 text-[#0f766e]" />
-                            <p className="text-sm font-semibold text-[#111827]">Coordination agenda</p>
-                          </div>
-                          <div className="mt-4 space-y-3">
-                            {["Client review at 10:00", "Facade workshop at 14:00", "Permit checklist due Friday"].map((task) => (
-                              <div key={task} className="flex items-start gap-2">
-                                <CheckCircle2 className="mt-0.5 h-4 w-4 text-[#0f766e]" />
-                                <p className="text-sm text-[#374151]">{task}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="rounded-3xl border border-[#e5e7eb] bg-white p-4">
-                          <div className="flex items-center gap-2">
-                            <LineChart className="h-4 w-4 text-[#1d4ed8]" />
-                            <p className="text-sm font-semibold text-[#111827]">Workload snapshot</p>
-                          </div>
-                          <div className="mt-4 space-y-3">
-                            {[
-                              ["Execution", "78%"],
-                              ["Planning", "62%"],
-                              ["Reviews", "49%"],
-                            ].map(([label, value]) => (
-                              <div key={label}>
-                                <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                                  <span>{label}</span>
-                                  <span>{value}</span>
-                                </div>
-                                <div className="h-2 rounded-full bg-[#eef2f7]">
-                                  <div
-                                    className="h-2 rounded-full bg-[linear-gradient(90deg,#2563eb,#0f766e)]"
-                                    style={{ width: value }}
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </section>
-
-          <section className="grid gap-4 lg:grid-cols-3">
-            {platformPillars.map((pillar, index) => (
-              <motion.div
-                key={pillar.title}
-                initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.4 }}
-                transition={{ duration: 0.4, delay: index * 0.08 }}
+        <nav className="flex items-center gap-3">
+          {hasSession ? (
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+            >
+              Open workspace
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 px-3 py-2 transition-colors"
               >
-                <Card className={`h-full overflow-hidden border-white/80 bg-gradient-to-br ${pillar.tone} shadow-[0_18px_50px_rgba(17,24,39,0.05)]`}>
-                  <CardContent className="p-6">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm">
-                      <pillar.icon className="h-5 w-5 text-[#111827]" />
-                    </div>
-                    <h2 className="mt-6 font-display text-2xl font-semibold tracking-tight text-[#111827]">
-                      {pillar.title}
-                    </h2>
-                    <p className="mt-3 text-sm leading-7 text-[#4b5563]">{pillar.description}</p>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                Log in
+              </Link>
+              <Link
+                href="/login?mode=signup"
+                className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+              >
+                Sign up
+              </Link>
+            </>
+          )}
+        </nav>
+      </header>
+
+      {/* ─── Hero ─── */}
+      <main className="flex-1 flex items-center px-8 md:px-12">
+        <div className="max-w-5xl mx-auto w-full py-20 md:py-28">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p className="text-xs uppercase tracking-[0.22em] text-neutral-500 mb-6">
+              Sion · Milano · Srinagar
+            </p>
+
+            <h1 className="text-[clamp(2.5rem,6vw,5rem)] font-light leading-[1.05] tracking-tight mb-8">
+              DBS Architectes
+              <br />
+              <span className="text-neutral-500">welcomes you to</span>
+              <br />
+              <span className="font-serif italic">Friday.</span>
+            </h1>
+
+            <p className="text-lg md:text-xl text-neutral-600 dark:text-neutral-400 leading-relaxed max-w-2xl mb-12 font-light">
+              Your workspace for better task management and efficiency.
+              <br />
+              Built for the studio — projects, meetings, drawings, and decisions in one quiet place.
+            </p>
+
+            <div className="flex flex-wrap gap-3">
+              {hasSession ? (
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+                >
+                  Enter workspace
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+                  >
+                    Log in
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                  <Link
+                    href="/login?mode=signup"
+                    className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+                  >
+                    Sign up
+                  </Link>
+                </>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Thin divider row */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8, duration: 0.8 }}
+            className="mt-24 md:mt-32 pt-8 border-t border-neutral-200 dark:border-neutral-800 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm"
+          >
+            {[
+              { k: "Projects", v: "48+" },
+              { k: "Studio", v: "Since 2014" },
+              { k: "Offices", v: "CH · IT · IN" },
+              { k: "Team", v: "30 architects" },
+            ].map((item) => (
+              <div key={item.k}>
+                <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1">
+                  {item.k}
+                </div>
+                <div className="font-light text-xl">{item.v}</div>
+              </div>
             ))}
-          </section>
+          </motion.div>
+        </div>
+      </main>
 
-          <section className="rounded-[36px] border border-[#ebeef3] bg-white/85 p-8 shadow-[0_24px_70px_rgba(17,24,39,0.06)] backdrop-blur sm:p-10">
-            <div className="max-w-2xl">
-              <Badge variant="info" className="rounded-full px-3 py-1 text-[11px]">
-                AI Layer
-              </Badge>
-              <h2 className="mt-5 font-display text-4xl font-semibold tracking-[-0.03em] text-[#111827]">
-                Three AI products, one operational backbone.
-              </h2>
-              <p className="mt-4 text-base leading-8 text-[#4b5563]">
-                The platform is not just project management with an AI tab. The AI layer is positioned as a working partner
-                across compliance, precedent retrieval, and planning intelligence.
-              </p>
-            </div>
-
-            <div className="mt-8 grid gap-4 lg:grid-cols-3">
-              {aiProducts.map((product) => (
-                <Card key={product.label} className="h-full border-[#e7ebf1] bg-[#fcfcfd] shadow-none">
-                  <CardContent className="p-6">
-                    <Badge variant="secondary" className="rounded-full text-[10px] uppercase tracking-[0.18em]">
-                      {product.chip}
-                    </Badge>
-                    <p className="mt-4 text-xl font-semibold tracking-tight text-[#111827]">{product.label}</p>
-                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{product.description}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-
-          <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-[34px] bg-[#111827] p-8 text-white shadow-[0_24px_60px_rgba(17,24,39,0.18)] sm:p-10">
-              <Badge className="rounded-full bg-white/10 px-3 py-1 text-[11px] text-white">Role-based product design</Badge>
-              <h2 className="mt-5 font-display text-4xl font-semibold tracking-[-0.03em]">
-                Not only for admins.
-              </h2>
-              <p className="mt-4 text-sm leading-7 text-white/75">
-                The architecture is already role-aware. The frontend should make that visible, so the DBS client sees a product
-                that scales from leadership oversight to day-to-day contributor execution.
-              </p>
-
-              <div className="mt-8 space-y-4">
-                {[
-                  { icon: ShieldCheck, title: "Structured governance", detail: "Permissions, access control, and operational confidence." },
-                  { icon: LayoutDashboard, title: "Focused dashboards", detail: "Different priorities surfaced for different jobs." },
-                  { icon: MessageSquareText, title: "Faster collaboration", detail: "Chat, calls, activity, and agenda connected to project context." },
-                ].map((item) => (
-                  <div key={item.title} className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center gap-3">
-                      <item.icon className="h-4 w-4 text-[#93c5fd]" />
-                      <p className="text-sm font-semibold">{item.title}</p>
-                    </div>
-                    <p className="mt-2 text-sm text-white/70">{item.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              {roleCards.map((role) => (
-                <Card key={role.title} className="overflow-hidden border-[#e7ebf1] bg-white shadow-[0_18px_45px_rgba(17,24,39,0.05)]">
-                  <CardContent className="p-0">
-                    <div className="grid gap-0 md:grid-cols-[0.2fr_0.8fr]">
-                      <div className={`${role.accent} min-h-full`} />
-                      <div className="p-6">
-                        <p className="text-xl font-semibold tracking-tight text-[#111827]">{role.title}</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{role.description}</p>
-                        <div className="mt-5 flex flex-wrap gap-2">
-                          {role.bullets.map((bullet) => (
-                            <Badge key={bullet} variant="outline" className="rounded-full border-[#d8dee8] bg-[#f8fafc] px-3 py-1 text-[11px]">
-                              {bullet}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-[36px] border border-[#e7ebf1] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-8 shadow-[0_18px_50px_rgba(17,24,39,0.05)] sm:p-10">
-            <div className="grid gap-8 lg:grid-cols-[1fr_0.9fr] lg:items-end">
-              <div>
-                <p className="max-w-2xl text-base leading-8 text-[#4b5563]">
-                  Demo Only.(Static and Not Live For Use)
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3 lg:justify-end">
-                <Link href={hasSession ? "/dashboard" : "/login"}>
-                  <Button size="xl" className="rounded-full bg-[#111827] px-7">
-                    {hasSession ? "Launch Workspace" : "Enter Demo"}
-                  </Button>
-                </Link>
-                <Link href="/dashboard/ai/gallery">
-                  <Button size="xl" variant="outline" className="rounded-full px-7">
-                    Preview AI Showcase
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </section>
-        </main>
-      </div>
+      {/* ─── Footer ─── */}
+      <footer className="px-8 md:px-12 py-8 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500 flex flex-wrap justify-between gap-4">
+        <span>© DBS Architectes · Sustainable Architectural, Urban and Landscape design</span>
+        <span className="tracking-wider">Friday · v1</span>
+      </footer>
     </div>
   );
 }
