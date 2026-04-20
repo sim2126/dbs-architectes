@@ -1,79 +1,44 @@
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { StatisticsClient } from "./statistics-client";
 
 export default async function StatisticsPage() {
-  const session = await auth();
-
-  const [projects, users, workloadData] = await Promise.all([
+  const [rawProjects, rawUsers] = await Promise.all([
     prisma.project.findMany({
-      include: {
-        assignments: { include: { user: true } },
+      select: {
+        id: true,
+        phase: true,
+        category: true,
+        country: true,
+        assignments: {
+          select: { userId: true },
+        },
       },
     }),
     prisma.user.findMany({
       where: { isActive: true },
-      include: {
-        projects: {
-          include: { project: true },
-        },
+      select: {
+        id: true,
+        name: true,
+        initials: true,
+        defaultCountry: true,
       },
-    }),
-    prisma.projectAssignment.groupBy({
-      by: ["userId"],
-      _count: { userId: true },
     }),
   ]);
 
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(
-    (p) => p.phase !== "TERMINATO" && p.phase !== "STUCK"
-  ).length;
-  const teamMembers = users.length;
-  const avgPerPerson = teamMembers > 0 ? (totalProjects / teamMembers).toFixed(1) : "0";
-
-  const phaseDistribution = projects.reduce(
-    (acc: Record<string, number>, p) => {
-      acc[p.phase] = (acc[p.phase] || 0) + 1;
-      return acc;
-    },
-    {}
-  );
-
-  const userWorkload = users.map((u) => ({
-    name: u.initials || u.name?.split(" ").map((n) => n[0]).join("") || "??",
-    fullName: u.name || "Unknown",
-    active: u.projects.filter(
-      (pa) => pa.project.phase !== "TERMINATO" && pa.project.phase !== "STUCK"
-    ).length,
-    stuckTerminated: u.projects.filter(
-      (pa) => pa.project.phase === "TERMINATO" || pa.project.phase === "STUCK"
-    ).length,
-    total: u.projects.length,
+  // Shape for client
+  const projects = rawProjects.map((p) => ({
+    id: p.id,
+    phase: p.phase,
+    category: p.category,
+    country: p.country,
+    userIds: p.assignments.map((a) => a.userId),
+  }));
+  const users = rawUsers.map((u) => ({
+    id: u.id,
+    name: u.name ?? "Unknown",
+    initials: u.initials ?? u.name?.split(" ").map((n) => n[0]).join("") ?? "??",
+    country: u.defaultCountry,
   }));
 
-  const categoryData = projects.reduce(
-    (acc: Record<string, number>, p) => {
-      acc[p.category] = (acc[p.category] || 0) + 1;
-      return acc;
-    },
-    {}
-  );
-
-  return (
-    <StatisticsClient
-      stats={{
-        totalProjects,
-        activeProjects,
-        teamMembers,
-        avgPerPerson,
-      }}
-      phaseDistribution={Object.entries(phaseDistribution).map(([phase, count]) => ({
-        phase,
-        count,
-      }))}
-      userWorkload={userWorkload}
-      categoryData={Object.entries(categoryData).map(([name, value]) => ({ name, value }))}
-    />
-  );
+  return <StatisticsClient projects={projects} users={users} />;
 }

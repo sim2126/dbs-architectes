@@ -33,12 +33,12 @@ const navItems = [
   { labelKey: "nav.projects", href: "/dashboard/projects", icon: FolderOpen },
   { labelKey: "nav.agenda", href: "/dashboard/agenda", icon: Calendar },
   { labelKey: "nav.statistics", href: "/dashboard/statistics", icon: BarChart3 },
-  { labelKey: "nav.users", href: "/dashboard/users", icon: Users, adminOnly: true },
 ];
 
 const collaborationItems = [
   { labelKey: "nav.chat", href: "/dashboard/chat", icon: MessageSquare },
   { labelKey: "nav.activity", href: "/dashboard/activity", icon: Activity },
+  { labelKey: "nav.users", href: "/dashboard/users", icon: Users, adminOnly: true },
   { labelKey: "nav.sheets", href: "/dashboard/sheets", icon: Table2 },
   { labelKey: "nav.integrations", href: "/dashboard/integrations", icon: Plug },
 ];
@@ -121,7 +121,6 @@ export function Sidebar({ user }: SidebarProps) {
             {/* Main items */}
             <div className="space-y-0.5">
               {navItems.map((item) => {
-                if (item.adminOnly && !isAdmin) return null;
                 const isActive = item.href === "/dashboard"
                   ? pathname === "/dashboard"
                   : pathname === item.href || pathname.startsWith(item.href + "/");
@@ -173,6 +172,7 @@ export function Sidebar({ user }: SidebarProps) {
               {collapsed && <div className="my-1 mx-2 h-px bg-border/60" />}
               <div className="space-y-0.5">
                 {collaborationItems.map((item) => {
+                  if ("adminOnly" in item && item.adminOnly && !isAdmin) return null;
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                   return (
                     <Link
