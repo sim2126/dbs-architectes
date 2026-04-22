@@ -16,6 +16,7 @@ const T: Record<Language, Record<string, string>> = {
     "nav.integrations": "Integrations",
     "nav.ai_agent": "Project Agent",
     "nav.ai_gpt": "DBS GPT",
+    "nav.ai_lang": "LangGraph Studio",
     "nav.ai_gallery": "Visual Gallery AI",
     "nav.ai_planning": "Planning AI",
     "nav.collaboration": "Collaboration",
