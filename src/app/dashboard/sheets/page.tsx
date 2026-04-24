@@ -35,7 +35,7 @@ interface ProjectRow {
   workStatus: string;
   billing: string;
   year: string;
-  team: string;
+  team: Array<{ name: string; initials: string }>;
   notes: string;
 }
 
@@ -241,7 +241,7 @@ export default function SheetsPage() {
         id: string; code: string; title: string; phase: string; category: string;
         client?: string; commune?: string; workStatus: string; billing?: string;
         year?: number; notes?: string;
-        assignments: { user: { name?: string | null } }[];
+        assignments: { user: { name?: string | null; initials?: string | null } }[];
       }[];
       setProjectRows(
         data.map((p) => ({
@@ -255,7 +255,16 @@ export default function SheetsPage() {
           workStatus: p.workStatus,
           billing: p.billing ?? "",
           year: p.year ? String(p.year) : "",
-          team: p.assignments.map((a) => a.user.name).filter(Boolean).join(", "),
+          team: p.assignments
+            .map((a) => ({
+              name: a.user.name ?? "",
+              initials:
+                a.user.initials ??
+                (a.user.name
+                  ? a.user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+                  : "??"),
+            }))
+            .filter((t) => t.name),
           notes: p.notes ?? "",
         }))
       );
@@ -383,7 +392,12 @@ export default function SheetsPage() {
       sheetName = "Projects Status";
       wsData = [
         ["Code", "Title", "Phase", "Category", "Client", "Commune", "Work Status", "Billing", "Year", "Team", "Notes"],
-        ...projectRows.map((r) => [r.code, r.title, r.phase, r.category, r.client, r.commune, r.workStatus, r.billing, r.year, r.team, r.notes]),
+        ...projectRows.map((r) => [
+          r.code, r.title, r.phase, r.category, r.client, r.commune,
+          r.workStatus, r.billing, r.year,
+          r.team.map((t) => t.name).join(", "),
+          r.notes,
+        ]),
       ];
     } else if (activeView === "workload") {
       sheetName = "Team Workload";
@@ -668,6 +682,40 @@ export default function SheetsPage() {
   );
 }
 
+// ─── Team avatar stack ─────────────────────────────────────────
+// Compact rendering of project team — up to 3 circular initials with a
+// "+N" chip for the rest, full list revealed on hover. Keeps every row
+// at a uniform height regardless of team size.
+
+function TeamAvatarStack({ team }: { team: Array<{ name: string; initials: string }> }) {
+  if (team.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const visible = team.slice(0, 3);
+  const overflow = team.length - visible.length;
+  const allNames = team.map((t) => t.name).join(", ");
+  return (
+    <div
+      className="flex items-center -space-x-1.5"
+      title={allNames}
+    >
+      {visible.map((t, i) => (
+        <div
+          key={`${t.name}-${i}`}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-semibold text-foreground"
+        >
+          {t.initials}
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-background bg-foreground px-1 text-[9px] font-semibold text-background">
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Projects table ────────────────────────────────────────────
 
 function ProjectsTable({
@@ -725,7 +773,9 @@ function ProjectsTable({
               <DropdownCell value={row.billing} options={BILLING_OPTIONS} onChange={(v) => onUpdate(row.id, "billing", v)} />
             </td>
             <td className="px-3 py-2 whitespace-nowrap">{row.year}</td>
-            <td className="px-3 py-2 max-w-[160px] text-muted-foreground">{row.team || "—"}</td>
+            <td className="px-3 py-2 w-[160px] whitespace-nowrap">
+              <TeamAvatarStack team={row.team} />
+            </td>
             <td className="px-3 py-2 max-w-[200px]">
               <EditableCell value={row.notes} onChange={(v) => onUpdate(row.id, "notes", v)} />
             </td>
