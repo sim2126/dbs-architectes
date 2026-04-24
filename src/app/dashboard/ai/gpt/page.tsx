@@ -874,10 +874,24 @@ export default function DBSGPTPage() {
                 m.id === assistantId ? { ...m, isStreaming: false } : m
               ));
             } else if (event.type === "error") {
-              const errText = `Error: ${event.message}`;
-              pendingAssistantContent.current = errText;
+              // Log the raw upstream error for debugging; surface a friendly
+              // message to the user so internal stack traces never leak into
+              // the chat bubble.
+              console.error("[DBS GPT] agent stream error:", event.message);
+              const friendly = "Hmm — something broke on our end. Try that again?";
+              pendingAssistantContent.current = friendly;
+              pendingAssistantBlocks.current = [
+                { type: "callout", tone: "warning", text: friendly },
+              ];
               setMessages((prev) => prev.map((m) =>
-                m.id === assistantId ? { ...m, content: errText, isStreaming: false } : m
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      content: friendly,
+                      blocks: [{ type: "callout", tone: "warning", text: friendly }],
+                      isStreaming: false,
+                    }
+                  : m,
               ));
             }
           } catch {
@@ -903,19 +917,32 @@ export default function DBSGPTPage() {
         );
       }
     } catch (err) {
-      const errText = `Something went wrong: ${String(err)}`;
-      pendingAssistantContent.current = errText;
+      // Connection-level failure (network, abort, etc.). Same policy: log the
+      // raw error, show a branded-friendly message in the UI.
+      console.error("[DBS GPT] request failed:", err);
+      const friendly = "It's not you — our end hit a snag. Give it another try in a moment.";
+      pendingAssistantContent.current = friendly;
+      pendingAssistantBlocks.current = [
+        { type: "callout", tone: "warning", text: friendly },
+      ];
       setMessages((prev) => prev.map((m) =>
-        m.id === assistantId ? { ...m, content: errText, isStreaming: false } : m
+        m.id === assistantId
+          ? {
+              ...m,
+              content: friendly,
+              blocks: [{ type: "callout", tone: "warning", text: friendly }],
+              isStreaming: false,
+            }
+          : m,
       ));
-      // Still persist so the session gets its title + the error stays visible
-      // in history instead of leaving an orphan "New chat" row in the sidebar.
+      // Still persist so the session gets its title and the friendly error is
+      // visible in history instead of leaving an orphan "New chat" sidebar row.
       if (sessionId) {
         try {
           await saveMessages(
             sessionId,
             pendingUserContent.current,
-            errText,
+            friendly,
             pendingAssistantArtifacts.current,
             pendingAssistantSteps.current,
             pendingAssistantBlocks.current,

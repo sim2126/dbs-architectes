@@ -115,7 +115,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "text"],
             properties: {
-              type: { const: "prose" },
+              type: { type: "string", const: "prose" },
               text: { type: "string" },
             },
           },
@@ -124,7 +124,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "stats"],
             properties: {
-              type: { const: "stat_cards" },
+              type: { type: "string", const: "stat_cards" },
               stats: {
                 type: "array",
                 items: {
@@ -149,7 +149,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "projects"],
             properties: {
-              type: { const: "project_list" },
+              type: { type: "string", const: "project_list" },
               projects: {
                 type: "array",
                 items: {
@@ -173,7 +173,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "people"],
             properties: {
-              type: { const: "people" },
+              type: { type: "string", const: "people" },
               people: {
                 type: "array",
                 items: {
@@ -196,7 +196,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "items"],
             properties: {
-              type: { const: "agenda" },
+              type: { type: "string", const: "agenda" },
               items: {
                 type: "array",
                 items: {
@@ -225,7 +225,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "columns", "rows", "caption"],
             properties: {
-              type: { const: "table" },
+              type: { type: "string", const: "table" },
               columns: { type: "array", items: { type: "string" } },
               rows: {
                 type: "array",
@@ -239,7 +239,7 @@ export const AGENT_RESPONSE_SCHEMA = {
             additionalProperties: false,
             required: ["type", "tone", "text"],
             properties: {
-              type: { const: "callout" },
+              type: { type: "string", const: "callout" },
               tone: { type: "string", enum: ["info", "warning", "danger", "success"] },
               text: { type: "string" },
             },
