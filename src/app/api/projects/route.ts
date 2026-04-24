@@ -3,6 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isManagerOrAbove } from "@/lib/permissions";
 
+function boundedLimit(value: string | null, fallback = 100, max = 500) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,6 +19,9 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get("category") || "";
   const country = searchParams.get("country") || "";
   const operatingRegion = searchParams.get("region") || "";
+  const cursor = searchParams.get("cursor") || "";
+  const includePaging = searchParams.get("paging") === "1";
+  const limit = boundedLimit(searchParams.get("limit"));
 
   const projects = await prisma.project.findMany({
     where: {
@@ -34,6 +43,8 @@ export async function GET(request: NextRequest) {
       ],
     },
     orderBy: { updatedAt: "desc" },
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: limit + 1,
     include: {
       assignments: {
         include: { user: { select: { id: true, name: true, initials: true } } },
@@ -41,7 +52,18 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(projects);
+  const hasMore = projects.length > limit;
+  const page = hasMore ? projects.slice(0, limit) : projects;
+
+  if (includePaging) {
+    return Response.json({
+      projects: page,
+      hasMore,
+      nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+    });
+  }
+
+  return Response.json(page);
 }
 
 export async function POST(request: NextRequest) {

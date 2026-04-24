@@ -10,7 +10,7 @@ export default async function ProjectsPage() {
       orderBy: { updatedAt: "desc" },
       include: {
         assignments: {
-          include: { user: true },
+          include: { user: { select: { id: true, name: true, initials: true, image: true } } },
         },
       },
     }),

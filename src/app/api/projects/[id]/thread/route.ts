@@ -2,6 +2,12 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
+function boundedLimit(value: string | null, fallback = 50, max = 100) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
 // ── Access gate ───────────────────────────────────────────────────────────────
 // Admins and super_admins can access any project thread.
 // Project managers can access any project thread (firm-wide visibility).
@@ -56,6 +62,9 @@ export async function GET(
   if (!session?.user?.id) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  const { searchParams } = new URL(request.url);
+  const cursor = searchParams.get("cursor") || "";
+  const limit = boundedLimit(searchParams.get("limit"));
 
   const hasAccess = await assertProjectAccess(id, session.user.id, session.user.role);
   if (!hasAccess) return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -63,8 +72,13 @@ export async function GET(
   const channel = await getOrCreateThreadChannel(id, session.user.id);
 
   const messages = await prisma.message.findMany({
-    where: { channelId: channel.id, deletedAt: null, parentId: null },
-    orderBy: { createdAt: "asc" },
+    where: {
+      channelId: channel.id,
+      deletedAt: null,
+      parentId: null,
+      ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
+    },
+    orderBy: { createdAt: "desc" },
     include: {
       user: { select: { id: true, name: true, initials: true, image: true, role: true } },
       replies: {
@@ -73,14 +87,19 @@ export async function GET(
         include: {
           user: { select: { id: true, name: true, initials: true, image: true, role: true } },
         },
+        take: 5,
       },
       reactions: {
         include: { user: { select: { id: true, name: true, initials: true } } },
       },
     },
+    take: limit + 1,
   });
+  const hasMore = messages.length > limit;
+  const page = hasMore ? messages.slice(0, limit) : messages;
+  const nextCursor = hasMore ? page.at(-1)?.createdAt.toISOString() ?? null : null;
 
-  return Response.json({ channelId: channel.id, messages });
+  return Response.json({ channelId: channel.id, messages: page.reverse(), hasMore, nextCursor });
 }
 
 export async function POST(

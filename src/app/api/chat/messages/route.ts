@@ -3,6 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/lib/pusher";
 
+function boundedLimit(value: string | null, fallback = 50, max = 100) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), max);
+}
+
 // ── Access check ──────────────────────────────────────────────────────────────
 // Public channels: any authenticated user can read/write.
 // Project channels: any authenticated user can read (project threads are
@@ -20,13 +26,13 @@ async function assertChannelAccess(channelId: string, userId: string) {
 
   if (!channel) return { ok: false, status: 404, error: "Channel not found" } as const;
 
-  if (channel.type === "public") return { ok: true } as const;
+  if (channel.type === "public") return { ok: true, channelType: channel.type } as const;
 
   if (channel.members.length === 0) {
     return { ok: false, status: 403, error: "Forbidden" } as const;
   }
 
-  return { ok: true } as const;
+  return { ok: true, channelType: channel.type } as const;
 }
 
 // ── GET /api/chat/messages ────────────────────────────────────────────────────
@@ -41,7 +47,7 @@ export async function GET(request: NextRequest) {
   const channelId = searchParams.get("channelId");
   const mention   = searchParams.get("mention");
   const cursor    = searchParams.get("cursor");
-  const limit     = 50;
+  const limit     = boundedLimit(searchParams.get("limit"));
 
   // ── Mention search mode ───────────────────────────────────────────────────
   if (mention) {
@@ -103,15 +109,18 @@ export async function GET(request: NextRequest) {
           reactions: { include: { user: { select: { id: true, name: true, initials: true } } } },
         },
         orderBy: { createdAt: "asc" },
+        take: 5,
       },
     },
     orderBy: { createdAt: "desc" },
-    take: limit,
+    take: limit + 1,
   });
+  const hasMore = messages.length > limit;
+  const page = hasMore ? messages.slice(0, limit) : messages;
+  const nextCursor = hasMore ? page.at(-1)?.createdAt.toISOString() ?? null : null;
 
   // Update last-read timestamp (only for actual members of private/direct channels)
-  const channelType = (await prisma.channel.findUnique({ where: { id: channelId }, select: { type: true } }))?.type;
-  if (channelType !== "public") {
+  if (access.channelType !== "public") {
     await prisma.channelMember.updateMany({
       where: { channelId, userId: session.user.id },
       data: { lastRead: new Date() },
@@ -119,9 +128,9 @@ export async function GET(request: NextRequest) {
   }
 
   return Response.json({
-    messages: messages.reverse(),
-    hasMore:  messages.length === limit,
-    nextCursor: messages[0]?.createdAt.toISOString(),
+    messages: page.reverse(),
+    hasMore,
+    nextCursor,
   });
 }
 

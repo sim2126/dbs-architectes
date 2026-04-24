@@ -68,7 +68,7 @@ export function CommandPalette() {
       setQuery("");
       setSelected(0);
       if (projects.length === 0) {
-        fetch("/api/projects")
+        fetch("/api/projects?limit=40")
           .then((r) => r.json())
           .then((data) => { if (Array.isArray(data)) setProjects(data.slice(0, 40)); });
       }

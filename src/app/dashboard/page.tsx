@@ -19,7 +19,10 @@ export default async function DashboardPage() {
     prisma.activity.findMany({
       take: 8,
       orderBy: { createdAt: "desc" },
-      include: { user: true, project: true },
+      include: {
+        user: { select: { name: true, initials: true } },
+        project: { select: { title: true, code: true } },
+      },
     }),
     prisma.agendaItem.findMany({
       take: 5,
@@ -28,7 +31,7 @@ export default async function DashboardPage() {
         status: { not: "done" },
       },
       orderBy: { date: "asc" },
-      include: { project: true },
+      include: { project: { select: { title: true, code: true } } },
     }),
     prisma.project.groupBy({
       by: ["country"],
