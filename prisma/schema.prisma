@@ -131,6 +131,11 @@ model Project {
   calls          Call[]
   importedAssets ImportedAsset[]
   meetingMemory  ProjectMeetingMemory?
+
+  @@index([status, updatedAt])
+  @@index([phase])
+  @@index([country, operatingRegion])
+  @@index([commune])
 }
 
 model ProjectAssignment {
@@ -143,6 +148,7 @@ model ProjectAssignment {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([userId])
 }
 
 model AgendaItem {
@@ -165,6 +171,10 @@ model AgendaItem {
   updatedAt   DateTime  @updatedAt
   project     Project?  @relation(fields: [projectId], references: [id])
   user        User      @relation(fields: [userId], references: [id])
+
+  @@index([date, status])
+  @@index([userId, date])
+  @@index([projectId, date])
 }
 
 model GalleryImage {
@@ -183,6 +193,8 @@ model GalleryImage {
   aiAnalysis String?
   createdAt  DateTime @default(now())
   project    Project? @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, createdAt])
 }
 
 model FloorPlan {
@@ -201,6 +213,8 @@ model FloorPlan {
   aiAnalysis   String?
   createdAt    DateTime @default(now())
   project      Project? @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, createdAt])
 }
 
 model Activity {
@@ -213,6 +227,11 @@ model Activity {
   createdAt   DateTime @default(now())
   project     Project? @relation(fields: [projectId], references: [id])
   user        User     @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
 }
 
 // ─── CHAT ────────────────────────────────────────────────────
@@ -233,6 +252,10 @@ model Channel {
   creator  User            @relation("ChannelCreator", fields: [createdBy], references: [id])
   members  ChannelMember[]
   messages Message[]
+
+  @@index([type, createdAt])
+  @@index([projectId, type])
+  @@index([createdBy, createdAt])
 }
 
 model ChannelMember {
@@ -247,6 +270,8 @@ model ChannelMember {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([channelId, userId])
+  @@index([userId])
+  @@index([channelId, lastRead])
 }
 
 model Message {
@@ -271,6 +296,11 @@ model Message {
   replies        Message[]         @relation("MessageThread")
   reactions      MessageReaction[]
   importedAssets ImportedAsset[]
+
+  @@index([channelId, deletedAt, parentId, createdAt])
+  @@index([userId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([createdAt])
 }
 
 model MessageReaction {
@@ -284,6 +314,7 @@ model MessageReaction {
   user    User    @relation(fields: [userId], references: [id])
 
   @@unique([messageId, userId, emoji])
+  @@index([userId])
 }
 
 // ─── CALLS ───────────────────────────────────────────────────
@@ -315,6 +346,11 @@ model Call {
   starter      User              @relation("CallStarter", fields: [startedBy], references: [id])
   project      Project?          @relation(fields: [projectId], references: [id])
   participants CallParticipant[]
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([startedBy, createdAt])
+  @@index([projectId, createdAt])
 }
 
 model CallParticipant {
@@ -328,6 +364,7 @@ model CallParticipant {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([callId, userId])
+  @@index([userId])
 }
 
 // Rolling condensed knowledge of decisions/risks/open items per project,
@@ -355,6 +392,8 @@ model AiChatSession {
 
   user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages AiChatMessage[]
+
+  @@index([userId, updatedAt])
 }
 
 model AiChatMessage {
@@ -365,6 +404,8 @@ model AiChatMessage {
   createdAt DateTime @default(now())
 
   session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
 }
 
 // ─── SHEETS ──────────────────────────────────────────────────
@@ -382,6 +423,8 @@ model ExternalImportRun {
   updatedAt   DateTime @updatedAt
 
   idMaps ExternalIdMap[]
+
+  @@index([source, status, createdAt])
 }
 
 model ExternalIdMap {
@@ -417,6 +460,8 @@ model ImportedAsset {
   message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
 
   @@unique([source, sourceAssetId])
+  @@index([projectId, createdAt])
+  @@index([messageId, createdAt])
 }
 
 model Sheet {
@@ -429,6 +474,8 @@ model Sheet {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
 }
 
 // ─── GOOGLE CALENDAR ─────────────────────────────────────────
@@ -468,6 +515,7 @@ model UserRegionAccess {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, country, operatingRegion])
+  @@index([country, operatingRegion])
 }
 
 model RoleChangeLog {
@@ -481,4 +529,7 @@ model RoleChangeLog {
 
   user    User @relation("RoleChangeTarget", fields: [userId], references: [id], onDelete: Cascade)
   actor   User @relation("RoleChangeActor", fields: [changedBy], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([changedBy, createdAt])
 }

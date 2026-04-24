@@ -19,6 +19,16 @@ const LANG_NAMES: Record<string, string> = {
 // In-memory cache: "text||targetLang" → translated string
 // Prevents duplicate LLM calls within the same server instance
 const cache = new Map<string, string>();
+const MAX_CACHE_ENTRIES = 500;
+const MAX_TEXT_CHARS = 4000;
+
+function remember(cacheKey: string, translated: string) {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(cacheKey, translated);
+}
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -27,6 +37,9 @@ export async function POST(request: NextRequest) {
   const { text, targetLang } = await request.json() as { text: string; targetLang: string };
   if (!text?.trim() || !targetLang) {
     return Response.json({ error: "Missing params" }, { status: 400 });
+  }
+  if (text.length > MAX_TEXT_CHARS) {
+    return Response.json({ error: "Text too long" }, { status: 413 });
   }
 
   const targetName = LANG_NAMES[targetLang] ?? targetLang.toUpperCase();
@@ -66,7 +79,7 @@ Key rules:
 
       const translated = completion.choices[0]?.message?.content?.trim();
       if (translated) {
-        cache.set(cacheKey, translated);
+        remember(cacheKey, translated);
         return Response.json({ translated, engine: "gpt-4o-mini" });
       }
     } catch {
@@ -82,7 +95,7 @@ Key rules:
     const data = await res.json() as { responseData?: { translatedText?: string } };
     const translated = data?.responseData?.translatedText;
     if (translated) {
-      cache.set(cacheKey, translated);
+      remember(cacheKey, translated);
       return Response.json({ translated, engine: "mymemory" });
     }
   } catch {

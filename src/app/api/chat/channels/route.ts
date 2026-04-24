@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -20,18 +21,28 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
   });
 
-  // Get unread counts per channel
-  const channelsWithUnread = await Promise.all(
-    channels.map(async (ch) => {
-      const member = ch.members.find((m) => m.userId === session.user.id);
-      const unread = member
-        ? await prisma.message.count({
-            where: { channelId: ch.id, createdAt: { gt: member.lastRead }, deletedAt: null },
-          })
-        : 0;
-      return { ...ch, unread };
-    })
-  );
+  const memberChannelIds = channels
+    .filter((ch) => ch.members.some((m) => m.userId === session.user.id))
+    .map((ch) => ch.id);
+  const unreadRows = memberChannelIds.length
+    ? await prisma.$queryRaw<Array<{ channelId: string; unread: bigint }>>(Prisma.sql`
+        SELECT m."channelId", COUNT(*) AS unread
+        FROM "Message" m
+        JOIN "ChannelMember" cm
+          ON cm."channelId" = m."channelId"
+         AND cm."userId" = ${session.user.id}
+        WHERE m."channelId" IN (${Prisma.join(memberChannelIds)})
+          AND m."createdAt" > cm."lastRead"
+          AND m."deletedAt" IS NULL
+        GROUP BY m."channelId"
+      `)
+    : [];
+  const unreadByChannel = new Map(unreadRows.map((row) => [row.channelId, Number(row.unread)]));
+
+  const channelsWithUnread = channels.map((ch) => ({
+    ...ch,
+    unread: unreadByChannel.get(ch.id) ?? 0,
+  }));
 
   return Response.json(channelsWithUnread);
 }
