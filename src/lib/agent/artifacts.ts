@@ -22,11 +22,16 @@ export interface PersistedToolStep {
   status: "running" | "done";
 }
 
+import type { Block } from "./blocks";
+
 interface StoredAssistantEnvelope {
-  schema: "dbs-ai-message-v1";
+  // v2 adds the structured Gen-UI block list. Older v1 payloads continue to
+  // parse — blocks default to [] so the UI falls back to text+artifacts.
+  schema: "dbs-ai-message-v1" | "dbs-ai-message-v2";
   text: string;
   artifacts: AiArtifact[];
   steps: PersistedToolStep[];
+  blocks?: Block[];
 }
 
 const MAX_TITLE_LENGTH = 100;
@@ -187,12 +192,14 @@ export function serializeAssistantMessage(params: {
   text: string;
   artifacts?: AiArtifact[];
   steps?: PersistedToolStep[];
+  blocks?: Block[];
 }) {
   const payload: StoredAssistantEnvelope = {
-    schema: "dbs-ai-message-v1",
+    schema: "dbs-ai-message-v2",
     text: params.text,
     artifacts: params.artifacts ?? [],
     steps: params.steps ?? [],
+    blocks: params.blocks ?? [],
   };
   return JSON.stringify(payload);
 }
@@ -200,11 +207,15 @@ export function serializeAssistantMessage(params: {
 export function parseStoredAssistantMessage(content: string) {
   try {
     const parsed = JSON.parse(content) as Partial<StoredAssistantEnvelope>;
-    if (parsed && parsed.schema === "dbs-ai-message-v1") {
+    if (
+      parsed &&
+      (parsed.schema === "dbs-ai-message-v1" || parsed.schema === "dbs-ai-message-v2")
+    ) {
       return {
         text: typeof parsed.text === "string" ? parsed.text : "",
         artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
         steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+        blocks: Array.isArray(parsed.blocks) ? (parsed.blocks as Block[]) : [],
       };
     }
   } catch {
@@ -215,6 +226,7 @@ export function parseStoredAssistantMessage(content: string) {
     text: content,
     artifacts: [] as AiArtifact[],
     steps: [] as PersistedToolStep[],
+    blocks: [] as Block[],
   };
 }
 

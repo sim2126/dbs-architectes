@@ -7,6 +7,7 @@ import {
   PersistedToolStep,
   serializeAssistantMessage,
 } from "@/lib/agent/artifacts";
+import type { Block } from "@/lib/agent/blocks";
 
 // GET /api/ai-chats/[id] — get messages for a session
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         content: parsed.text,
         artifacts: parsed.artifacts,
         steps: parsed.steps,
+        blocks: parsed.blocks,
       };
     }),
   });
@@ -85,11 +87,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const { userContent, assistantContent, assistantArtifacts, assistantSteps, title } = await req.json() as {
+  const { userContent, assistantContent, assistantArtifacts, assistantSteps, assistantBlocks, title } = await req.json() as {
     userContent: string;
     assistantContent: string;
     assistantArtifacts?: AiArtifact[];
     assistantSteps?: PersistedToolStep[];
+    assistantBlocks?: Block[];
     title?: string;
   };
 
@@ -109,6 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           text: assistantContent,
           artifacts: assistantArtifacts ?? [],
           steps: assistantSteps ?? [],
+          blocks: assistantBlocks ?? [],
         }),
       },
     }),

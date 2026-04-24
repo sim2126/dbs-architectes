@@ -34,6 +34,8 @@ import {
   generateSessionTitle,
   PersistedToolStep,
 } from "@/lib/agent/artifacts";
+import type { Block } from "@/lib/agent/blocks";
+import { BlocksView } from "@/components/agent-blocks";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -45,7 +47,9 @@ interface ChatMessage {
   content: string;
   steps?: ToolStep[];
   artifacts?: AiArtifact[];
+  blocks?: Block[];
   isStreaming?: boolean;
+  error?: string;
 }
 
 interface ChatSession {
@@ -56,13 +60,22 @@ interface ChatSession {
 }
 
 interface SSEEvent {
-  type: "text" | "tool_start" | "tool_call" | "tool_result" | "artifact" | "done" | "error";
+  type:
+    | "text"
+    | "tool_start"
+    | "tool_call"
+    | "tool_result"
+    | "artifact"
+    | "blocks"
+    | "done"
+    | "error";
   content?: string;
   tools?: string[];
   name?: string;
   args?: Record<string, unknown>;
   message?: string;
   artifact?: AiArtifact;
+  blocks?: Block[];
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -381,17 +394,22 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Response text */}
-        {message.content && (
+        {/* Response — prefer structured Gen-UI blocks when available,
+            fall back to legacy Markdown content (errors, old history). */}
+        {message.blocks && message.blocks.length > 0 ? (
+          <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
+            <BlocksView blocks={message.blocks} />
+          </div>
+        ) : message.content ? (
           <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
             <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-7 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wide">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Actions */}
-        {!message.isStreaming && message.content && (
+        {!message.isStreaming && (message.content || (message.blocks && message.blocks.length > 0)) && (
           <div className="flex items-center gap-1 px-1 pt-0.5">
             <button
               onClick={copy}
@@ -573,6 +591,7 @@ export default function DBSGPTPage() {
   const pendingAssistantContent = useRef("");
   const pendingAssistantArtifacts = useRef<AiArtifact[]>([]);
   const pendingAssistantSteps = useRef<ToolStep[]>([]);
+  const pendingAssistantBlocks = useRef<Block[]>([]);
 
   const makeId = (role: string) => `${role}-${++seqRef.current}`;
 
@@ -603,13 +622,14 @@ export default function DBSGPTPage() {
     setLoadingSession(true);
     fetch(`/api/ai-chats/${activeSessionId}`)
       .then((r) => r.json())
-      .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[] }[] }) => {
+      .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[]; blocks?: Block[] }[] }) => {
         setMessages((d.messages ?? []).map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
           content: m.content,
           artifacts: m.artifacts ?? [],
           steps: m.steps ?? [],
+          blocks: m.blocks ?? [],
         })));
         loadedSessionRef.current = activeSessionId;
       })
@@ -650,6 +670,7 @@ export default function DBSGPTPage() {
     assistantContent: string,
     assistantArtifacts: AiArtifact[],
     assistantSteps: ToolStep[],
+    assistantBlocks: Block[],
     isFirst: boolean
   ) => {
     const title = isFirst ? generateSessionTitle(userContent) : undefined;
@@ -661,6 +682,7 @@ export default function DBSGPTPage() {
         assistantContent,
         assistantArtifacts,
         assistantSteps,
+        assistantBlocks,
         title,
       }),
     });
@@ -751,6 +773,7 @@ export default function DBSGPTPage() {
     pendingAssistantContent.current = "";
     pendingAssistantArtifacts.current = [];
     pendingAssistantSteps.current = [];
+    pendingAssistantBlocks.current = [];
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
@@ -841,6 +864,11 @@ export default function DBSGPTPage() {
                 });
                 return { ...m, steps };
               }));
+            } else if (event.type === "blocks" && event.blocks) {
+              pendingAssistantBlocks.current = event.blocks;
+              setMessages((prev) => prev.map((m) =>
+                m.id === assistantId ? { ...m, blocks: event.blocks } : m
+              ));
             } else if (event.type === "done") {
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId ? { ...m, isStreaming: false } : m
@@ -858,14 +886,20 @@ export default function DBSGPTPage() {
         }
       }
 
-      if (sessionId && (pendingAssistantContent.current || pendingAssistantArtifacts.current.length > 0)) {
+      if (
+        sessionId &&
+        (pendingAssistantContent.current ||
+          pendingAssistantArtifacts.current.length > 0 ||
+          pendingAssistantBlocks.current.length > 0)
+      ) {
         await saveMessages(
           sessionId,
           pendingUserContent.current,
           pendingAssistantContent.current,
           pendingAssistantArtifacts.current,
           pendingAssistantSteps.current,
-          isFirst
+          pendingAssistantBlocks.current,
+          isFirst,
         );
       }
     } catch (err) {
@@ -884,6 +918,7 @@ export default function DBSGPTPage() {
             errText,
             pendingAssistantArtifacts.current,
             pendingAssistantSteps.current,
+            pendingAssistantBlocks.current,
             isFirst,
           );
         } catch {
