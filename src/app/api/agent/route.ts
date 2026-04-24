@@ -56,7 +56,11 @@ export async function POST(req: NextRequest) {
           round++;
 
           const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            // gpt-4o-mini: ~20× cheaper than gpt-4o with far more generous
+            // per-minute rate limits on Tier 0/1 accounts. Quality is ample
+            // for DBS's grounded-tool-use workload (supervised by the
+            // system prompt + deterministic tools in AGENT_TOOLS).
+            model: "gpt-4o-mini",
             messages: history,
             tools: AGENT_TOOLS,
             tool_choice: "auto",
