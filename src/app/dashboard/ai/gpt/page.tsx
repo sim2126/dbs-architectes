@@ -125,9 +125,20 @@ function formatArgs(args: Record<string, unknown>): string | null {
 // ─── Thinking panel ───────────────────────────────────────────
 
 function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?: boolean }) {
+  // Claude-style behaviour: panel stays open while the agent is thinking
+  // (so users see progress in real time), then auto-collapses on completion
+  // for a clean transcript. Users can click to re-expand any time.
   const [open, setOpen] = useState(true);
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
   const doneCount = steps.filter((s) => s.status === "done").length;
   const allDone = doneCount === steps.length && !isStreaming;
+
+  useEffect(() => {
+    if (allDone && !autoCollapsed) {
+      setOpen(false);
+      setAutoCollapsed(true);
+    }
+  }, [allDone, autoCollapsed]);
 
   if (steps.length === 0 && !isStreaming) return null;
 
