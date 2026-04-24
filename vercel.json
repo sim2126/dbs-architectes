@@ -1,3 +1,4 @@
 {
-  "alias": ["friday-dbs.vercel.app"]
+  "alias": ["friday-dbs.vercel.app"],
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 npm run build"
 }
