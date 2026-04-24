@@ -585,9 +585,21 @@ export default function DBSGPTPage() {
     fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
   }, []);
 
-  // Load messages for active session
+  // Tracks sessions whose messages are already represented in local state —
+  // freshly created sessions, or sessions we just fetched. Prevents the
+  // session-load effect from racing sendMessage() and wiping the in-flight
+  // user/assistant messages right after a starter-prompt click.
+  const loadedSessionRef = useRef<string | null>(null);
+
+  // Load messages for active session (skipped when already primed locally)
   useEffect(() => {
-    if (!activeSessionId) { setMessages([]); return; }
+    if (!activeSessionId) {
+      setMessages([]);
+      loadedSessionRef.current = null;
+      return;
+    }
+    if (loadedSessionRef.current === activeSessionId) return;
+
     setLoadingSession(true);
     fetch(`/api/ai-chats/${activeSessionId}`)
       .then((r) => r.json())
@@ -599,6 +611,7 @@ export default function DBSGPTPage() {
           artifacts: m.artifacts ?? [],
           steps: m.steps ?? [],
         })));
+        loadedSessionRef.current = activeSessionId;
       })
       .catch(() => {})
       .finally(() => setLoadingSession(false));
@@ -608,8 +621,11 @@ export default function DBSGPTPage() {
     const res = await fetch("/api/ai-chats", { method: "POST" });
     const data = await res.json() as ChatSession;
     setSessions((prev) => [data, ...prev]);
-    setActiveSessionId(data.id);
+    // Mark as locally-loaded BEFORE switching activeSessionId, so the load
+    // effect's early-return kicks in on the same render tick.
+    loadedSessionRef.current = data.id;
     setMessages([]);
+    setActiveSessionId(data.id);
     return data.id;
   }, []);
 
@@ -830,8 +846,10 @@ export default function DBSGPTPage() {
                 m.id === assistantId ? { ...m, isStreaming: false } : m
               ));
             } else if (event.type === "error") {
+              const errText = `Error: ${event.message}`;
+              pendingAssistantContent.current = errText;
               setMessages((prev) => prev.map((m) =>
-                m.id === assistantId ? { ...m, content: `Error: ${event.message}`, isStreaming: false } : m
+                m.id === assistantId ? { ...m, content: errText, isStreaming: false } : m
               ));
             }
           } catch {
@@ -851,9 +869,27 @@ export default function DBSGPTPage() {
         );
       }
     } catch (err) {
+      const errText = `Something went wrong: ${String(err)}`;
+      pendingAssistantContent.current = errText;
       setMessages((prev) => prev.map((m) =>
-        m.id === assistantId ? { ...m, content: `Something went wrong: ${String(err)}`, isStreaming: false } : m
+        m.id === assistantId ? { ...m, content: errText, isStreaming: false } : m
       ));
+      // Still persist so the session gets its title + the error stays visible
+      // in history instead of leaving an orphan "New chat" row in the sidebar.
+      if (sessionId) {
+        try {
+          await saveMessages(
+            sessionId,
+            pendingUserContent.current,
+            errText,
+            pendingAssistantArtifacts.current,
+            pendingAssistantSteps.current,
+            isFirst,
+          );
+        } catch {
+          /* save failure on an already-erroring path — swallow */
+        }
+      }
     } finally {
       setLoading(false);
     }
