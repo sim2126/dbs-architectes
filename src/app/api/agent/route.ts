@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
 import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
+import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/lib/agent/blocks";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -16,22 +17,25 @@ export async function POST(req: NextRequest) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const { messages } = await req.json() as {
+  const { messages } = (await req.json()) as {
     messages: OpenAI.Chat.ChatCompletionMessageParam[];
   };
   const latestUserMessage = [...messages]
     .reverse()
     .find((message) => message.role === "user" && message.content);
-  const latestUserPrompt = typeof latestUserMessage?.content === "string"
-    ? latestUserMessage.content
-    : Array.isArray(latestUserMessage?.content)
-    ? latestUserMessage.content
-        .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
-        .join(" ")
-    : "";
+  const latestUserPrompt =
+    typeof latestUserMessage?.content === "string"
+      ? latestUserMessage.content
+      : Array.isArray(latestUserMessage?.content)
+        ? latestUserMessage.content
+            .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
+            .join(" ")
+        : "";
 
-  const systemPrompt = DBS_AGENT_SYSTEM_PROMPT
-    .replace("{today_date}", new Date().toISOString().split("T")[0])
+  const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
+    "{today_date}",
+    new Date().toISOString().split("T")[0],
+  )
     .replace("{user_name}", session.user.name ?? "User")
     .replace("{user_role}", (session.user as { role?: string }).role ?? "viewer");
 
@@ -43,38 +47,50 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        // Build message history with system prompt
         const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
           { role: "system", content: systemPrompt },
           ...messages,
         ];
 
         let round = 0;
+        let finalContent = "";
 
-        // Agentic loop — model reasons → calls tools → observes → continues
+        // Agentic loop — model reasons, calls tools in parallel, then emits
+        // a structured `blocks` envelope as its final answer.
         while (round < MAX_TOOL_ROUNDS) {
           round++;
 
+          // Every call asks for either (a) a tool call or (b) JSON matching
+          // the block schema. The model cannot emit free Markdown.
           const response = await openai.chat.completions.create({
-            // gpt-4o-mini: ~20× cheaper than gpt-4o with far more generous
-            // per-minute rate limits on Tier 0/1 accounts. Quality is ample
-            // for DBS's grounded-tool-use workload (supervised by the
-            // system prompt + deterministic tools in AGENT_TOOLS).
-            model: "gpt-4o-mini",
+            // gpt-4.1-mini: ~2.5x the cost of 4o-mini but markedly stronger
+            // reasoning + structured-output compliance. Within Tier 1 quota
+            // on this account (verified).
+            model: "gpt-4.1-mini",
             messages: history,
             tools: AGENT_TOOLS,
             tool_choice: "auto",
             temperature: 0.2,
             max_tokens: 4096,
-            stream: round === 1 || true, // always stream final text
+            stream: true,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "AgentResponse",
+                strict: true,
+                schema: AGENT_RESPONSE_SCHEMA as Record<string, unknown>,
+              },
+            },
           });
 
-          // Collect the full response (non-streaming for tool calls, streaming for final text)
           let assistantContent = "";
-          const toolCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[] = [];
+          const toolCalls: Array<{
+            id: string;
+            type: "function";
+            function: { name: string; arguments: string };
+          }> = [];
           let finishReason = "";
 
-          // Non-streaming collection for tool call rounds
           for await (const chunk of response as AsyncIterable<OpenAI.Chat.ChatCompletionChunk>) {
             const choice = chunk.choices[0];
             if (!choice) continue;
@@ -83,13 +99,12 @@ export async function POST(req: NextRequest) {
 
             const delta = choice.delta;
 
-            // Accumulate text content
             if (delta.content) {
               assistantContent += delta.content;
-              send({ type: "text", content: delta.content });
+              // We don't stream per-token text in block mode — the UI waits
+              // for the final `blocks` event, which it renders atomically.
             }
 
-            // Accumulate tool calls
             if (delta.tool_calls) {
               for (const tc of delta.tool_calls) {
                 const idx = tc.index;
@@ -102,30 +117,31 @@ export async function POST(req: NextRequest) {
                 }
                 if (tc.id) toolCalls[idx].id = tc.id;
                 if (tc.function?.name) toolCalls[idx].function.name = tc.function.name;
-                if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+                if (tc.function?.arguments) {
+                  toolCalls[idx].function.arguments += tc.function.arguments;
+                }
               }
             }
           }
 
-          // Add assistant message to history
-          const assistantMessage: OpenAI.Chat.ChatCompletionMessageParam = toolCalls.length > 0
-            ? {
-                role: "assistant",
-                content: assistantContent || null,
-                tool_calls: toolCalls,
-              }
-            : {
-                role: "assistant",
-                content: assistantContent || null,
-              };
+          const assistantMessage: OpenAI.Chat.ChatCompletionMessageParam =
+            toolCalls.length > 0
+              ? {
+                  role: "assistant",
+                  content: assistantContent || null,
+                  tool_calls: toolCalls,
+                }
+              : {
+                  role: "assistant",
+                  content: assistantContent || null,
+                };
           history.push(assistantMessage);
 
-          // If no tool calls, we're done
           if (finishReason === "stop" || toolCalls.length === 0) {
+            finalContent = assistantContent;
             break;
           }
 
-          // Execute all tool calls in parallel
           if (toolCalls.length > 0) {
             send({ type: "tool_start", tools: toolCalls.map((tc) => tc.function.name) });
 
@@ -147,7 +163,12 @@ export async function POST(req: NextRequest) {
                   result = { error: `Tool execution failed: ${String(err)}` };
                 }
 
-                const artifacts = buildArtifactsFromToolResult(tc.function.name, args, result, latestUserPrompt);
+                const artifacts = buildArtifactsFromToolResult(
+                  tc.function.name,
+                  args,
+                  result,
+                  latestUserPrompt,
+                );
                 for (const artifact of artifacts) {
                   send({ type: "artifact", artifact });
                 }
@@ -159,12 +180,34 @@ export async function POST(req: NextRequest) {
                   tool_call_id: tc.id,
                   content: JSON.stringify(result),
                 };
-              })
+              }),
             );
 
-            // Add all tool results to history
             history.push(...toolResults);
           }
+        }
+
+        // Parse the final JSON envelope. If parsing fails (schema drift or
+        // truncation), fall back to rendering the raw text as a single prose
+        // block so the user always sees something.
+        const parsed = parseAgentResponse(finalContent);
+        if (parsed) {
+          send({ type: "blocks", blocks: parsed.blocks });
+        } else if (finalContent) {
+          send({
+            type: "blocks",
+            blocks: [{ type: "prose", text: finalContent }],
+          });
+        } else {
+          send({
+            type: "blocks",
+            blocks: [
+              {
+                type: "prose",
+                text: "I couldn't produce an answer for that. Please rephrase or try a narrower question.",
+              },
+            ],
+          });
         }
 
         send({ type: "done" });
