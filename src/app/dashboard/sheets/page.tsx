@@ -17,10 +17,13 @@ import {
   ChevronDown,
   Loader2,
   UploadCloud,
+  MessageSquare,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { ProjectThreadPanel } from "@/components/project-thread-panel";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -218,12 +221,15 @@ function EditableCell({
 
 export default function SheetsPage() {
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const [activeView, setActiveView] = useState<ActiveView>("projects");
   const [projectRows, setProjectRows] = useState<ProjectRow[]>([]);
   const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
   const [customSheets, setCustomSheets] = useState<SheetMeta[]>([]);
   const [activeCustomSheet, setActiveCustomSheet] = useState<CustomSheet | null>(null);
   const [loading, setLoading] = useState(false);
+  // Project-thread side panel — opened by the row-level 💬 button.
+  const [threadFor, setThreadFor] = useState<{ id: string; code: string; title: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [dirtyProjectIds, setDirtyProjectIds] = useState<Set<string>>(new Set());
@@ -664,7 +670,14 @@ export default function SheetsPage() {
               Loading…
             </div>
           ) : activeView === "projects" ? (
-            <ProjectsTable rows={projectRows} onUpdate={updateProjectRow} dirtyIds={dirtyProjectIds} />
+            <ProjectsTable
+              rows={projectRows}
+              onUpdate={updateProjectRow}
+              dirtyIds={dirtyProjectIds}
+              onOpenThread={(row) =>
+                setThreadFor({ id: row.id, code: row.code, title: row.title })
+              }
+            />
           ) : activeView === "workload" ? (
             <WorkloadTable rows={teamRows} />
           ) : activeCustomSheet ? (
@@ -678,6 +691,54 @@ export default function SheetsPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Project-thread side drawer */}
+      <AnimatePresence>
+        {threadFor && session?.user?.id && (
+          <>
+            <motion.div
+              key="thread-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => setThreadFor(null)}
+              className="fixed inset-0 z-40 bg-black/30"
+            />
+            <motion.aside
+              key="thread-drawer"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col border-l border-border bg-background shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4 shrink-0">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    {threadFor.code}
+                  </p>
+                  <h3 className="truncate text-sm font-semibold">{threadFor.title}</h3>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Updates & comments</p>
+                </div>
+                <button
+                  onClick={() => setThreadFor(null)}
+                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Close thread"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <ProjectThreadPanel
+                  projectId={threadFor.id}
+                  currentUserId={session.user.id}
+                />
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -722,17 +783,19 @@ function ProjectsTable({
   rows,
   onUpdate,
   dirtyIds,
+  onOpenThread,
 }: {
   rows: ProjectRow[];
   onUpdate: (id: string, field: keyof ProjectRow, value: string) => void;
   dirtyIds: Set<string>;
+  onOpenThread: (row: ProjectRow) => void;
 }) {
   return (
     <table className="w-full text-xs border-collapse">
       <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm">
         <tr>
-          {["", "Code", "Title", "Phase", "Category", "Client", "Commune", "Work Status", "Billing", "Year", "Team", "Notes"].map((h) => (
-            <th key={h} className="border-b border-border px-3 py-2.5 text-left font-semibold text-[11px] text-muted-foreground uppercase tracking-wide whitespace-nowrap">
+          {["", "", "Code", "Title", "Phase", "Category", "Client", "Commune", "Work Status", "Billing", "Year", "Team", "Notes"].map((h, i) => (
+            <th key={`${h}-${i}`} className="border-b border-border px-3 py-2.5 text-left font-semibold text-[11px] text-muted-foreground uppercase tracking-wide whitespace-nowrap">
               {h}
             </th>
           ))}
@@ -743,12 +806,22 @@ function ProjectsTable({
           <tr
             key={row.id}
             className={cn(
-              "border-b border-border/50 hover:bg-accent/20 transition-colors",
+              "group border-b border-border/50 hover:bg-accent/20 transition-colors",
               dirtyIds.has(row.id) && "bg-amber-50/40 dark:bg-amber-900/10"
             )}
           >
             <td className="px-2 py-2 w-4">
               {dirtyIds.has(row.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Unsaved" />}
+            </td>
+            <td className="px-1 py-2 w-8">
+              <button
+                onClick={() => onOpenThread(row)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                title="Open thread"
+                aria-label={`Open thread for ${row.code}`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+              </button>
             </td>
             <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">{row.code}</td>
             <td className="px-3 py-2 max-w-[200px]">
