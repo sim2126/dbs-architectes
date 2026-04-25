@@ -11,6 +11,7 @@ import Link from "next/link";
 import { PHASE_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Project3DModal } from "@/components/projects/project-3d-modal";
+import { showToast } from "@/components/toast";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -230,19 +231,29 @@ export function ProjectsMapView({
   // ── Copy share link ──────────────────────────────────────────
   const copyLink = (id: string) => {
     const url = `${window.location.origin}/dashboard/projects?view=map&project=${id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        showToast("Link copied to clipboard");
+      })
+      .catch(() => {
+        showToast("Couldn't copy — your browser blocked clipboard access", "warning");
+      });
   };
 
   // ── Open in Google Earth ─────────────────────────────────────
   const openInEarth = (lat: number, lng: number) => {
-    // Cinematic camera: ~250m altitude, 67° tilt for a low-angle building
-    // perspective, 35° heading for a slight rotation off-axis. Much more
-    // dramatic than Google's default top-down preview.
+    // Google Earth Web URL format: @lat,lng,Xa,Yd,Zy,Wh,Vt,Ur where:
+    //   a = altitude   d = camera distance   y = field of view
+    //   h = heading    t = TILT (0=top-down, 90=horizon)   r = roll
+    // Cinematic preset: 250 m back, 35° FOV (slight zoom-in), facing 35°
+    // off-north, **67° tilt** so it looks up at the building rather than
+    // straight down. The previous URL had `0t` which collapsed back to
+    // top-down — exactly what we were trying to avoid.
     window.open(
-      `https://earth.google.com/web/@${lat},${lng},0a,250d,67y,35h,0t,0r`,
+      `https://earth.google.com/web/@${lat},${lng},0a,250d,35y,35h,67t,0r`,
       "_blank",
     );
   };
