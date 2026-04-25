@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { PHASE_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { Project3DModal } from "@/components/projects/project-3d-modal";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -63,6 +64,13 @@ export function ProjectsMapView({
   const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<MappedProject | null>(null);
   const [copied, setCopied] = useState(false);
+  // 3D modal
+  const [show3D, setShow3D] = useState(false);
+  const [initial3DCamera, setInitial3DCamera] = useState<{
+    tilt?: number;
+    heading?: number;
+    range?: number;
+  }>({});
   // Location setter state (for unpinned projects)
   const [settingLocation, setSettingLocation] = useState(false);
   const [addressInput, setAddressInput] = useState("");
@@ -106,7 +114,10 @@ export function ProjectsMapView({
       return;
     }
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    // `v=beta` + `libraries=...,maps3d` is required to register the
+    // <gmp-map-3d> photorealistic 3D Tiles web component used by the
+    // Project3DModal. `places` retained for geocoding autocomplete.
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=beta&libraries=places,maps3d`;
     s.async = true;
     s.defer = true;
     s.dataset.gmaps = "1";
@@ -194,6 +205,28 @@ export function ProjectsMapView({
     }
   }, [focusProjectId, pinned]);
 
+  // ── Auto-open 3D modal from URL (?3d=1&tilt=...&heading=...&range=...) ──
+  // Lets a teammate share a cinematic 3D view link that opens the modal
+  // pre-positioned at the original camera angle.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("3d") !== "1") return;
+    if (!focusProjectId) return;
+    const fp = pinned.find((p) => p.id === focusProjectId);
+    if (!fp || fp.latitude == null || fp.longitude == null) return;
+    setSelected(fp);
+    const tilt = Number(params.get("tilt"));
+    const heading = Number(params.get("heading"));
+    const range = Number(params.get("range"));
+    setInitial3DCamera({
+      tilt: Number.isFinite(tilt) ? tilt : undefined,
+      heading: Number.isFinite(heading) ? heading : undefined,
+      range: Number.isFinite(range) ? range : undefined,
+    });
+    setShow3D(true);
+  }, [focusProjectId, pinned]);
+
   // ── Copy share link ──────────────────────────────────────────
   const copyLink = (id: string) => {
     const url = `${window.location.origin}/dashboard/projects?view=map&project=${id}`;
@@ -205,9 +238,12 @@ export function ProjectsMapView({
 
   // ── Open in Google Earth ─────────────────────────────────────
   const openInEarth = (lat: number, lng: number) => {
+    // Cinematic camera: ~250m altitude, 67° tilt for a low-angle building
+    // perspective, 35° heading for a slight rotation off-axis. Much more
+    // dramatic than Google's default top-down preview.
     window.open(
-      `https://earth.google.com/web/@${lat},${lng},0a,800d,35y,0h,0t,0r`,
-      "_blank"
+      `https://earth.google.com/web/@${lat},${lng},0a,250d,67y,35h,0t,0r`,
+      "_blank",
     );
   };
 
@@ -483,13 +519,22 @@ export function ProjectsMapView({
               {/* ── Action row ── */}
               <div className={cn("flex gap-2", selected.latitude != null ? "mt-4" : "mt-3")}>
                 {selected.latitude != null && selected.longitude != null && (
-                  <button
-                    onClick={() => openInEarth(selected.latitude!, selected.longitude!)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    Google Earth
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setShow3D(true)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 hover:opacity-90 text-white text-xs font-semibold transition-opacity"
+                    >
+                      <Building2 className="w-3.5 h-3.5" />
+                      3D View
+                    </button>
+                    <button
+                      onClick={() => openInEarth(selected.latitude!, selected.longitude!)}
+                      title="Open in Google Earth (new tab)"
+                      className="flex items-center justify-center px-3 py-2 rounded-lg border border-border hover:bg-muted text-xs transition-colors"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => copyLink(selected.id)}
@@ -547,6 +592,35 @@ export function ProjectsMapView({
           </div>
         </div>
       )}
+
+      <Project3DModal
+        open={show3D}
+        onClose={() => {
+          setShow3D(false);
+          // Strip 3D-mode query params so closing the modal restores a
+          // clean URL — sharing while modal is open re-adds them.
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            ["3d", "tilt", "heading", "range"].forEach((k) => url.searchParams.delete(k));
+            window.history.replaceState(null, "", url.toString());
+          }
+        }}
+        project={
+          selected && selected.latitude != null && selected.longitude != null
+            ? {
+                id: selected.id,
+                code: selected.code,
+                title: selected.title,
+                latitude: selected.latitude,
+                longitude: selected.longitude,
+                image: selected.image,
+              }
+            : null
+        }
+        initialTilt={initial3DCamera.tilt}
+        initialHeading={initial3DCamera.heading}
+        initialRange={initial3DCamera.range}
+      />
     </div>
   );
 }
