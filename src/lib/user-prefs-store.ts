@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ProjectsView = "table" | "grid" | "kanban" | "map";
+export type ProjectsView = "table" | "grid" | "map";
 export type DensityMode = "compact" | "default" | "comfortable";
 
 interface UserPrefs {
@@ -37,6 +37,16 @@ export const useUserPrefs = create<UserPrefs>()(
       dashboardCards: ["stats", "activity", "ai", "agenda"],
       setDashboardCards: (dashboardCards) => set({ dashboardCards }),
     }),
-    { name: "friday-user-prefs" }
-  )
+    {
+      name: "friday-user-prefs",
+      // Coerce stale persisted view values (kanban was removed from the
+      // product) so users with old localStorage don't get a blank page.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        if ((state.projectsView as string) === "kanban") {
+          state.projectsView = "grid";
+        }
+      },
+    },
+  ),
 );

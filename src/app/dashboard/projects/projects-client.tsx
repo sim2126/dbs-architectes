@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, Grid, ChevronDown, X, Building2, ExternalLink,
-  LayoutTemplate, Check, GripVertical, ChevronRight, Users,
+  Check, GripVertical, ChevronRight, Users,
   MapPin, Tag, CreditCard, FileText, Clock, ArrowUpRight,
   Circle, Loader2, MessageSquare, MoreHorizontal, Trash2,
   Globe, Navigation,
@@ -231,9 +231,6 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
               <button onClick={() => setView("grid")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "grid" && "bg-accent text-foreground")} title="Grid">
                 <Grid className="w-4 h-4" />
               </button>
-              <button onClick={() => setView("kanban")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "kanban" && "bg-accent text-foreground")} title="Kanban">
-                <LayoutTemplate className="w-4 h-4" />
-              </button>
               <button onClick={() => setView("map")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "map" && "bg-accent text-foreground")} title="Map">
                 <Globe className="w-4 h-4" />
               </button>
@@ -276,7 +273,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
         </div>
 
         {/* Content */}
-        <div className={cn("flex-1 overflow-auto", view === "kanban" && "overflow-x-auto")}>
+        <div className="flex-1 overflow-auto">
           {view === "table" && (
             <TableView
               grouped={grouped}
@@ -304,11 +301,6 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
                 ))}
               </AnimatePresence>
               {filteredProjects.length === 0 && <EmptyState hasFilters={hasActiveFilters} onClear={clearFilters} />}
-            </div>
-          )}
-          {view === "kanban" && (
-            <div className="p-5">
-              <KanbanBoard projects={filteredProjects} canEdit={permissions.canEdit} onUpdate={updateProject} onSelect={setSelectedProject} />
             </div>
           )}
           {view === "map" && (
@@ -1208,85 +1200,3 @@ function FilterSelect({ label, value, options, onChange }: {
   );
 }
 
-// ─── Kanban Board (kept from before) ─────────────────────────
-const KANBAN_PHASES = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
-
-function KanbanBoard({ projects, canEdit, onUpdate, onSelect }: {
-  projects: Project[]; canEdit: boolean;
-  onUpdate: (p: Partial<Project>) => void; onSelect: (p: Project) => void;
-}) {
-  const t = useT();
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [overPhase, setOverPhase] = useState<string | null>(null);
-  const byPhase = KANBAN_PHASES.reduce<Record<string, Project[]>>((acc, phase) => { acc[phase] = projects.filter((p) => p.phase === phase); return acc; }, {});
-
-  const handleDrop = async (e: React.DragEvent, phase: string) => {
-    e.preventDefault(); setOverPhase(null);
-    if (!draggingId || !canEdit) return;
-    const project = projects.find((p) => p.id === draggingId);
-    if (!project || project.phase === phase) return;
-    onUpdate({ id: draggingId, phase });
-    await fetch(`/api/projects/${draggingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase }) });
-    setDraggingId(null);
-  };
-
-  return (
-    <div className="flex gap-3 h-full min-w-max pb-4">
-      {KANBAN_PHASES.map((phase) => {
-        const color = PHASE_COLORS[phase] || "#94a3b8";
-        const cols = byPhase[phase];
-        const isOver = overPhase === phase;
-        return (
-          <div key={phase} className={cn("flex flex-col w-60 rounded-xl border transition-all", isOver ? "border-foreground/30 bg-accent/60" : "border-border bg-muted/30")}
-            onDragOver={(e) => { e.preventDefault(); setOverPhase(phase); }}
-            onDrop={(e) => handleDrop(e, phase)}
-            onDragLeave={() => setOverPhase(null)}
-          >
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                <span className="text-xs font-semibold truncate">{translatePhase(phase, t)}</span>
-              </div>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ background: color }}>{cols.length}</span>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px]">
-              <AnimatePresence>
-                {cols.map((project) => {
-                  const wsk = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
-                  const ws = WORK_STATUS[wsk];
-                  return (
-                    <motion.div
-                      key={project.id} layout
-                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: draggingId === project.id ? 0.4 : 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                      draggable={canEdit}
-                      onDragStart={(e) => { setDraggingId(project.id); (e as unknown as React.DragEvent).dataTransfer.effectAllowed = "move"; }}
-                      onDragEnd={() => { setDraggingId(null); setOverPhase(null); }}
-                      onClick={() => onSelect(project)}
-                      className={cn("bg-card border border-border rounded-lg p-2.5 cursor-pointer hover:shadow-sm transition-all", canEdit && "cursor-grab active:cursor-grabbing")}
-                    >
-                      <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
-                      <p className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">{project.title.replace(project.code + " ", "")}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded font-bold text-white" style={{ background: ws.solid }}>{t(ws.tKey)}</span>
-                        <div className="flex -space-x-1">
-                          {project.assignments.slice(0, 3).map((a) => (
-                            <Avatar key={a.userId} className="h-5 w-5 border border-background">
-                              <AvatarFallback className="text-[8px] bg-foreground text-background">{a.user.initials ?? "??"}</AvatarFallback>
-                            </Avatar>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-              {cols.length === 0 && !isOver && (
-                <div className="flex items-center justify-center h-16 text-xs text-muted-foreground/40 border-2 border-dashed border-border/40 rounded-lg">{t("projects.drop_here")}</div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
