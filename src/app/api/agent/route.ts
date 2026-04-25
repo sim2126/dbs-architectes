@@ -5,6 +5,7 @@ import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
 import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
 import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/lib/agent/blocks";
+import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -14,6 +15,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  // Cost-control window: short-circuit before constructing the OpenAI
+  // client so a missing/removed key never produces a cryptic 401.
+  if (isAiDisabled()) return aiDisabledResponse();
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 

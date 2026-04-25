@@ -637,6 +637,11 @@ export default function DBSGPTPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [aiStatus, setAiStatus] = useState<{
+    enabled: boolean;
+    message?: string;
+    eta?: string;
+  }>({ enabled: true });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -656,6 +661,29 @@ export default function DBSGPTPage() {
   // Load sessions
   useEffect(() => {
     fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
+  }, []);
+
+  // Probe AI status — when AI_DISABLED is on in Vercel, the empty state
+  // explains the planned break and the composer is disabled instead of
+  // letting users send messages that would 503.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ai-status")
+      .then((r) => r.json())
+      .then((d: { enabled?: boolean; message?: string; eta?: string }) => {
+        if (cancelled) return;
+        setAiStatus({
+          enabled: d.enabled ?? true,
+          message: d.message,
+          eta: d.eta,
+        });
+      })
+      .catch(() => {
+        /* default optimistic — assume enabled */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Tracks sessions whose messages are already represented in local state —
@@ -1064,6 +1092,29 @@ export default function DBSGPTPage() {
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
+          ) : !aiStatus.enabled ? (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto flex h-full max-w-2xl items-center justify-center px-6 py-10"
+            >
+              <div className="rounded-[28px] border border-border bg-card p-8 text-center shadow-sm">
+                <AriaLogo variant="icon" size={48} />
+                <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+                  Aria · scheduled break
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold leading-tight">
+                  Back online {aiStatus.eta ?? "soon"}
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                  {aiStatus.message ??
+                    "Aria is taking a short planned break. She'll be back online shortly."}
+                </p>
+                <p className="mt-5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground/60">
+                  DBS Architectes · Friday
+                </p>
+              </div>
+            </motion.div>
           ) : messages.length === 0 ? (
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl px-6 py-10">
               <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#155e75_100%)] px-8 py-10 text-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
@@ -1113,21 +1164,31 @@ export default function DBSGPTPage() {
           <div className="mx-auto max-w-3xl flex gap-3">
             <textarea
               ref={textareaRef}
-              placeholder="Ask about projects, deadlines, team workload, regulations…"
+              placeholder={
+                aiStatus.enabled
+                  ? "Ask about projects, deadlines, team workload, regulations…"
+                  : `Aria is offline — back ${aiStatus.eta ?? "soon"}`
+              }
               value={input}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               rows={1}
-              className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all"
+              disabled={!aiStatus.enabled}
+              className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
-            <Button onClick={() => sendMessage(input)} disabled={!input.trim() || loading}
-              size="icon" className="h-[52px] w-[52px] rounded-2xl shrink-0"
+            <Button
+              onClick={() => sendMessage(input)}
+              disabled={!input.trim() || loading || !aiStatus.enabled}
+              size="icon"
+              className="h-[52px] w-[52px] rounded-2xl shrink-0"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
           <p className="mx-auto max-w-3xl mt-2 text-xs text-muted-foreground">
-            Enter to send · Shift+Enter for new line
+            {aiStatus.enabled
+              ? "Enter to send · Shift+Enter for new line"
+              : `Scheduled return: ${aiStatus.eta ?? "soon"}`}
           </p>
         </div>
       </div>
