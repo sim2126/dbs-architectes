@@ -20,6 +20,8 @@ import {
   Activity,
   Plug,
   Table2,
+  Bookmark,
+  Target,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -27,10 +29,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/command-palette";
 import { useT } from "@/lib/translations";
 import { useUserPrefs } from "@/lib/user-prefs-store";
+import { StarredSidebarSection } from "@/components/starred-sidebar-section";
 
 const navItems = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
   { labelKey: "nav.projects", href: "/dashboard/projects", icon: FolderOpen },
+  { labelKey: "nav.tasks", href: "/dashboard/tasks", icon: Target },
   { labelKey: "nav.agenda", href: "/dashboard/agenda", icon: Calendar },
   { labelKey: "nav.statistics", href: "/dashboard/statistics", icon: BarChart3 },
 ];
@@ -45,6 +49,7 @@ const collaborationItems = [
 
 const aiItems = [
   { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
+  { labelKey: "nav.ai_saved", href: "/dashboard/ai/saved", icon: Bookmark },
   { labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image },
   { labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch },
 ];
@@ -154,6 +159,9 @@ export function Sidebar({ user }: SidebarProps) {
                 );
               })}
             </div>
+
+            {/* Starred — auto-hidden when user has nothing favourited */}
+            <StarredSidebarSection collapsed={collapsed} />
 
             {/* Collaboration */}
             <div>

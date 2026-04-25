@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AddProjectModal } from "@/components/projects/add-project-modal";
+import { FavoriteStar } from "@/components/favorite-star";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -103,6 +104,31 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [focusProjectId, setFocusProjectId] = useState<string | null>(null);
+  const [favoriteProjectIds, setFavoriteProjectIds] = useState<Set<string>>(new Set());
+
+  // Hydrate the user's favourite-project ids once on mount, then refresh
+  // whenever a star is toggled anywhere in the app.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const res = await fetch("/api/favorites?type=project");
+        if (!res.ok) return;
+        const list = (await res.json()) as Array<{ entityId: string }>;
+        if (cancelled) return;
+        setFavoriteProjectIds(new Set(list.map((f) => f.entityId)));
+      } catch {
+        /* sidebar still works without this */
+      }
+    };
+    refresh();
+    const handler = () => refresh();
+    window.addEventListener("favorites:changed", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("favorites:changed", handler);
+    };
+  }, []);
 
   // Read ?view=map&project=<id> from URL on mount
   useEffect(() => {
@@ -274,7 +300,7 @@ export function ProjectsClient({ initialProjects, users, permissions, currentUse
             )}>
               <AnimatePresence mode="popLayout">
                 {filteredProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} onSelect={() => setSelectedProject(project)} isSelected={selectedProject?.id === project.id} />
+                  <ProjectCard key={project.id} project={project} onSelect={() => setSelectedProject(project)} isSelected={selectedProject?.id === project.id} starred={favoriteProjectIds.has(project.id)} />
                 ))}
               </AnimatePresence>
               {filteredProjects.length === 0 && <EmptyState hasFilters={hasActiveFilters} onClear={clearFilters} />}
@@ -937,7 +963,17 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
 }
 
 // ─── Project Card (grid view) ─────────────────────────────────
-function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSelect: () => void; isSelected: boolean }) {
+function ProjectCard({
+  project,
+  onSelect,
+  isSelected,
+  starred,
+}: {
+  project: Project;
+  onSelect: () => void;
+  isSelected: boolean;
+  starred: boolean;
+}) {
   const t = useT();
   const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
@@ -960,6 +996,13 @@ function ProjectCard({ project, onSelect, isSelected }: { project: Project; onSe
             <Building2 className="w-8 h-8 text-muted-foreground/30" />
           </div>
         )}
+        {/* Favourite star — always visible if starred, hover-revealed otherwise */}
+        <div className={cn(
+          "absolute bottom-2 left-2 rounded-full bg-background/85 backdrop-blur-sm transition-opacity",
+          starred ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}>
+          <FavoriteStar entityType="project" entityId={project.id} initiallyStarred={starred} size={14} />
+        </div>
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
           {translatePhase(project.phase, t)}
         </div>
