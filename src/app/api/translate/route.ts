@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import OpenAI from "openai";
+import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
 
 // Full language names for the model prompt
 const LANG_NAMES: Record<string, string> = {
@@ -33,6 +34,7 @@ function remember(cacheKey: string, translated: string) {
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (isAiDisabled()) return aiDisabledResponse();
 
   const { text, targetLang } = await request.json() as { text: string; targetLang: string };
   if (!text?.trim() || !targetLang) {

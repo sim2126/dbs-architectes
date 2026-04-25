@@ -15,6 +15,7 @@ import {
   getRoomRecordings,
   getRecordingAccessLink,
 } from "@/lib/daily";
+import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
 
 export const maxDuration = 120;
 
@@ -24,6 +25,7 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (isAiDisabled()) return aiDisabledResponse();
 
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as {
