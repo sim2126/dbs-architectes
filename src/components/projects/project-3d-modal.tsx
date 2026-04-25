@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, Copy, Check, Loader2, X, Maximize2 } from "lucide-react";
+import { showToast } from "@/components/toast";
 
 interface Project3DModalProps {
   open: boolean;
@@ -142,10 +143,16 @@ export function Project3DModal({
     url.searchParams.set("tilt", String(initialTilt));
     url.searchParams.set("heading", String(initialHeading));
     url.searchParams.set("range", String(initialRange));
-    navigator.clipboard.writeText(url.toString()).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(url.toString())
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        showToast("3D view link copied — share with your team");
+      })
+      .catch(() => {
+        showToast("Couldn't copy — your browser blocked clipboard access", "warning");
+      });
   };
 
   return (

@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
   const cached = cache.get(normalizedAddress);
   if (cached) return Response.json(cached);
 
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+  // Prefer the server-only Vercel env var; fall back to the legacy public
+  // name so existing dev configs still work.
+  const key =
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    "";
   if (!key) return Response.json({ error: "Maps API key not configured" }, { status: 503 });
 
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${key}`;

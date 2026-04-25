@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { BrowserNotificationBanner } from "@/components/browser-notification-banner";
+import { ToastHost } from "@/components/toast";
 
 export default async function DashboardLayout({
   children,
@@ -25,6 +26,7 @@ export default async function DashboardLayout({
         </main>
       </div>
       <BrowserNotificationBanner />
+      <ToastHost />
     </div>
   );
 }

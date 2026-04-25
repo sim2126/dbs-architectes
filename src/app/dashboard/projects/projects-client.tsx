@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AddProjectModal } from "@/components/projects/add-project-modal";
 import { FavoriteStar } from "@/components/favorite-star";
+import { showToast } from "@/components/toast";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -856,7 +857,10 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                 <button
                   onClick={() => {
                     const url = `${window.location.origin}/dashboard/projects?view=map&project=${project.id}`;
-                    navigator.clipboard.writeText(url);
+                    navigator.clipboard
+                      .writeText(url)
+                      .then(() => showToast("Map link copied to clipboard"))
+                      .catch(() => showToast("Couldn't copy — clipboard access blocked", "warning"));
                   }}
                   title="Copy map link"
                   className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs transition-colors flex items-center gap-1"
