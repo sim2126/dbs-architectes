@@ -5,6 +5,7 @@ const T: Record<Language, Record<string, string>> = {
     // ── Navigation ──────────────────────────────────────────────────────────
     "nav.dashboard": "Dashboard",
     "nav.projects": "Projects",
+    "nav.tasks": "Tasks",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistics",
     "nav.users": "Users",
@@ -16,6 +17,7 @@ const T: Record<Language, Record<string, string>> = {
     "nav.integrations": "Integrations",
     "nav.ai_agent": "Project Agent",
     "nav.ai_gpt": "DBS GPT",
+    "nav.ai_saved": "Saved Insights",
     "nav.ai_gallery": "Visual Gallery AI",
     "nav.ai_planning": "Planning AI",
     "nav.collaboration": "Collaboration",
@@ -230,6 +232,7 @@ const T: Record<Language, Record<string, string>> = {
   it: {
     "nav.dashboard": "Dashboard",
     "nav.projects": "Progetti",
+    "nav.tasks": "Attività",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiche",
     "nav.users": "Utenti",
@@ -441,6 +444,7 @@ const T: Record<Language, Record<string, string>> = {
   fr: {
     "nav.dashboard": "Tableau de bord",
     "nav.projects": "Projets",
+    "nav.tasks": "Tâches",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiques",
     "nav.users": "Utilisateurs",
@@ -652,6 +656,7 @@ const T: Record<Language, Record<string, string>> = {
   de: {
     "nav.dashboard": "Dashboard",
     "nav.projects": "Projekte",
+    "nav.tasks": "Aufgaben",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiken",
     "nav.users": "Benutzer",

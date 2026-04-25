@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronRight,
@@ -339,22 +340,50 @@ function ArtifactTableCard({
 
 function MessageBubble({
   message,
+  sessionId,
   onRetry,
   onExportArtifact,
   onOpenSheet,
 }: {
   message: ChatMessage;
+  sessionId: string | null;
   onRetry?: () => void;
   onExportArtifact?: (artifactId: string) => void;
   onOpenSheet?: (sheetId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [message.content]);
+
+  const save = useCallback(async () => {
+    if (saving || saved) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/ai-saved", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          messageId: message.id,
+          text: message.content,
+          blocks: message.blocks ?? [],
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      console.error("[gpt] save insight failed:", err);
+    } finally {
+      setSaving(false);
+    }
+  }, [message.id, message.content, message.blocks, sessionId, saved, saving]);
 
   if (message.role === "user") {
     return (
@@ -428,6 +457,20 @@ function MessageBubble({
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors",
+                saved
+                  ? "text-amber-600"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                saving && "opacity-50",
+              )}
+            >
+              <Bookmark className={cn("h-3 w-3", saved && "fill-current")} />
+              {saved ? "Saved" : "Save"}
             </button>
             {onRetry && (
               <button
@@ -1049,6 +1092,7 @@ export default function DBSGPTPage() {
                   <MessageBubble
                     key={message.id}
                     message={message}
+                    sessionId={activeSessionId}
                     onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
                     onOpenSheet={openSheet}
                     onRetry={

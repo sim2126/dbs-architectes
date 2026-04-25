@@ -52,6 +52,9 @@ model User {
   regionAccess     UserRegionAccess[]
   roleChangesFrom  RoleChangeLog[]     @relation("RoleChangeTarget")
   roleChangesBy    RoleChangeLog[]     @relation("RoleChangeActor")
+  favorites        Favorite[]
+  savedAi          SavedAiResponse[]
+  tasks            Task[]
 }
 
 model Account {
@@ -131,6 +134,7 @@ model Project {
   calls          Call[]
   importedAssets ImportedAsset[]
   meetingMemory  ProjectMeetingMemory?
+  tasks          Task[]
 
   @@index([status, updatedAt])
   @@index([phase])
@@ -532,4 +536,75 @@ model RoleChangeLog {
 
   @@index([userId, createdAt])
   @@index([changedBy, createdAt])
+}
+
+// ─── FAVORITES / STARS ──────────────────────────────────────
+// Polymorphic per-user favourites: any project, sheet, AI chat session,
+// agenda item, or team member can be starred. Resolved on read by the
+// API which fans out lookups by entityType.
+
+model Favorite {
+  id         String   @id @default(cuid())
+  userId     String
+  entityType String   // "project" | "sheet" | "agenda" | "user" | "ai_chat"
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ─── SAVED AI RESPONSES ────────────────────────────────────
+// Snapshots of Aria assistant responses the user wants to revisit.
+// We embed the rendered blocks + plain text so the saved card survives
+// even if the original chat session is deleted.
+
+model SavedAiResponse {
+  id         String   @id @default(cuid())
+  userId     String
+  // Original chat coordinates — kept for "open in chat" deep-link.
+  // Both nullable so a saved snippet survives chat deletion.
+  sessionId  String?
+  messageId  String?
+  title      String   @default("Saved insight")
+  text       String   // plain-text fallback rendering
+  blocks     Json     // structured Block[] for rich render
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, pinned, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ─── PERSONAL TASKS ────────────────────────────────────────
+// Lightweight personal to-dos, distinct from project-scoped AgendaItem.
+// `position` is a sparse float (1, 2, 3, 1.5, ...) for cheap drag-reorder
+// without renumbering every row.
+
+model Task {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      String   @default("todo")     // todo | doing | done
+  priority    String   @default("medium")   // low | medium | high | critical
+  projectId   String?  // optional link to a Project
+  position    Float    @default(0)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([userId, status, position])
+  @@index([userId, dueDate])
+  @@index([projectId])
 }
