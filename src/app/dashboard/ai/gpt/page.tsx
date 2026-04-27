@@ -77,6 +77,10 @@ interface SSEEvent {
   message?: string;
   artifact?: AiArtifact;
   blocks?: Block[];
+  // v3 — surfaced so the client can persist tool calls + their results
+  // for cross-turn context reconstruction.
+  toolCallId?: string;
+  result?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -774,11 +778,6 @@ export default function DBSGPTPage() {
     ));
   }, []);
 
-  const buildHistory = useCallback((msgs: ChatMessage[]) =>
-    msgs.filter((m) => !m.isStreaming).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    []
-  );
-
   const openSheet = useCallback((sheetId: string) => {
     router.push(`/dashboard/sheets?sheet=${sheetId}`);
   }, [router]);
@@ -860,11 +859,14 @@ export default function DBSGPTPage() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     try {
-      const history = buildHistory([...messages, userMsg]);
+      // New contract: send only the new user message + sessionId. Server
+      // reconstructs prior history (including past tool calls + their
+      // results) from the DB so multi-turn memory works without each
+      // round burning tokens to re-call tools.
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ sessionId, message: content }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -901,6 +903,7 @@ export default function DBSGPTPage() {
                 label: TOOL_LABELS[event.name] ?? event.name,
                 args: event.args ?? {},
                 status: "running",
+                toolCallId: event.toolCallId,
               };
               pendingAssistantSteps.current = [...pendingAssistantSteps.current, nextStep];
               setMessages((prev) => prev.map((m) =>
@@ -925,12 +928,18 @@ export default function DBSGPTPage() {
                   : m
               ));
             } else if (event.type === "tool_result" && event.name) {
-              // Mark the first "running" step with this tool name as done
+              // Match by toolCallId when available (correctly disambiguates
+              // parallel calls of the same tool); fall back to name+running.
+              const targetId = event.toolCallId;
+              const stepResult = event.result;
               let markedRef = false;
               pendingAssistantSteps.current = pendingAssistantSteps.current.map((step) => {
-                if (!markedRef && step.name === event.name && step.status === "running") {
+                const idMatch = targetId && step.toolCallId === targetId;
+                const nameMatch =
+                  !targetId && !markedRef && step.name === event.name && step.status === "running";
+                if (idMatch || nameMatch) {
                   markedRef = true;
-                  return { ...step, status: "done" };
+                  return { ...step, status: "done", result: stepResult };
                 }
                 return step;
               });
@@ -938,9 +947,12 @@ export default function DBSGPTPage() {
                 if (m.id !== assistantId) return m;
                 let marked = false;
                 const steps = (m.steps ?? []).map((s) => {
-                  if (!marked && s.name === event.name && s.status === "running") {
+                  const idMatch = targetId && s.toolCallId === targetId;
+                  const nameMatch =
+                    !targetId && !marked && s.name === event.name && s.status === "running";
+                  if (idMatch || nameMatch) {
                     marked = true;
-                    return { ...s, status: "done" as const };
+                    return { ...s, status: "done" as const, result: stepResult };
                   }
                   return s;
                 });
@@ -1037,7 +1049,7 @@ export default function DBSGPTPage() {
     } finally {
       setLoading(false);
     }
-  }, [loading, messages, activeSessionId, createSession, buildHistory, saveMessages]);
+  }, [loading, messages, activeSessionId, createSession, saveMessages]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
