@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
 import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
 import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/lib/agent/blocks";
 import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
+import { reconstructHistory } from "@/lib/agent/context-reconstruction";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -22,20 +24,47 @@ export async function POST(req: NextRequest) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const { messages } = (await req.json()) as {
-    messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  // New contract: client sends just the new user message + sessionId.
+  // Server reconstructs the full prior conversation (including past tool
+  // calls + their results) from the DB so multi-turn memory works
+  // properly. Backwards-compatible: if no sessionId is given (legacy
+  // client) we fall back to the messages array the client supplied.
+  const body = (await req.json()) as {
+    messages?: OpenAI.Chat.ChatCompletionMessageParam[];
+    sessionId?: string;
+    message?: string;
   };
-  const latestUserMessage = [...messages]
-    .reverse()
-    .find((message) => message.role === "user" && message.content);
-  const latestUserPrompt =
-    typeof latestUserMessage?.content === "string"
-      ? latestUserMessage.content
-      : Array.isArray(latestUserMessage?.content)
-        ? latestUserMessage.content
-            .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
-            .join(" ")
-        : "";
+
+  let priorHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+  let latestUserPrompt = "";
+
+  if (body.sessionId && typeof body.message === "string" && body.message.trim()) {
+    // Verify ownership and load history from DB.
+    const chat = await prisma.aiChatSession.findFirst({
+      where: { id: body.sessionId, userId: session.user.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (chat) {
+      priorHistory = reconstructHistory(chat.messages);
+    }
+    latestUserPrompt = body.message;
+    priorHistory.push({ role: "user", content: body.message });
+  } else if (Array.isArray(body.messages)) {
+    priorHistory = body.messages;
+    const latest = [...body.messages]
+      .reverse()
+      .find((m) => m.role === "user" && m.content);
+    latestUserPrompt =
+      typeof latest?.content === "string"
+        ? latest.content
+        : Array.isArray(latest?.content)
+          ? latest.content
+              .map((it) => ("text" in it && typeof it.text === "string" ? it.text : ""))
+              .join(" ")
+          : "";
+  } else {
+    return Response.json({ error: "Missing message or sessionId" }, { status: 400 });
+  }
 
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
     "{today_date}",
@@ -54,7 +83,7 @@ export async function POST(req: NextRequest) {
       try {
         const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
           { role: "system", content: systemPrompt },
-          ...messages,
+          ...priorHistory,
         ];
 
         let round = 0;
@@ -159,7 +188,12 @@ export async function POST(req: NextRequest) {
                   args = {};
                 }
 
-                send({ type: "tool_call", name: tc.function.name, args });
+                send({
+                  type: "tool_call",
+                  name: tc.function.name,
+                  args,
+                  toolCallId: tc.id,
+                });
 
                 let result: unknown;
                 try {
@@ -178,12 +212,22 @@ export async function POST(req: NextRequest) {
                   send({ type: "artifact", artifact });
                 }
 
-                send({ type: "tool_result", name: tc.function.name });
+                const resultStr = JSON.stringify(result);
+
+                // Carry the tool result content so the client can
+                // persist it on the step — that's what makes cross-turn
+                // memory possible.
+                send({
+                  type: "tool_result",
+                  name: tc.function.name,
+                  toolCallId: tc.id,
+                  result: resultStr.slice(0, 8000),
+                });
 
                 return {
                   role: "tool" as const,
                   tool_call_id: tc.id,
-                  content: JSON.stringify(result),
+                  content: resultStr,
                 };
               }),
             );

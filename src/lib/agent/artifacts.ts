@@ -20,19 +20,32 @@ export interface PersistedToolStep {
   label: string;
   args: Record<string, unknown>;
   status: "running" | "done";
+  // v3 additions — required for cross-turn context reconstruction. Older
+  // payloads parse with these undefined and we degrade gracefully.
+  toolCallId?: string;
+  /** Stringified tool result, capped at MAX_PERSISTED_RESULT_CHARS. */
+  result?: string;
 }
 
 import type { Block } from "./blocks";
 
 interface StoredAssistantEnvelope {
-  // v2 adds the structured Gen-UI block list. Older v1 payloads continue to
-  // parse — blocks default to [] so the UI falls back to text+artifacts.
-  schema: "dbs-ai-message-v1" | "dbs-ai-message-v2";
+  // v2 adds the Gen-UI block list. v3 adds tool result content on each
+  // step so multi-turn conversations remember what tools returned.
+  schema: "dbs-ai-message-v1" | "dbs-ai-message-v2" | "dbs-ai-message-v3";
   text: string;
   artifacts: AiArtifact[];
   steps: PersistedToolStep[];
   blocks?: Block[];
 }
+
+/**
+ * Hard cap on tool result content stored per step. Prevents the JSON
+ * envelope from exploding when a tool returns thousands of rows. Older
+ * results get summarised in the context-reconstruction layer rather
+ * than stored verbatim.
+ */
+export const MAX_PERSISTED_RESULT_CHARS = 8000;
 
 const MAX_TITLE_LENGTH = 100;
 
@@ -194,11 +207,22 @@ export function serializeAssistantMessage(params: {
   steps?: PersistedToolStep[];
   blocks?: Block[];
 }) {
+  // Truncate any oversized tool results before they hit the DB. Keeps
+  // long-running sessions from blowing past the column limit while
+  // still preserving enough content for downstream reconstruction.
+  const safeSteps: PersistedToolStep[] = (params.steps ?? []).map((s) => ({
+    ...s,
+    result:
+      typeof s.result === "string" && s.result.length > MAX_PERSISTED_RESULT_CHARS
+        ? s.result.slice(0, MAX_PERSISTED_RESULT_CHARS) + "\n…[truncated]"
+        : s.result,
+  }));
+
   const payload: StoredAssistantEnvelope = {
-    schema: "dbs-ai-message-v2",
+    schema: "dbs-ai-message-v3",
     text: params.text,
     artifacts: params.artifacts ?? [],
-    steps: params.steps ?? [],
+    steps: safeSteps,
     blocks: params.blocks ?? [],
   };
   return JSON.stringify(payload);
@@ -209,7 +233,9 @@ export function parseStoredAssistantMessage(content: string) {
     const parsed = JSON.parse(content) as Partial<StoredAssistantEnvelope>;
     if (
       parsed &&
-      (parsed.schema === "dbs-ai-message-v1" || parsed.schema === "dbs-ai-message-v2")
+      (parsed.schema === "dbs-ai-message-v1" ||
+        parsed.schema === "dbs-ai-message-v2" ||
+        parsed.schema === "dbs-ai-message-v3")
     ) {
       return {
         text: typeof parsed.text === "string" ? parsed.text : "",
