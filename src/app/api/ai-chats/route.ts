@@ -1,14 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-// GET /api/ai-chats — list all sessions for the current user
+// GET /api/ai-chats — list NON-EMPTY sessions for the current user.
+// Sessions with zero messages are skipped so abandoned "New chat" rows
+// never appear in the sidebar. Combined with lazy session creation on
+// the client (sessions only get inserted when the first message is
+// actually sent) this keeps the history list clean and meaningful.
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const sessions = await prisma.aiChatSession.findMany({
-    where: { userId: session.user.id },
+    where: {
+      userId: session.user.id,
+      messages: { some: {} },
+    },
     orderBy: { updatedAt: "desc" },
     select: { id: true, title: true, createdAt: true, updatedAt: true },
   });
