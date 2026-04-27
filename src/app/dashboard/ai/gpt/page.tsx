@@ -696,6 +696,35 @@ export default function DBSGPTPage() {
   // user/assistant messages right after a starter-prompt click.
   const loadedSessionRef = useRef<string | null>(null);
 
+  // Restore the previously-viewed chat from ?chat=<id> on mount so a
+  // refresh / sidebar-jump / back-button keeps the user inside their
+  // last conversation instead of dumping them into a fresh empty chat.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const chatParam = params.get("chat");
+    if (chatParam) setActiveSessionId(chatParam);
+  // Mount-only — subsequent URL changes are driven by the effect below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirror activeSessionId into the URL via replaceState so refreshes /
+  // navigation away & back land on the same chat. Uses replaceState
+  // rather than router.push so flipping between chats doesn't pollute
+  // browser history with one entry per click.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (activeSessionId) {
+      if (url.searchParams.get("chat") === activeSessionId) return;
+      url.searchParams.set("chat", activeSessionId);
+    } else {
+      if (!url.searchParams.has("chat")) return;
+      url.searchParams.delete("chat");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [activeSessionId]);
+
   // Load messages for active session (skipped when already primed locally)
   useEffect(() => {
     if (!activeSessionId) {
@@ -707,7 +736,16 @@ export default function DBSGPTPage() {
 
     setLoadingSession(true);
     fetch(`/api/ai-chats/${activeSessionId}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          // Stale ?chat=<id> from a deleted/foreign session — drop it
+          // so the URL cleans up and we land on the empty new-chat state.
+          setActiveSessionId(null);
+          loadedSessionRef.current = null;
+          throw new Error(`HTTP ${r.status}`);
+        }
+        return r.json();
+      })
       .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[]; blocks?: Block[] }[] }) => {
         setMessages((d.messages ?? []).map((m) => ({
           id: m.id,
@@ -735,7 +773,15 @@ export default function DBSGPTPage() {
     return data.id;
   }, []);
 
-  const handleNew = useCallback(async () => { await createSession(); }, [createSession]);
+  // "New chat" no longer hits the DB — we just reset local state. The
+  // session row is created lazily by sendMessage() when the user
+  // actually sends their first message, so abandoned new-chat rows
+  // never accumulate.
+  const handleNew = useCallback(() => {
+    setActiveSessionId(null);
+    setMessages([]);
+    loadedSessionRef.current = null;
+  }, []);
 
   const handleSelect = useCallback((id: string) => { setActiveSessionId(id); }, []);
 
