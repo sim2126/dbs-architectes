@@ -1,25 +1,78 @@
 @import "tailwindcss";
 
+/* ─── Friday brand tokens (from Claude Design) ────────────────────
+   The CSS variables below are the single source of truth for the
+   Friday redesign. They are mirrored into the shadcn/ui --background,
+   --foreground, etc. system below so every existing component picks
+   up the new palette without code changes. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #0f0f0f;
-  --card: #ffffff;
-  --card-foreground: #0f0f0f;
-  --popover: #ffffff;
-  --popover-foreground: #0f0f0f;
-  --primary: #0f0f0f;
-  --primary-foreground: #ffffff;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #0f0f0f;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --accent: #f5f5f5;
-  --accent-foreground: #0f0f0f;
+  /* Friday surfaces */
+  --friday-bg:        #fafaf8;
+  --friday-surface:   #ffffff;
+  --friday-surface-2: #f5f5f1;
+  --friday-surface-3: #ebe9e3;
+
+  /* Friday borders */
+  --friday-border:      #dcd9d1;
+  --friday-border-soft: #e8e6e0;
+
+  /* Friday foreground */
+  --friday-fg:        #1a1a18;
+  --friday-fg-muted:  #6b6862;
+  --friday-fg-subtle: #a8a59d;
+
+  /* Friday accent — architect's blue */
+  --friday-accent:        #1e3a8a;
+  --friday-accent-fg:     #ffffff;
+  --friday-accent-soft:   rgba(30, 58, 138, 0.08);
+  --friday-accent-ring:   rgba(30, 58, 138, 0.30);
+
+  /* Phase palette (locked — preserved from product spec, NOT replaced
+     by Claude Design's SIA palette because the database stores phase
+     names not numbers) */
+  --phase-etude-ap:   #ef4444;
+  --phase-mae:        #22c55e;
+  --phase-chantier:   #3b82f6;
+  --phase-exe:        #8b5cf6;
+  --phase-terminato:  #6b7280;
+  --phase-stuck:      #f59e0b;
+  --phase-concorso:   #14b8a6;
+
+  /* Work-status palette (locked Monday-style) */
+  --status-todo:      #c4c4cf;
+  --status-doing:     #fdab3d;
+  --status-stuck:     #e2445c;
+  --status-completed: #00c875;
+
+  /* Friendly error callout */
+  --friday-error-bg:     #fdf6ec;
+  --friday-error-border: #e8d9b8;
+  --friday-error-fg:     #7c5310;
+  --friday-success-fg:   #15803d;
+
+  /* shadcn/ui mappings — every existing component picks up the new
+     palette through these. Do NOT remove these names; the whole UI
+     uses them. */
+  --background: var(--friday-bg);
+  --foreground: var(--friday-fg);
+  --card: var(--friday-surface);
+  --card-foreground: var(--friday-fg);
+  --popover: var(--friday-surface);
+  --popover-foreground: var(--friday-fg);
+  --primary: var(--friday-fg);
+  --primary-foreground: var(--friday-bg);
+  --secondary: var(--friday-surface-2);
+  --secondary-foreground: var(--friday-fg);
+  --muted: var(--friday-surface-2);
+  --muted-foreground: var(--friday-fg-muted);
+  --accent: var(--friday-surface-2);
+  --accent-foreground: var(--friday-fg);
   --destructive: #ef4444;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
-  --ring: #0f0f0f;
-  --radius: 0.5rem;
+  --border: var(--friday-border);
+  --input: var(--friday-border);
+  --ring: var(--friday-accent);
+  --radius: 0.375rem;
 }
 
 .dark {
@@ -62,9 +115,42 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-sora);
+
+  /* Friday-specific theme tokens — usable as Tailwind utilities like
+     bg-friday-surface, text-friday-fg-muted, ring-friday-accent. */
+  --color-friday-bg: var(--friday-bg);
+  --color-friday-surface: var(--friday-surface);
+  --color-friday-surface-2: var(--friday-surface-2);
+  --color-friday-surface-3: var(--friday-surface-3);
+  --color-friday-border: var(--friday-border);
+  --color-friday-border-soft: var(--friday-border-soft);
+  --color-friday-fg: var(--friday-fg);
+  --color-friday-fg-muted: var(--friday-fg-muted);
+  --color-friday-fg-subtle: var(--friday-fg-subtle);
+  --color-friday-accent: var(--friday-accent);
+  --color-friday-accent-fg: var(--friday-accent-fg);
+  --color-friday-accent-soft: var(--friday-accent-soft);
+
+  /* Phase / status colors as Tailwind utilities */
+  --color-phase-etude-ap: var(--phase-etude-ap);
+  --color-phase-mae: var(--phase-mae);
+  --color-phase-chantier: var(--phase-chantier);
+  --color-phase-exe: var(--phase-exe);
+  --color-phase-terminato: var(--phase-terminato);
+  --color-phase-stuck: var(--phase-stuck);
+  --color-phase-concorso: var(--phase-concorso);
+  --color-status-todo: var(--status-todo);
+  --color-status-doing: var(--status-doing);
+  --color-status-stuck: var(--status-stuck);
+  --color-status-completed: var(--status-completed);
+
+  /* Fonts — both legacy and Friday available simultaneously for the
+     migration window. Default `font-sans` is now Inter (Friday),
+     legacy components can still opt into Geist via .font-geist. */
+  --font-sans: var(--font-friday-sans), var(--font-geist-sans), system-ui, sans-serif;
+  --font-display: var(--font-friday-display), Georgia, serif;
+  --font-serif: var(--font-friday-serif), Georgia, serif;
+  --font-mono: var(--font-friday-mono), var(--font-geist-mono), ui-monospace, monospace;
 }
 
 * {
@@ -84,7 +170,15 @@ body {
 }
 
 .font-display {
-  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-friday-display), Georgia, serif;
+}
+
+.font-serif-friday {
+  font-family: var(--font-friday-serif), Georgia, serif;
+}
+
+.font-geist {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
 /* Hide scrollbar utility */
@@ -132,4 +226,21 @@ body {
 
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
+}
+
+/* Friday skeleton shimmer — used by <FridaySkeleton /> for loading states */
+@keyframes fr-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.fr-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--friday-surface-2) 0%,
+    var(--friday-surface-3) 50%,
+    var(--friday-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: fr-shimmer 1.6s ease-in-out infinite;
 }
