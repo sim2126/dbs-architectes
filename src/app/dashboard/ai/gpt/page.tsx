@@ -1,45 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  ArrowRight,
-  Bookmark,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Download,
-  ExternalLink,
-  Loader2,
-  MessageSquarePlus,
-  MoreHorizontal,
-  Pencil,
-  RotateCcw,
-  Send,
-  Sparkles,
-  Table2,
-  Trash2,
-  User,
-  CheckCircle2,
-} from "lucide-react";
-import { useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { cn } from "@/lib/utils";
-import { AriaLogo } from "@/components/aria-logo";
-import {
-  AiArtifact,
-  generateSessionTitle,
-  PersistedToolStep,
-} from "@/lib/agent/artifacts";
-import type { Block } from "@/lib/agent/blocks";
+import * as React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { I } from "@/components/friday/icons";
+import { Avatar } from "@/components/friday/avatar";
+import { Skeleton } from "@/components/friday/skeleton";
+import { showToast } from "@/components/toast";
 import { BlocksView } from "@/components/agent-blocks";
+import type { Block } from "@/lib/agent/blocks";
+import type { AiArtifact, PersistedToolStep } from "@/lib/agent/artifacts";
+import { cn } from "@/lib/utils";
 
-// ─── Types ────────────────────────────────────────────────────
-
+// ─── Types ────────────────────────────────────────────────────────
 type ToolStep = PersistedToolStep;
 
 interface ChatMessage {
@@ -71,1184 +43,918 @@ interface SSEEvent {
     | "done"
     | "error";
   content?: string;
-  tools?: string[];
   name?: string;
   args?: Record<string, unknown>;
   message?: string;
   artifact?: AiArtifact;
   blocks?: Block[];
-  // v3 — surfaced so the client can persist tool calls + their results
-  // for cross-turn context reconstruction.
   toolCallId?: string;
   result?: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────
-
-const STARTER_PROMPTS = [
-  "Portfolio health overview — phases, statuses, blocked projects",
-  "Which projects are currently stuck or blocked?",
-  "What deadlines are coming up in the next 2 weeks?",
-  "Show team workload — who is overloaded?",
-  "List all projects in the CHANTIER phase with their team",
-  "What changed in the last 7 days?",
-];
-
 const TOOL_LABELS: Record<string, string> = {
-  search_projects: "Searching project portfolio",
+  search_projects: "Searching projects",
   get_project_details: "Fetching project details",
-  get_project_thread: "Reading project thread",
-  get_team_messages: "Reading team messages",
-  get_agenda: "Checking agenda & deadlines",
-  get_team_workload: "Analysing team workload",
-  get_statistics: "Pulling portfolio statistics",
-  get_activity_log: "Loading activity log",
+  get_project_thread: "Reading thread",
+  get_team_messages: "Reading messages",
+  get_agenda: "Checking agenda",
+  get_team_workload: "Analysing workload",
+  get_statistics: "Pulling statistics",
+  get_activity_log: "Loading activity",
 };
 
-const TOOL_ICONS: Record<string, string> = {
-  search_projects: "🔍",
-  get_project_details: "📋",
-  get_project_thread: "💬",
-  get_team_messages: "📢",
-  get_agenda: "📅",
-  get_team_workload: "👥",
-  get_statistics: "📊",
-  get_activity_log: "📝",
-};
+const STARTERS = [
+  { icon: "chart", text: "Portfolio stats by phase" },
+  { icon: "users", text: "Who is on Le Saillen?" },
+  { icon: "calendar", text: "What deadlines are coming up in 2 weeks?" },
+  { icon: "alert", text: "Which projects are stuck?" },
+] as const;
 
-// Format args for display — hide nulls/empty, humanize keys
-function formatArgs(args: Record<string, unknown>): string | null {
-  const visible = Object.entries(args).filter(
-    ([, v]) => v !== null && v !== undefined && v !== "" && v !== false
-  );
-  if (!visible.length) return null;
-  return visible
-    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${JSON.stringify(v)}`)
-    .join(" · ");
+function makeId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// ─── Thinking panel ───────────────────────────────────────────
+// ─── Aria mark ────────────────────────────────────────────────────
+function AriaMark({ size = 48 }: { size?: number }) {
+  const id = `aria-${size}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      aria-label="Aria"
+    >
+      <defs>
+        <linearGradient id={`${id}-bg`} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0f172a" />
+          <stop offset="56%" stopColor="#1e3a8a" />
+          <stop offset="100%" stopColor="#155e75" />
+        </linearGradient>
+        <linearGradient id={`${id}-stroke`} x1="10" y1="11" x2="54" y2="52" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#93c5fd" />
+          <stop offset="100%" stopColor="#22d3ee" />
+        </linearGradient>
+        <radialGradient id={`${id}-glow`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#bfdbfe" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill={`url(#${id}-bg)`} />
+      <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="white" strokeOpacity="0.06" strokeWidth="1" />
+      <circle cx="32" cy="11" r="10" fill={`url(#${id}-glow)`} />
+      <line x1="32" y1="11" x2="10" y2="52" stroke={`url(#${id}-stroke)`} strokeWidth="2.8" strokeLinecap="round" />
+      <line x1="32" y1="11" x2="54" y2="52" stroke={`url(#${id}-stroke)`} strokeWidth="2.8" strokeLinecap="round" />
+      <line x1="19" y1="35" x2="45" y2="35" stroke={`url(#${id}-stroke)`} strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="32" cy="11" r="4.5" fill="#1e3a8a" />
+      <circle cx="32" cy="11" r="3" fill="#60a5fa" />
+      <circle cx="32" cy="11" r="1.6" fill="white" />
+      <circle cx="10" cy="52" r="2.5" fill="#22d3ee" fillOpacity="0.65" />
+      <circle cx="54" cy="52" r="2.5" fill="#22d3ee" fillOpacity="0.65" />
+      <circle cx="19" cy="35" r="2" fill="#93c5fd" fillOpacity="0.55" />
+      <circle cx="45" cy="35" r="2" fill="#93c5fd" fillOpacity="0.55" />
+    </svg>
+  );
+}
 
-function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?: boolean }) {
-  // Claude-style behaviour: panel stays open while the agent is thinking
-  // (so users see progress in real time), then auto-collapses on completion
-  // for a clean transcript. Users can click to re-expand any time.
-  const [open, setOpen] = useState(true);
-  const [autoCollapsed, setAutoCollapsed] = useState(false);
-  const doneCount = steps.filter((s) => s.status === "done").length;
-  const allDone = doneCount === steps.length && !isStreaming;
+// ─── Date helpers ─────────────────────────────────────────────────
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
 
-  useEffect(() => {
-    if (allDone && !autoCollapsed) {
-      setOpen(false);
-      setAutoCollapsed(true);
+function sessionGroup(updatedAt: string): "today" | "yesterday" | "week" | "older" {
+  const now = startOfDay(new Date());
+  const d = startOfDay(new Date(updatedAt));
+  const diff = Math.round((now.getTime() - d.getTime()) / 86400000);
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  if (diff < 7) return "week";
+  return "older";
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────
+function SessionRow({
+  session,
+  active,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  session: ChatSession;
+  active: boolean;
+  onSelect: () => void;
+  onRename: (next: string) => void;
+  onDelete: () => void;
+}) {
+  const [hover, setHover] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(session.title);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => setDraft(session.title), [session.title]);
+
+  React.useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
     }
-  }, [allDone, autoCollapsed]);
+  }, [editing]);
 
-  if (steps.length === 0 && !isStreaming) return null;
+  React.useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft.trim() && draft.trim() !== session.title) onRename(draft.trim());
+    else setDraft(session.title);
+  };
 
   return (
-    <div className="rounded-2xl border border-border bg-muted/40 overflow-hidden text-sm mb-2">
-      {/* Header */}
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className="relative"
+    >
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-muted/60 transition-colors text-left"
-      >
-        {isStreaming && steps.length === 0 ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
-        ) : allDone ? (
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-        ) : (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          "flex items-center w-full px-4 py-1.5 border-0 cursor-pointer text-left text-[12px] transition-colors duration-150",
+          active
+            ? "bg-friday-surface-2 text-friday-fg font-medium"
+            : "bg-transparent text-friday-fg-muted hover:bg-friday-surface hover:text-friday-fg",
         )}
-
-        <span className="flex-1 text-xs font-medium text-muted-foreground">
-          {isStreaming && steps.length === 0
-            ? "Aria is thinking…"
-            : allDone
-            ? `Used ${steps.length} tool${steps.length !== 1 ? "s" : ""}`
-            : `Running ${steps.length - doneCount} of ${steps.length} tools…`}
-        </span>
-
-        {steps.length > 0 && (
-          open ? (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          )
+      >
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                setDraft(session.title);
+                setEditing(false);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-friday-bg border border-friday-accent rounded-[3px] px-1.5 py-px text-[12px] text-friday-fg outline-none"
+            style={{ boxShadow: "0 0 0 3px var(--friday-accent-ring)" }}
+          />
+        ) : (
+          <span className="flex-1 truncate">{session.title}</span>
         )}
       </button>
-
-      {/* Steps list */}
-      <AnimatePresence>
-        {open && steps.length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border"
-          >
-            <div className="px-3 py-2 space-y-2">
-              {steps.map((step, idx) => {
-                const argsStr = formatArgs(step.args);
-                return (
-                  <div key={idx} className="flex items-start gap-2">
-                    {/* Status icon */}
-                    <div className="mt-0.5 shrink-0">
-                      {step.status === "done" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                      ) : (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                      )}
-                    </div>
-
-                    {/* Step detail */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs">{TOOL_ICONS[step.name] ?? "🔧"}</span>
-                        <span className="text-xs font-medium">{step.label}</span>
-                        {step.status === "done" && (
-                          <span className="text-[10px] text-emerald-600 font-medium">done</span>
-                        )}
-                      </div>
-                      {argsStr && (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground truncate">
-                          {argsStr}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─── Message bubble ───────────────────────────────────────────
-
-function ArtifactTableCard({
-  artifact,
-  onExport,
-  onOpenSheet,
-}: {
-  artifact: AiArtifact;
-  onExport: (artifactId: string) => void;
-  onOpenSheet?: (sheetId: string) => void;
-}) {
-  const [open, setOpen] = useState(true);
-  const previewRows = open ? artifact.rows : artifact.rows.slice(0, 6);
-  const isExporting = "isExporting" in artifact && Boolean(artifact.isExporting);
-  const sheetId = "sheetId" in artifact && typeof artifact.sheetId === "string" ? artifact.sheetId : null;
-
-  return (
-    <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-            <Table2 className="h-4 w-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{artifact.title}</p>
-            <p className="text-[11px] text-muted-foreground">
-              {artifact.rowCount} row{artifact.rowCount === 1 ? "" : "s"}
-              {artifact.description ? ` · ${artifact.description}` : ""}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
+      {!editing ? (
+        <div ref={menuRef} className="absolute top-1 right-2">
           <button
-            onClick={() => setOpen((value) => !value)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            aria-label="More"
+            className="bg-transparent border-0 p-1 cursor-pointer text-friday-fg-muted leading-none rounded-sm"
+            style={{ opacity: hover || menuOpen ? 1 : 0 }}
           >
-            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            {open ? "Collapse" : "Preview"}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="6" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="18" cy="12" r="1.5" />
+            </svg>
           </button>
-
-          {sheetId && onOpenSheet ? (
-            <button
-              onClick={() => onOpenSheet(sheetId)}
-              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+          {menuOpen ? (
+            <div
+              className="absolute z-30 right-0 top-6 min-w-[140px] bg-friday-surface border border-friday-border rounded p-1"
+              style={{ boxShadow: "0 8px 24px rgba(20,18,12,0.14)" }}
             >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open In Sheets
-            </button>
-          ) : (
-            <button
-              onClick={() => onExport(artifact.id)}
-              disabled={isExporting}
-              className="inline-flex items-center gap-1 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isExporting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Download className="h-3.5 w-3.5" />
-              )}
-              Export To Sheets
-            </button>
-          )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setEditing(true);
+                }}
+                className="block w-full text-left px-2 py-1.5 rounded-sm bg-transparent border-0 cursor-pointer text-[11.5px] text-friday-fg hover:bg-friday-surface-2"
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+                className="block w-full text-left px-2 py-1.5 rounded-sm bg-transparent border-0 cursor-pointer text-[11.5px] hover:bg-friday-surface-2"
+                style={{ color: "#9b2c1a" }}
+              >
+                Delete
+              </button>
+            </div>
+          ) : null}
         </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead className="bg-muted/70">
-            <tr>
-              {artifact.columns.map((column) => (
-                <th
-                  key={column}
-                  className="whitespace-nowrap border-b border-border px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {previewRows.length > 0 ? (
-              previewRows.map((row, rowIndex) => (
-                <tr key={`${artifact.id}-${rowIndex}`} className="border-b border-border/50 hover:bg-accent/20">
-                  {artifact.columns.map((column) => (
-                    <td key={`${artifact.id}-${rowIndex}-${column}`} className="max-w-[220px] px-3 py-2 align-top text-foreground">
-                      <span className="block whitespace-pre-wrap break-words leading-5">
-                        {row[column] || "—"}
-                      </span>
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={artifact.columns.length} className="px-3 py-8 text-center text-xs text-muted-foreground">
-                  No rows returned for this view.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {!open && artifact.rows.length > 6 && (
-        <div className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-          Showing 6 of {artifact.rowCount} row{artifact.rowCount === 1 ? "" : "s"}.
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function MessageBubble({
-  message,
-  sessionId,
-  onRetry,
-  onExportArtifact,
-  onOpenSheet,
-}: {
-  message: ChatMessage;
-  sessionId: string | null;
-  onRetry?: () => void;
-  onExportArtifact?: (artifactId: string) => void;
-  onOpenSheet?: (sheetId: string) => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const copy = useCallback(() => {
-    navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [message.content]);
-
-  const save = useCallback(async () => {
-    if (saving || saved) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/ai-saved", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          messageId: message.id,
-          text: message.content,
-          blocks: message.blocks ?? [],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    } catch (err) {
-      console.error("[gpt] save insight failed:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [message.id, message.content, message.blocks, sessionId, saved, saving]);
-
-  if (message.role === "user") {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex gap-3 justify-end"
-      >
-        <div className="max-w-[80%] rounded-[26px] px-4 py-3.5 bg-foreground text-background">
-          <p className="text-sm leading-7">{message.content}</p>
-        </div>
-        <Avatar className="h-9 w-9 shrink-0">
-          <AvatarFallback className="bg-muted text-xs">
-            <User className="h-4 w-4" />
-          </AvatarFallback>
-        </Avatar>
-      </motion.div>
-    );
-  }
-
-  // Assistant message
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex gap-3 justify-start"
-    >
-      <div className="shrink-0 mt-1">
-        <AriaLogo variant="icon" size={36} />
-      </div>
-
-      <div className="flex-1 min-w-0 max-w-[90%] space-y-1">
-        {/* Thinking / tool steps panel */}
-        {((message.steps && message.steps.length > 0) || message.isStreaming) && (
-          <ThinkingPanel steps={message.steps ?? []} isStreaming={message.isStreaming} />
-        )}
-
-        {message.artifacts && message.artifacts.length > 0 && (
-          <div className="space-y-3">
-            {message.artifacts.map((artifact) => (
-              <ArtifactTableCard
-                key={artifact.id}
-                artifact={artifact}
-                onExport={(artifactId) => onExportArtifact?.(artifactId)}
-                onOpenSheet={onOpenSheet}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Response — prefer structured Gen-UI blocks when available,
-            fall back to legacy Markdown content (errors, old history). */}
-        {message.blocks && message.blocks.length > 0 ? (
-          <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
-            <BlocksView blocks={message.blocks} />
-          </div>
-        ) : message.content ? (
-          <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
-            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-7 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wide">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Actions */}
-        {!message.isStreaming && (message.content || (message.blocks && message.blocks.length > 0)) && (
-          <div className="flex items-center gap-1 px-1 pt-0.5">
-            <button
-              onClick={copy}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            >
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              {copied ? "Copied" : "Copy"}
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors",
-                saved
-                  ? "text-amber-600"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                saving && "opacity-50",
-              )}
-            >
-              <Bookmark className={cn("h-3 w-3", saved && "fill-current")} />
-              {saved ? "Saved" : "Save"}
-            </button>
-            {onRetry && (
-              <button
-                onClick={onRetry}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              >
-                <RotateCcw className="h-3 w-3" />
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Chat history sidebar ─────────────────────────────────────
-
-function ChatHistorySidebar({
+function ChatSidebar({
   sessions,
   activeId,
   onSelect,
   onNew,
-  onDelete,
   onRename,
+  onDelete,
 }: {
   sessions: ChatSession[];
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
 }) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [menuId, setMenuId] = useState<string | null>(null);
+  const [q, setQ] = React.useState("");
 
-  const groupByDate = (sessions: ChatSession[]) => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-    const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
-    const groups: Record<string, ChatSession[]> = { Today: [], Yesterday: [], "Last 7 days": [], Older: [] };
-    for (const s of sessions) {
-      const d = new Date(s.updatedAt); d.setHours(0, 0, 0, 0);
-      if (d >= today) groups["Today"].push(s);
-      else if (d >= yesterday) groups["Yesterday"].push(s);
-      else if (d >= weekAgo) groups["Last 7 days"].push(s);
-      else groups["Older"].push(s);
-    }
-    return groups;
-  };
-
-  const grouped = groupByDate(sessions);
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!menuId) return;
-    const handler = () => setMenuId(null);
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [menuId]);
+  const groups = React.useMemo(() => {
+    const filtered = q.trim()
+      ? sessions.filter((s) =>
+          s.title.toLowerCase().includes(q.toLowerCase()),
+        )
+      : sessions;
+    const g: Record<string, ChatSession[]> = {
+      today: [],
+      yesterday: [],
+      week: [],
+      older: [],
+    };
+    filtered.forEach((s) => g[sessionGroup(s.updatedAt)].push(s));
+    return [
+      { id: "today", label: "Today", items: g.today },
+      { id: "yesterday", label: "Yesterday", items: g.yesterday },
+      { id: "week", label: "Last 7 days", items: g.week },
+      { id: "older", label: "Older", items: g.older },
+    ].filter((sec) => sec.items.length > 0);
+  }, [q, sessions]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-3 shrink-0">
+    <div className="w-[280px] shrink-0 border-r border-friday-border-soft bg-friday-bg flex flex-col h-full">
+      <div className="p-3">
         <button
+          type="button"
           onClick={onNew}
-          className="flex items-center gap-2 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
+          className="flex items-center gap-2 w-full h-9 px-3 bg-friday-surface-2 border border-friday-border rounded text-[12.5px] text-friday-fg font-medium cursor-pointer text-left hover:border-friday-fg transition-colors duration-150"
         >
-          <MessageSquarePlus className="h-4 w-4" />
-          New chat
+          <I.Plus size={13} /> New chat
         </button>
       </div>
-
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-4">
-        {Object.entries(grouped).map(([label, items]) => {
-          if (items.length === 0) return null;
-          return (
-            <div key={label}>
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                {label}
-              </p>
-              <div className="space-y-0.5">
-                {items.map((s) => (
-                  <div
-                    key={s.id}
-                    className={cn(
-                      "group relative flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer transition-colors",
-                      activeId === s.id ? "bg-accent" : "hover:bg-accent/50"
-                    )}
-                    onClick={() => onSelect(s.id)}
-                  >
-                    {editingId === s.id ? (
-                      <input
-                        autoFocus
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => {
-                          if (editValue.trim()) onRename(s.id, editValue.trim());
-                          setEditingId(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { if (editValue.trim()) onRename(s.id, editValue.trim()); setEditingId(null); }
-                          if (e.key === "Escape") setEditingId(null);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex-1 bg-transparent text-sm outline-none border-b border-foreground"
-                      />
-                    ) : (
-                      <span className="flex-1 truncate text-sm">{s.title}</span>
-                    )}
-
-                    <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity relative">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMenuId(menuId === s.id ? null : s.id); }}
-                        className="p-1 rounded-lg hover:bg-background transition-colors"
-                      >
-                        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                      </button>
-                      {menuId === s.id && (
-                        <div
-                          className="absolute right-0 top-6 z-50 min-w-[130px] rounded-xl border border-border bg-card shadow-lg py-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => { setEditValue(s.title); setEditingId(s.id); setMenuId(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
-                          >
-                            <Pencil className="h-3.5 w-3.5" /> Rename
-                          </button>
-                          <button
-                            onClick={() => { onDelete(s.id); setMenuId(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-accent transition-colors"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+      <div className="px-3 pb-2.5">
+        <div className="relative">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none leading-none">
+            <I.Search size={11} className="text-friday-fg-muted" />
+          </span>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search chats…"
+            className="w-full h-7 pl-7 pr-2 border border-friday-border-soft rounded-[3px] bg-friday-surface text-[11.5px] text-friday-fg outline-none focus:border-friday-border"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto pb-3">
+        {groups.length === 0 ? (
+          <div className="px-4 py-6 text-center text-[11.5px] text-friday-fg-subtle">
+            {sessions.length === 0
+              ? "No chats yet."
+              : `No chats match "${q}".`}
+          </div>
+        ) : (
+          groups.map((sec) => (
+            <div key={sec.id}>
+              <div className="px-4 pt-2.5 pb-1 text-[9.5px] tracking-[0.18em] uppercase text-friday-fg-subtle font-medium">
+                {sec.label}
               </div>
+              {sec.items.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={s.id === activeId}
+                  onSelect={() => onSelect(s.id)}
+                  onRename={(title) => onRename(s.id, title)}
+                  onDelete={() => onDelete(s.id)}
+                />
+              ))}
             </div>
-          );
-        })}
-
-        {sessions.length === 0 && (
-          <p className="px-3 pt-4 text-xs text-muted-foreground text-center">No conversations yet</p>
+          ))
         )}
+      </div>
+      <div className="px-4 py-2.5 border-t border-friday-border-soft font-mono text-[9.5px] text-friday-fg-subtle flex items-center gap-1.5">
+        <kbd
+          className="font-mono text-[9.5px] text-friday-fg-muted px-1 rounded-[2px] bg-friday-surface"
+          style={{ border: "1px solid var(--friday-border-soft)" }}
+        >
+          ⌘K
+        </kbd>
+        <span>open command palette</span>
       </div>
     </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────
+// ─── Welcome state ────────────────────────────────────────────────
+function StarterIcon({ kind }: { kind: (typeof STARTERS)[number]["icon"] }) {
+  if (kind === "chart") return <I.Chart size={13} className="text-friday-fg-muted" />;
+  if (kind === "users") return <I.Users size={13} className="text-friday-fg-muted" />;
+  if (kind === "calendar")
+    return <I.Calendar size={13} className="text-friday-fg-muted" />;
+  return <I.AlertSmall size={13} className="text-friday-fg-muted" />;
+}
 
-export default function DBSGPTPage() {
+function Welcome({ onPick }: { onPick: (q: string) => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center px-7 pb-10">
+      <div className="mb-4">
+        <AriaMark size={64} />
+      </div>
+      <h1 className="font-display italic font-medium text-[34px] text-friday-fg m-0 -tracking-[0.5px] leading-tight">
+        Aria, your DBS GPT.
+      </h1>
+      <p
+        className="text-friday-fg-muted m-0 mt-2 text-[14px] text-center max-w-[460px]"
+        style={{ fontFamily: "var(--font-friday-serif), Georgia, serif" }}
+      >
+        Ask anything about projects, people, deadlines, or the studio's
+        portfolio. I'll read the data and give you a grounded answer.
+      </p>
+      <div className="mt-7 grid grid-cols-2 gap-2.5 max-w-[640px] w-full">
+        {STARTERS.map((s) => (
+          <button
+            key={s.text}
+            type="button"
+            onClick={() => onPick(s.text)}
+            className="flex items-center gap-2.5 px-4 py-3 bg-friday-surface border border-friday-border-soft rounded-md cursor-pointer text-left text-[13px] text-friday-fg hover:border-friday-border hover:bg-friday-surface-2 transition-colors duration-150"
+          >
+            <StarterIcon kind={s.icon} />
+            <span>{s.text}</span>
+            <span className="flex-1" />
+            <I.ArrowRight size={11} className="text-friday-fg-subtle" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Message renderers ────────────────────────────────────────────
+function UserMessage({ content }: { content: string }) {
+  return (
+    <div className="flex justify-end">
+      <div
+        className="max-w-[640px] px-4 py-2.5 rounded-md bg-friday-fg text-friday-bg text-[13px] leading-relaxed"
+        style={{ borderTopRightRadius: 4 }}
+      >
+        {content}
+      </div>
+    </div>
+  );
+}
+
+function ThinkingTrace({ steps }: { steps: ToolStep[] }) {
+  if (!steps || steps.length === 0) return null;
+  const running = steps.find((s) => s.status === "running");
+  return (
+    <div className="flex items-center gap-2 text-[11.5px] text-friday-fg-muted -mt-1.5 mb-1">
+      <Skeleton w={6} h={6} rounded={999} className="opacity-70" />
+      <span className="italic">
+        {running
+          ? TOOL_LABELS[running.name] ?? running.name
+          : "Thinking…"}
+        {steps.length > 1 ? ` · ${steps.length} steps` : null}
+      </span>
+    </div>
+  );
+}
+
+function AssistantMessage({
+  msg,
+  onSave,
+}: {
+  msg: ChatMessage;
+  onSave: (msg: ChatMessage) => void;
+}) {
+  return (
+    <div className="flex gap-3">
+      <div className="shrink-0 mt-0.5">
+        <AriaMark size={28} />
+      </div>
+      <div className="flex-1 min-w-0">
+        {msg.steps && msg.steps.length > 0 && msg.isStreaming ? (
+          <ThinkingTrace steps={msg.steps} />
+        ) : null}
+
+        {msg.blocks && msg.blocks.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <BlocksView blocks={msg.blocks} />
+          </div>
+        ) : msg.content ? (
+          <p
+            className="text-friday-fg leading-relaxed m-0 whitespace-pre-wrap"
+            style={{
+              fontFamily: "var(--font-friday-serif), Georgia, serif",
+              fontSize: 14,
+              lineHeight: 1.65,
+            }}
+          >
+            {msg.content}
+            {msg.isStreaming ? (
+              <span className="inline-block w-1.5 h-3.5 ml-1 align-middle bg-friday-fg-muted animate-pulse" />
+            ) : null}
+          </p>
+        ) : msg.isStreaming ? (
+          <ThinkingTrace steps={msg.steps ?? []} />
+        ) : null}
+
+        {msg.error ? (
+          <p className="text-[12px] mt-2" style={{ color: "#9b2c1a" }}>
+            {msg.error}
+          </p>
+        ) : null}
+
+        {!msg.isStreaming && (msg.content || (msg.blocks?.length ?? 0) > 0) ? (
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              type="button"
+              onClick={() => onSave(msg)}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 bg-transparent border border-friday-border-soft rounded-[3px] cursor-pointer text-[11px] text-friday-fg-muted hover:text-friday-fg hover:border-friday-border"
+            >
+              <I.Star size={11} />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard
+                  ?.writeText(msg.content || "")
+                  .catch(() => undefined);
+                showToast("Copied");
+              }}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 bg-transparent border border-friday-border-soft rounded-[3px] cursor-pointer text-[11px] text-friday-fg-muted hover:text-friday-fg hover:border-friday-border"
+            >
+              Copy
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── Composer ─────────────────────────────────────────────────────
+function Composer({
+  value,
+  setValue,
+  onSend,
+  loading,
+}: {
+  value: string;
+  setValue: (v: string) => void;
+  onSend: () => void;
+  loading: boolean;
+}) {
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    const t = ref.current;
+    if (!t) return;
+    t.style.height = "auto";
+    t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
+  }, [value]);
+
+  const submit = () => {
+    if (!value.trim() || loading) return;
+    onSend();
+  };
+
+  return (
+    <div className="px-7 pb-5 pt-2.5 border-t border-friday-border-soft bg-friday-bg">
+      <div className="max-w-[760px] mx-auto">
+        <div
+          className="flex items-end gap-2 p-2 bg-friday-surface border border-friday-border-soft rounded-md focus-within:border-friday-border"
+          style={{ minHeight: 56 }}
+        >
+          <textarea
+            ref={ref}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="Ask Aria — Enter to send, Shift+Enter for newline"
+            className="flex-1 min-h-9 max-h-[200px] px-2 py-2 bg-transparent border-0 outline-none text-[13px] text-friday-fg leading-relaxed resize-none"
+            disabled={loading}
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!value.trim() || loading}
+            aria-label="Send"
+            className={cn(
+              "h-9 px-3 rounded text-[12px] font-medium border-0 inline-flex items-center gap-1.5",
+              value.trim() && !loading
+                ? "bg-friday-accent text-white cursor-pointer hover:opacity-90"
+                : "bg-friday-surface-2 text-friday-fg-subtle cursor-default",
+            )}
+          >
+            {loading ? "…" : "Send"}
+            {!loading ? <I.ArrowRight size={11} /> : null}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Header strip ─────────────────────────────────────────────────
+function AriaHeader({
+  title,
+  ready,
+}: {
+  title: string;
+  ready: boolean;
+}) {
+  return (
+    <div
+      className="px-7 border-b border-friday-border-soft bg-friday-bg shrink-0 flex items-center gap-3"
+      style={{ height: 56 }}
+    >
+      <AriaMark size={26} />
+      <div className="flex-1 min-w-0">
+        <h2 className="font-display italic font-medium text-[16px] text-friday-fg m-0 -tracking-[0.2px] truncate">
+          {title}
+        </h2>
+        <div className="text-[10px] text-friday-fg-muted tracking-wide">
+          DBS GPT · grounded on your portfolio
+        </div>
+      </div>
+      <span
+        className="inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full bg-friday-surface-2 border border-friday-border-soft text-[10.5px] text-friday-fg-muted tracking-wide"
+      >
+        <span
+          className="w-[5px] h-[5px] rounded-full"
+          style={{ background: ready ? "#22c55e" : "#a8a59d" }}
+        />
+        {ready ? "Online" : "Initialising"}
+      </span>
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────
+export default function AriaPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [sessions, setSessions] = React.useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(
+    null,
+  );
+  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+  const [input, setInput] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+  const [aiReady, setAiReady] = React.useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const initialQuery = React.useRef(searchParams.get("q") ?? "");
+  const [initialQueryHandled, setInitialQueryHandled] = React.useState(false);
 
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingSession, setLoadingSession] = useState(false);
-  const [aiStatus, setAiStatus] = useState<{
-    enabled: boolean;
-    message?: string;
-    eta?: string;
-  }>({ enabled: true });
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const seqRef = useRef(0);
-  const pendingUserContent = useRef("");
-  const pendingAssistantContent = useRef("");
-  const pendingAssistantArtifacts = useRef<AiArtifact[]>([]);
-  const pendingAssistantSteps = useRef<ToolStep[]>([]);
-  const pendingAssistantBlocks = useRef<Block[]>([]);
-
-  const makeId = (role: string) => `${role}-${++seqRef.current}`;
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Auto-scroll on new content
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // Load sessions
-  useEffect(() => {
-    fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
-  }, []);
+  // Sessions + readiness
+  React.useEffect(() => {
+    fetch("/api/ai-chats")
+      .then((r) => r.json())
+      .then((d: ChatSession[]) => setSessions(d))
+      .catch(() => undefined);
 
-  // Probe AI status — when AI_DISABLED is on in Vercel, the empty state
-  // explains the planned break and the composer is disabled instead of
-  // letting users send messages that would 503.
-  useEffect(() => {
-    let cancelled = false;
     fetch("/api/ai-status")
       .then((r) => r.json())
-      .then((d: { enabled?: boolean; message?: string; eta?: string }) => {
-        if (cancelled) return;
-        setAiStatus({
-          enabled: d.enabled ?? true,
-          message: d.message,
-          eta: d.eta,
-        });
-      })
-      .catch(() => {
-        /* default optimistic — assume enabled */
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((d: { ok?: boolean }) => setAiReady(!!d.ok))
+      .catch(() => setAiReady(false));
   }, []);
 
-  // Tracks sessions whose messages are already represented in local state —
-  // freshly created sessions, or sessions we just fetched. Prevents the
-  // session-load effect from racing sendMessage() and wiping the in-flight
-  // user/assistant messages right after a starter-prompt click.
-  const loadedSessionRef = useRef<string | null>(null);
-
-  // Restore the previously-viewed chat from ?chat=<id> on mount so a
-  // refresh / sidebar-jump / back-button keeps the user inside their
-  // last conversation instead of dumping them into a fresh empty chat.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const chatParam = params.get("chat");
-    if (chatParam) setActiveSessionId(chatParam);
-  // Mount-only — subsequent URL changes are driven by the effect below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Mirror activeSessionId into the URL via replaceState so refreshes /
-  // navigation away & back land on the same chat. Uses replaceState
-  // rather than router.push so flipping between chats doesn't pollute
-  // browser history with one entry per click.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (activeSessionId) {
-      if (url.searchParams.get("chat") === activeSessionId) return;
-      url.searchParams.set("chat", activeSessionId);
-    } else {
-      if (!url.searchParams.has("chat")) return;
-      url.searchParams.delete("chat");
-    }
-    window.history.replaceState(null, "", url.toString());
-  }, [activeSessionId]);
-
-  // Load messages for active session (skipped when already primed locally)
-  useEffect(() => {
-    if (!activeSessionId) {
-      setMessages([]);
-      loadedSessionRef.current = null;
-      return;
-    }
-    if (loadedSessionRef.current === activeSessionId) return;
-
-    setLoadingSession(true);
+  // Load active session messages
+  React.useEffect(() => {
+    if (!activeSessionId) return;
     fetch(`/api/ai-chats/${activeSessionId}`)
-      .then(async (r) => {
-        if (!r.ok) {
-          // Stale ?chat=<id> from a deleted/foreign session — drop it
-          // so the URL cleans up and we land on the empty new-chat state.
-          setActiveSessionId(null);
-          loadedSessionRef.current = null;
-          throw new Error(`HTTP ${r.status}`);
-        }
-        return r.json();
-      })
-      .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[]; blocks?: Block[] }[] }) => {
-        setMessages((d.messages ?? []).map((m) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          artifacts: m.artifacts ?? [],
-          steps: m.steps ?? [],
-          blocks: m.blocks ?? [],
-        })));
-        loadedSessionRef.current = activeSessionId;
-      })
-      .catch(() => {})
-      .finally(() => setLoadingSession(false));
+      .then((r) => r.json())
+      .then(
+        (d: {
+          messages?: Array<{
+            id: string;
+            role: "user" | "assistant";
+            content: string;
+            steps?: ToolStep[];
+            artifacts?: AiArtifact[];
+            blocks?: Block[];
+          }>;
+        }) => {
+          if (!d.messages) return;
+          setMessages(
+            d.messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              steps: m.steps ?? [],
+              artifacts: m.artifacts ?? [],
+              blocks: m.blocks ?? [],
+            })),
+          );
+        },
+      )
+      .catch(() => undefined);
   }, [activeSessionId]);
 
-  const createSession = useCallback(async (): Promise<string> => {
+  const createSession = React.useCallback(async (): Promise<string> => {
     const res = await fetch("/api/ai-chats", { method: "POST" });
-    const data = await res.json() as ChatSession;
+    const data = (await res.json()) as ChatSession;
     setSessions((prev) => [data, ...prev]);
-    // Mark as locally-loaded BEFORE switching activeSessionId, so the load
-    // effect's early-return kicks in on the same render tick.
-    loadedSessionRef.current = data.id;
-    setMessages([]);
     setActiveSessionId(data.id);
     return data.id;
   }, []);
 
-  // "New chat" no longer hits the DB — we just reset local state. The
-  // session row is created lazily by sendMessage() when the user
-  // actually sends their first message, so abandoned new-chat rows
-  // never accumulate.
-  const handleNew = useCallback(() => {
-    setActiveSessionId(null);
-    setMessages([]);
-    loadedSessionRef.current = null;
-  }, []);
-
-  const handleSelect = useCallback((id: string) => { setActiveSessionId(id); }, []);
-
-  const handleDelete = useCallback(async (id: string) => {
+  const deleteSession = async (id: string) => {
     await fetch(`/api/ai-chats/${id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); }
-  }, [activeSessionId]);
+    if (activeSessionId === id) {
+      setActiveSessionId(null);
+      setMessages([]);
+    }
+  };
 
-  const handleRename = useCallback(async (id: string, title: string) => {
-    await fetch(`/api/ai-chats/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
-    setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title } : s));
-  }, []);
-
-  const saveMessages = useCallback(async (
-    sessionId: string,
-    userContent: string,
-    assistantContent: string,
-    assistantArtifacts: AiArtifact[],
-    assistantSteps: ToolStep[],
-    assistantBlocks: Block[],
-    isFirst: boolean
-  ) => {
-    const title = isFirst ? generateSessionTitle(userContent) : undefined;
-    await fetch(`/api/ai-chats/${sessionId}`, {
-      method: "POST",
+  const renameSession = async (id: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, title } : s)),
+    );
+    await fetch(`/api/ai-chats/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userContent,
-        assistantContent,
-        assistantArtifacts,
-        assistantSteps,
-        assistantBlocks,
-        title,
-      }),
+      body: JSON.stringify({ title }),
     });
-    setSessions((prev) => prev.map((s) => s.id === sessionId
-      ? { ...s, updatedAt: new Date().toISOString(), ...(title ? { title } : {}) }
-      : s
-    ));
-  }, []);
+  };
 
-  const openSheet = useCallback((sheetId: string) => {
-    router.push(`/dashboard/sheets?sheet=${sheetId}`);
-  }, [router]);
+  const sendMessage = React.useCallback(
+    async (content: string) => {
+      if (!content.trim() || loading) return;
+      let sessionId = activeSessionId;
+      if (!sessionId) sessionId = await createSession();
 
-  const exportArtifactToSheets = useCallback(async (messageId: string, artifactId: string) => {
-    const targetMessage = messages.find((message) => message.id === messageId);
-    const artifact = targetMessage?.artifacts?.find((item) => item.id === artifactId);
-    if (!artifact) return;
+      const assistantId = makeId("assistant");
+      setMessages((prev) => [
+        ...prev,
+        { id: makeId("user"), role: "user", content },
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          steps: [],
+          isStreaming: true,
+        },
+      ]);
+      setInput("");
+      setLoading(true);
 
-    setMessages((prev) => prev.map((message) => (
-      message.id !== messageId
-        ? message
-        : {
-            ...message,
-            artifacts: (message.artifacts ?? []).map((item) =>
-              item.id === artifactId ? { ...item, isExporting: true } : item
-            ),
+      try {
+        const res = await fetch("/api/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, message: content }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.body) throw new Error("No stream");
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event: SSEEvent = JSON.parse(line.slice(6));
+
+              if (event.type === "text" && event.content) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: m.content + event.content }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "tool_call" && event.name) {
+                const step: ToolStep = {
+                  name: event.name,
+                  label: TOOL_LABELS[event.name] ?? event.name,
+                  args: event.args ?? {},
+                  status: "running",
+                  toolCallId: event.toolCallId,
+                };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, steps: [...(m.steps ?? []), step] }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "tool_result") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          steps: (m.steps ?? []).map((s) =>
+                            s.toolCallId === event.toolCallId
+                              ? { ...s, status: "done" as const, result: event.result }
+                              : s,
+                          ),
+                        }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "blocks" && event.blocks) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, blocks: event.blocks } : m,
+                  ),
+                );
+              } else if (event.type === "artifact" && event.artifact) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          artifacts: [...(m.artifacts ?? []), event.artifact!],
+                        }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "error") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          isStreaming: false,
+                          error: event.message ?? "Aria couldn't reach the model",
+                        }
+                      : m,
+                  ),
+                );
+              }
+            } catch {
+              // ignore malformed event
+            }
           }
-    )));
+        }
 
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, isStreaming: false } : m,
+          ),
+        );
+
+        // Refresh session list (title may have been auto-generated)
+        fetch("/api/ai-chats")
+          .then((r) => r.json())
+          .then((d: ChatSession[]) => setSessions(d))
+          .catch(() => undefined);
+      } catch (err) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Couldn't reach the agent",
+                }
+              : m,
+          ),
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeSessionId, createSession, loading],
+  );
+
+  // Honour ?q= deep-link from the dashboard Aria seam
+  React.useEffect(() => {
+    if (initialQueryHandled) return;
+    const q = initialQuery.current;
+    if (!q) {
+      setInitialQueryHandled(true);
+      return;
+    }
+    setInitialQueryHandled(true);
+    sendMessage(q);
+    // Strip the ?q= so a refresh doesn't re-fire
+    router.replace("/dashboard/ai/gpt");
+  }, [initialQueryHandled, sendMessage, router]);
+
+  const onNewChat = async () => {
+    setMessages([]);
+    setActiveSessionId(null);
+  };
+
+  const onSaveMessage = async (msg: ChatMessage) => {
+    if (!activeSessionId) return;
     try {
-      const res = await fetch("/api/sheets", {
+      await fetch("/api/ai-saved", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: artifact.title,
-          columns: artifact.columns,
-          rows: artifact.rows,
+          sessionId: activeSessionId,
+          messageId: msg.id,
+          title: msg.content.slice(0, 80) || "Saved insight",
+          text: msg.content,
+          blocks: msg.blocks ?? [],
         }),
       });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const created = await res.json() as { id: string };
-
-      setMessages((prev) => prev.map((message) => (
-        message.id !== messageId
-          ? message
-          : {
-              ...message,
-              artifacts: (message.artifacts ?? []).map((item) =>
-                item.id === artifactId ? { ...item, isExporting: false, sheetId: created.id } : item
-              ),
-            }
-      )));
+      showToast("Saved to insights");
     } catch {
-      setMessages((prev) => prev.map((message) => (
-        message.id !== messageId
-          ? message
-          : {
-              ...message,
-              artifacts: (message.artifacts ?? []).map((item) =>
-                item.id === artifactId ? { ...item, isExporting: false } : item
-              ),
-            }
-      )));
+      showToast("Couldn't save", "danger");
     }
-  }, [messages]);
+  };
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (!content.trim() || loading) return;
-
-    let sessionId = activeSessionId;
-    const isFirst = messages.length === 0;
-    if (!sessionId) sessionId = await createSession();
-
-    const userMsg: ChatMessage = { id: makeId("user"), role: "user", content };
-    const assistantId = makeId("assistant");
-    const assistantMsg: ChatMessage = { id: assistantId, role: "assistant", content: "", steps: [], isStreaming: true };
-
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setInput("");
-    setLoading(true);
-    pendingUserContent.current = content;
-    pendingAssistantContent.current = "";
-    pendingAssistantArtifacts.current = [];
-    pendingAssistantSteps.current = [];
-    pendingAssistantBlocks.current = [];
-
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-
-    try {
-      // New contract: send only the new user message + sessionId. Server
-      // reconstructs prior history (including past tool calls + their
-      // results) from the DB so multi-turn memory works without each
-      // round burning tokens to re-call tools.
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, message: content }),
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (!res.body) throw new Error("No stream");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event: SSEEvent = JSON.parse(line.slice(6));
-
-            if (event.type === "text" && event.content) {
-              pendingAssistantContent.current += event.content;
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: m.content + event.content }
-                  : m
-              ));
-            } else if (event.type === "tool_call" && event.name) {
-              // Individual tool call starting — add as a running step
-              const nextStep: ToolStep = {
-                name: event.name,
-                label: TOOL_LABELS[event.name] ?? event.name,
-                args: event.args ?? {},
-                status: "running",
-                toolCallId: event.toolCallId,
-              };
-              pendingAssistantSteps.current = [...pendingAssistantSteps.current, nextStep];
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      steps: [
-                        ...(m.steps ?? []),
-                        nextStep,
-                      ],
-                    }
-                  : m
-              ));
-            } else if (event.type === "artifact" && event.artifact) {
-              pendingAssistantArtifacts.current = [...pendingAssistantArtifacts.current, event.artifact];
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      artifacts: [...(m.artifacts ?? []), event.artifact as AiArtifact],
-                    }
-                  : m
-              ));
-            } else if (event.type === "tool_result" && event.name) {
-              // Match by toolCallId when available (correctly disambiguates
-              // parallel calls of the same tool); fall back to name+running.
-              const targetId = event.toolCallId;
-              const stepResult = event.result;
-              let markedRef = false;
-              pendingAssistantSteps.current = pendingAssistantSteps.current.map((step) => {
-                const idMatch = targetId && step.toolCallId === targetId;
-                const nameMatch =
-                  !targetId && !markedRef && step.name === event.name && step.status === "running";
-                if (idMatch || nameMatch) {
-                  markedRef = true;
-                  return { ...step, status: "done", result: stepResult };
-                }
-                return step;
-              });
-              setMessages((prev) => prev.map((m) => {
-                if (m.id !== assistantId) return m;
-                let marked = false;
-                const steps = (m.steps ?? []).map((s) => {
-                  const idMatch = targetId && s.toolCallId === targetId;
-                  const nameMatch =
-                    !targetId && !marked && s.name === event.name && s.status === "running";
-                  if (idMatch || nameMatch) {
-                    marked = true;
-                    return { ...s, status: "done" as const, result: stepResult };
-                  }
-                  return s;
-                });
-                return { ...m, steps };
-              }));
-            } else if (event.type === "blocks" && event.blocks) {
-              pendingAssistantBlocks.current = event.blocks;
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId ? { ...m, blocks: event.blocks } : m
-              ));
-            } else if (event.type === "done") {
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId ? { ...m, isStreaming: false } : m
-              ));
-            } else if (event.type === "error") {
-              // Log the raw upstream error for debugging; surface a friendly
-              // message to the user so internal stack traces never leak into
-              // the chat bubble.
-              console.error("[DBS GPT] agent stream error:", event.message);
-              const friendly = "Hmm — something broke on our end. Try that again?";
-              pendingAssistantContent.current = friendly;
-              pendingAssistantBlocks.current = [
-                { type: "callout", tone: "warning", text: friendly },
-              ];
-              setMessages((prev) => prev.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      content: friendly,
-                      blocks: [{ type: "callout", tone: "warning", text: friendly }],
-                      isStreaming: false,
-                    }
-                  : m,
-              ));
-            }
-          } catch {
-            // malformed SSE line
-          }
-        }
-      }
-
-      if (
-        sessionId &&
-        (pendingAssistantContent.current ||
-          pendingAssistantArtifacts.current.length > 0 ||
-          pendingAssistantBlocks.current.length > 0)
-      ) {
-        await saveMessages(
-          sessionId,
-          pendingUserContent.current,
-          pendingAssistantContent.current,
-          pendingAssistantArtifacts.current,
-          pendingAssistantSteps.current,
-          pendingAssistantBlocks.current,
-          isFirst,
-        );
-      }
-    } catch (err) {
-      // Connection-level failure (network, abort, etc.). Same policy: log the
-      // raw error, show a branded-friendly message in the UI.
-      console.error("[DBS GPT] request failed:", err);
-      const friendly = "It's not you — our end hit a snag. Give it another try in a moment.";
-      pendingAssistantContent.current = friendly;
-      pendingAssistantBlocks.current = [
-        { type: "callout", tone: "warning", text: friendly },
-      ];
-      setMessages((prev) => prev.map((m) =>
-        m.id === assistantId
-          ? {
-              ...m,
-              content: friendly,
-              blocks: [{ type: "callout", tone: "warning", text: friendly }],
-              isStreaming: false,
-            }
-          : m,
-      ));
-      // Still persist so the session gets its title and the friendly error is
-      // visible in history instead of leaving an orphan "New chat" sidebar row.
-      if (sessionId) {
-        try {
-          await saveMessages(
-            sessionId,
-            pendingUserContent.current,
-            friendly,
-            pendingAssistantArtifacts.current,
-            pendingAssistantSteps.current,
-            pendingAssistantBlocks.current,
-            isFirst,
-          );
-        } catch {
-          /* save failure on an already-erroring path — swallow */
-        }
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, messages, activeSessionId, createSession, saveMessages]);
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
-  }
-
-  function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px";
-  }
-
-  const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const headerTitle = activeSession?.title ?? "New chat";
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-background">
-      {/* History sidebar */}
-      <div className="w-64 shrink-0 border-r border-border bg-card/50 flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background">
-              <Sparkles className="h-3.5 w-3.5" />
-            </div>
-            <span className="text-sm font-semibold">DBS GPT</span>
-          </div>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <ChatHistorySidebar
-            sessions={sessions} activeId={activeSessionId}
-            onSelect={handleSelect} onNew={handleNew}
-            onDelete={handleDelete} onRename={handleRename}
-          />
-        </div>
-      </div>
+    <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden bg-friday-bg">
+      <ChatSidebar
+        sessions={sessions}
+        activeId={activeSessionId}
+        onSelect={(id) => setActiveSessionId(id)}
+        onNew={onNewChat}
+        onRename={renameSession}
+        onDelete={deleteSession}
+      />
 
-      {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <div className="shrink-0 border-b border-border bg-card/80 px-6 py-3 backdrop-blur-sm flex items-center justify-between">
-          <span className="text-sm font-medium truncate max-w-xs">
-            {activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title ?? "Chat" : "DBS GPT — Aria"}
-          </span>
-          <div className="flex items-center gap-2">
-            {messages.length > 0 && (
-              <Button variant="outline" size="sm" className="text-xs h-7" onClick={handleNew}>New chat</Button>
-            )}
-          </div>
-        </div>
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <AriaHeader title={headerTitle} ready={aiReady} />
 
-        {/* Messages / empty state */}
-        <div className="flex-1 overflow-y-auto">
-          {loadingSession ? (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : !aiStatus.enabled ? (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mx-auto flex h-full max-w-2xl items-center justify-center px-6 py-10"
-            >
-              <div className="rounded-[28px] border border-border bg-card p-8 text-center shadow-sm">
-                <AriaLogo variant="icon" size={48} />
-                <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-                  Aria · scheduled break
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold leading-tight">
-                  Back online {aiStatus.eta ?? "soon"}
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  {aiStatus.message ??
-                    "Aria is taking a short planned break. She'll be back online shortly."}
-                </p>
-                <p className="mt-5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground/60">
-                  DBS Architectes · Friday
-                </p>
-              </div>
-            </motion.div>
-          ) : messages.length === 0 ? (
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl px-6 py-10">
-              <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#155e75_100%)] px-8 py-10 text-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
-                <AriaLogo variant="hero" size={56} />
-                <h2 className="mt-6 text-3xl font-semibold tracking-tight">
-                  Ask anything about DBS projects, deadlines, team, or regulations.
-                </h2>
-              </div>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {STARTER_PROMPTS.map((prompt) => (
-                  <button key={prompt} onClick={() => sendMessage(prompt)}
-                    className="group rounded-[20px] border border-border bg-card px-4 py-4 text-left transition-colors hover:bg-accent"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium leading-6">{prompt}</p>
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <Welcome onPick={(q) => sendMessage(q)} />
           ) : (
-            <div className="mx-auto max-w-3xl px-6 py-6 space-y-6">
-              <AnimatePresence>
-                {messages.map((message, idx) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    sessionId={activeSessionId}
-                    onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
-                    onOpenSheet={openSheet}
-                    onRetry={
-                      message.role === "assistant" && idx === messages.length - 1 && lastUserMsg
-                        ? () => { setMessages((prev) => prev.slice(0, -1)); sendMessage(lastUserMsg.content); }
-                        : undefined
-                    }
+            <div className="max-w-[760px] mx-auto px-7 py-6 flex flex-col gap-5">
+              {messages.map((m) =>
+                m.role === "user" ? (
+                  <UserMessage key={m.id} content={m.content} />
+                ) : (
+                  <AssistantMessage
+                    key={m.id}
+                    msg={m}
+                    onSave={onSaveMessage}
                   />
-                ))}
-              </AnimatePresence>
-              <div ref={messagesEndRef} />
+                ),
+              )}
             </div>
           )}
         </div>
 
-        {/* Input */}
-        <div className="shrink-0 border-t border-border bg-card/90 px-6 py-4">
-          <div className="mx-auto max-w-3xl flex gap-3">
-            <textarea
-              ref={textareaRef}
-              placeholder={
-                aiStatus.enabled
-                  ? "Ask about projects, deadlines, team workload, regulations…"
-                  : `Aria is offline — back ${aiStatus.eta ?? "soon"}`
-              }
-              value={input}
-              onChange={handleTextareaChange}
-              onKeyDown={handleKeyDown}
-              rows={1}
-              disabled={!aiStatus.enabled}
-              className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            />
-            <Button
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading || !aiStatus.enabled}
-              size="icon"
-              className="h-[52px] w-[52px] rounded-2xl shrink-0"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          </div>
-          <p className="mx-auto max-w-3xl mt-2 text-xs text-muted-foreground">
-            {aiStatus.enabled
-              ? "Enter to send · Shift+Enter for new line"
-              : `Scheduled return: ${aiStatus.eta ?? "soon"}`}
-          </p>
-        </div>
+        <Composer
+          value={input}
+          setValue={setInput}
+          onSend={() => sendMessage(input)}
+          loading={loading}
+        />
       </div>
     </div>
   );
