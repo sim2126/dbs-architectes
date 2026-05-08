@@ -1,1206 +1,1040 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Search, Plus, Grid, ChevronDown, X, Building2, ExternalLink,
-  Check, GripVertical, ChevronRight, Users,
-  MapPin, Tag, CreditCard, FileText, Clock, ArrowUpRight,
-  Circle, Loader2, MessageSquare, MoreHorizontal, Trash2,
-  Globe, Navigation,
-} from "lucide-react";
+import * as React from "react";
+import { useRouter } from "next/navigation";
 import { ProjectsMapView } from "@/components/projects/projects-map";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { AddProjectModal } from "@/components/projects/add-project-modal";
-import { FavoriteStar } from "@/components/favorite-star";
+import { I } from "@/components/friday/icons";
+import { Avatar } from "@/components/friday/avatar";
+import { AvatarStack } from "@/components/friday/avatar-stack";
+import { PhasePill } from "@/components/friday/phase-pill";
+import { StatusDot } from "@/components/friday/status-dot";
+import { Skeleton } from "@/components/friday/skeleton";
+import { EmptyState } from "@/components/friday/empty-state";
+import { Button } from "@/components/friday/button";
 import { showToast } from "@/components/toast";
-import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow } from "date-fns";
-import { useT, translatePhase } from "@/lib/translations";
-import { useUserPrefs } from "@/lib/user-prefs-store";
 
-// ─── Types ────────────────────────────────────────────────────
-interface Project {
+// ─── Types ────────────────────────────────────────────────────────
+export interface ProjectRow {
   id: string;
   code: string;
   title: string;
-  category: string;
   phase: string;
-  client?: string | null;
-  year?: number | null;
-  commune?: string | null;
-  typology?: string | null;
-  terrain?: string | null;
-  roof?: string | null;
-  description?: string | null;
-  image?: string | null;
-  status: string;
-  workStatus: string;
-  billing?: string | null;
-  notes?: string | null;
-  country?: string | null;
-  operatingRegion?: string | null;
-  regionCode?: string | null;
-  address?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  createdAt: string;
+  workStatus: string | null;
+  country: string | null;
+  year: number | null;
+  commune: string | null;
+  image: string | null;
   updatedAt: string;
-  assignments: Array<{
-    userId: string;
-    role?: string | null;
-    user: { id: string; name?: string | null; initials?: string | null; image?: string | null };
-  }>;
-}
-
-interface User {
-  id: string;
-  name?: string | null;
-  initials?: string | null;
-  email: string;
-  role: string;
+  starred: boolean;
+  lead: { initials: string; name: string } | null;
+  team: { initials: string; name: string }[];
 }
 
 interface ProjectsClientProps {
-  initialProjects: Project[];
-  users: User[];
-  permissions: { canCreate: boolean; canEdit: boolean; canDelete: boolean };
-  currentUserId: string;
+  initialProjects: ProjectRow[];
+  canEdit: boolean;
 }
 
-// ─── Work Status Config — monday.com palette ─────────────────
-// Solid full-bleed colors, white text (just like monday.com)
-const WORK_STATUS = {
-  todo:      { tKey: "status.not_started",   solid: "#c4c4cf", text: "#fff" },
-  doing:     { tKey: "status.working_on_it", solid: "#fdab3d", text: "#fff" },
-  stuck:     { tKey: "status.stuck",         solid: "#e2445c", text: "#fff" },
-  completed: { tKey: "status.done",          solid: "#00c875", text: "#fff" },
+// ─── Filter groups (DB vocabulary — what's in prisma.project.phase) ──
+const FILTER_GROUPS = {
+  phase: [
+    { key: "ETUDE/AP", label: "Étude / AP" },
+    { key: "CONCORSO", label: "Concorso" },
+    { key: "MAE", label: "MAE" },
+    { key: "CHANTIER", label: "Chantier" },
+    { key: "EXE/DG/DV/3D", label: "EXE / DG / DV" },
+    { key: "TERMINATO", label: "Terminato" },
+    { key: "STUCK", label: "Stuck" },
+  ],
+  status: [
+    { key: "todo", label: "To do" },
+    { key: "doing", label: "Working on it" },
+    { key: "stuck", label: "Stuck" },
+    { key: "completed", label: "Done" },
+  ],
+  country: [
+    { key: "CH", label: "Switzerland" },
+    { key: "IT", label: "Italy" },
+    { key: "IN", label: "India" },
+    { key: "UA", label: "Ukraine" },
+  ],
+  year: [] as { key: number; label: string }[],
 } as const;
 
-// Legacy compat — some components still read .color / .bg
-type WorkStatusEntry = typeof WORK_STATUS[WorkStatusKey] & { color: string; bg: string };
-function wsCompat(key: WorkStatusKey): WorkStatusEntry {
-  const e = WORK_STATUS[key];
-  return { ...e, color: e.solid, bg: e.solid };
+const VIEWS = [
+  { key: "table", label: "Table" },
+  { key: "grid", label: "Grid" },
+  { key: "map", label: "Map" },
+] as const;
+type ViewKey = (typeof VIEWS)[number]["key"];
+
+// ─── Date helper ──────────────────────────────────────────────────
+function relTime(iso: string): string {
+  const d = new Date(iso);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  const days = Math.floor(diff / 86400);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return d.toLocaleDateString("en-CH", { day: "numeric", month: "short" });
 }
 
-type WorkStatusKey = keyof typeof WORK_STATUS;
-const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
+const STAR_GOLD = "#c69a3a";
 
-const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
+// ─── Star button ──────────────────────────────────────────────────
+function StarButton({
+  active,
+  onClick,
+  size = 14,
+  alwaysVisible,
+}: {
+  active: boolean;
+  onClick: () => void;
+  size?: number;
+  alwaysVisible?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label={active ? "Unstar" : "Star"}
+      className={cn(
+        "bg-transparent border-0 p-1 cursor-pointer leading-none transition-[opacity,transform,color] duration-150 hover:scale-110",
+        alwaysVisible || active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+      style={{ color: active ? STAR_GOLD : "var(--friday-fg-subtle)" }}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill={active ? STAR_GOLD : "none"}
+        stroke={active ? STAR_GOLD : "currentColor"}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 4l2.5 5.5L20 10l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5L12 4z" />
+      </svg>
+    </button>
+  );
+}
 
-// ─── Main Component ───────────────────────────────────────────
-export function ProjectsClient({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
-  const t = useT();
-  const [projects, setProjects] = useState(initialProjects);
-  const { projectsView: view, setProjectsView: setView } = useUserPrefs();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [focusProjectId, setFocusProjectId] = useState<string | null>(null);
-  const [favoriteProjectIds, setFavoriteProjectIds] = useState<Set<string>>(new Set());
+// ─── Filter chip ──────────────────────────────────────────────────
+function FilterChip({
+  label,
+  active,
+  onToggle,
+  onRemove,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "inline-flex items-center gap-1.5 h-[26px] rounded-full text-[11.5px] -tracking-[0.05px] transition-colors duration-150 border shrink-0",
+        active
+          ? "bg-friday-accent border-friday-accent text-white pl-2.5 pr-1 font-medium"
+          : "bg-transparent border-friday-border-soft text-friday-fg hover:bg-friday-surface-2 hover:border-friday-border px-2.5",
+      )}
+    >
+      <span>{label}</span>
+      {active ? (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove?.();
+          }}
+          className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full ml-0.5 hover:bg-white/20"
+          style={{ color: "rgba(255,255,255,0.85)" }}
+        >
+          <I.X size={10} />
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
-  // Hydrate the user's favourite-project ids once on mount, then refresh
-  // whenever a star is toggled anywhere in the app.
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const res = await fetch("/api/favorites?type=project");
-        if (!res.ok) return;
-        const list = (await res.json()) as Array<{ entityId: string }>;
-        if (cancelled) return;
-        setFavoriteProjectIds(new Set(list.map((f) => f.entityId)));
-      } catch {
-        /* sidebar still works without this */
-      }
+// ─── Filter dropdown (add filter) ─────────────────────────────────
+function FilterDropdown({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: { key: string | number; label: string }[];
+  selected: (string | number)[];
+  onToggle: (k: string | number) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    refresh();
-    const handler = () => refresh();
-    window.addEventListener("favorites:changed", handler);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("favorites:changed", handler);
-    };
-  }, []);
-
-  // Read ?view=map&project=<id> from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "map") {
-      setView("map");
-      const pid = params.get("project");
-      if (pid) setFocusProjectId(pid);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [filters, setFilters] = useState({
-    phases: [] as string[],
-    categories: [] as string[],
-    typologies: [] as string[],
-    terrains: [] as string[],
-    roofs: [] as string[],
-    countries: [] as string[],
-    client: "all",
-    year: "all",
-    commune: "all",
-    region: "all",
-  });
-
-  const clients = Array.from(new Set(projects.map((p) => p.client).filter(Boolean)));
-  const years = Array.from(new Set(projects.map((p) => p.year).filter(Boolean))).sort((a, b) => (b || 0) - (a || 0));
-  const communes = Array.from(new Set(projects.map((p) => p.commune).filter(Boolean))).sort();
-
-  // Available regions based on selected countries (for sub-region filter)
-  const availableRegions = filters.countries.length > 0
-    ? filters.countries.flatMap((c) => OPERATING_REGIONS[c] ?? [])
-    : Object.values(OPERATING_REGIONS).flat();
-
-  const filteredProjects = projects.filter((p) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !searchQuery || p.title.toLowerCase().includes(q) || p.code.toLowerCase().includes(q) || (p.client || "").toLowerCase().includes(q) || (p.commune || "").toLowerCase().includes(q);
-    const matchesCategory = filters.categories.length === 0 || filters.categories.includes(p.category);
-    const matchesPhase = filters.phases.length === 0 || filters.phases.includes(p.phase);
-    const matchesClient = filters.client === "all" || p.client === filters.client;
-    const matchesYear = filters.year === "all" || String(p.year) === filters.year;
-    const matchesCommune = filters.commune === "all" || p.commune === filters.commune;
-    const matchesCountry = filters.countries.length === 0 || (p.country != null && filters.countries.includes(p.country));
-    const matchesRegion = filters.region === "all" || p.operatingRegion === filters.region;
-    return matchesSearch && matchesCategory && matchesPhase && matchesClient && matchesYear && matchesCommune && matchesCountry && matchesRegion;
-  });
-
-  const hasActiveFilters = filters.phases.length > 0 || filters.categories.length > 0 || filters.countries.length > 0 || filters.client !== "all" || filters.year !== "all" || filters.commune !== "all" || filters.region !== "all" || !!searchQuery;
-
-  const toggleFilter = (key: keyof typeof filters, value: string) => {
-    if (Array.isArray(filters[key])) {
-      const arr = filters[key] as string[];
-      setFilters({ ...filters, [key]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value] });
-    }
-  };
-
-  const clearFilters = () => {
-    setFilters({ phases: [], categories: [], typologies: [], terrains: [], roofs: [], countries: [], client: "all", year: "all", commune: "all", region: "all" });
-    setSearchQuery("");
-  };
-
-  const updateProject = useCallback((updated: Partial<Project>) => {
-    setProjects((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
-    if (selectedProject?.id === updated.id) setSelectedProject((p) => p ? { ...p, ...updated } : p);
-  }, [selectedProject?.id]);
-
-  const toggleGroup = (phase: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      next.has(phase) ? next.delete(phase) : next.add(phase);
-      return next;
-    });
-  };
-
-  // Group projects by phase for table view
-  const grouped = PHASE_ORDER.map((phase) => ({
-    phase,
-    color: PHASE_COLORS[phase] || "#94a3b8",
-    projects: filteredProjects.filter((p) => p.phase === phase),
-  })).filter((g) => g.projects.length > 0);
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   return (
-    <div className="flex h-full overflow-hidden bg-background">
-      {/* ── Main area ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top bar */}
-        <div className="border-b border-border bg-background/95 backdrop-blur-sm z-10">
-          {/* Row 1: search + view toggles + count + add */}
-          <div className="flex items-center gap-2 px-5 py-2.5">
-            <div className="relative w-52 shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input placeholder={t("projects.search")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-8 h-8 text-sm" />
-            </div>
-
-            <span className="text-xs text-muted-foreground shrink-0 ml-auto">{filteredProjects.length} {t("projects.count")}</span>
-
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button onClick={() => setView("table")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "table" && "bg-accent text-foreground")} title="Table">
-                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="2" rx="0.5" fill="currentColor"/><rect x="1" y="7" width="14" height="2" rx="0.5" fill="currentColor"/><rect x="1" y="11" width="14" height="2" rx="0.5" fill="currentColor"/></svg>
+    <div ref={ref} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 h-[26px] pl-2.5 pr-2 rounded-full bg-transparent text-[11.5px] text-friday-fg-muted -tracking-[0.05px] cursor-pointer hover:text-friday-fg hover:border-friday-fg-muted transition-colors duration-150 border border-dashed border-friday-border shrink-0"
+      >
+        <I.Plus size={10} />
+        <span>{label}</span>
+      </button>
+      {open ? (
+        <div
+          className="absolute top-8 left-0 z-30 bg-friday-surface border border-friday-border rounded p-1.5 min-w-[200px]"
+          style={{ boxShadow: "0 8px 24px rgba(20,18,12,0.10)" }}
+        >
+          {options.map((o) => {
+            const isSel = selected.includes(o.key);
+            return (
+              <button
+                key={String(o.key)}
+                type="button"
+                onClick={() => onToggle(o.key)}
+                className={cn(
+                  "flex items-center gap-2 w-full px-2.5 py-1.5 rounded-sm bg-transparent border-0 cursor-pointer text-[12px] text-friday-fg text-left transition-colors duration-150 hover:bg-friday-surface-2",
+                  isSel ? "bg-friday-surface-2" : "",
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-3 h-3 rounded-sm border-[1.5px] inline-flex items-center justify-center shrink-0",
+                    isSel
+                      ? "bg-friday-accent border-friday-accent"
+                      : "bg-transparent border-friday-border",
+                  )}
+                >
+                  {isSel ? (
+                    <I.Check size={9} color="#ffffff" strokeWidth={2.5} />
+                  ) : null}
+                </span>
+                <span>{o.label}</span>
               </button>
-              <button onClick={() => setView("grid")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "grid" && "bg-accent text-foreground")} title="Grid">
-                <Grid className="w-4 h-4" />
-              </button>
-              <button onClick={() => setView("map")} className={cn("p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors", view === "map" && "bg-accent text-foreground")} title="Map">
-                <Globe className="w-4 h-4" />
-              </button>
-            </div>
-
-            {permissions.canCreate && (
-              <Button onClick={() => setAddModalOpen(true)} size="sm" className="h-8 shrink-0">
-                <Plus className="w-3.5 h-3.5" /> {t("projects.add")}
-              </Button>
-            )}
-          </div>
-
-          {/* Row 2: filter chips — scrollable, never wraps */}
-          <div className="flex items-center gap-1.5 px-5 pb-2.5 overflow-x-auto scrollbar-none">
-            <FilterPopover label={t("projects.filter.phase")} options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
-            <FilterPopover label={t("projects.filter.category")} options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
-            <FilterPopover
-              label="Country"
-              options={COUNTRIES.map((c) => ({ value: c.value, label: `${c.flag} ${c.label}` }))}
-              selected={filters.countries}
-              onToggle={(v) => toggleFilter("countries", v)}
-            />
-            {filters.countries.length > 0 && (
-              <FilterSelect
-                label="Region"
-                value={filters.region}
-                options={availableRegions.map((r) => ({ value: r.value, label: r.label }))}
-                onChange={(v) => setFilters({ ...filters, region: v })}
-              />
-            )}
-            <FilterSelect label={t("projects.filter.client")} value={filters.client} options={clients.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, client: v })} />
-            <FilterSelect label={t("projects.filter.commune")} value={filters.commune} options={communes.map((c) => ({ value: c!, label: c! }))} onChange={(v) => setFilters({ ...filters, commune: v })} />
-            <FilterSelect label={t("projects.filter.year")} value={filters.year} options={years.map((y) => ({ value: String(y), label: String(y) }))} onChange={(v) => setFilters({ ...filters, year: v })} />
-            {hasActiveFilters && (
-              <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0 ml-1 whitespace-nowrap">
-                <X className="w-3 h-3" /> {t("common.clear")}
-              </button>
-            )}
-          </div>
+            );
+          })}
         </div>
+      ) : null}
+    </div>
+  );
+}
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto">
-          {view === "table" && (
-            <TableView
-              grouped={grouped}
-              collapsedGroups={collapsedGroups}
-              onToggleGroup={toggleGroup}
-              onSelectProject={setSelectedProject}
-              selectedProjectId={selectedProject?.id}
-              onUpdate={updateProject}
-              onDelete={(id) => { setProjects((p) => p.filter((x) => x.id !== id)); if (selectedProject?.id === id) setSelectedProject(null); }}
-              canEdit={permissions.canEdit}
-              canDelete={permissions.canDelete}
-              currentUserId={currentUserId}
-            />
-          )}
-          {view === "grid" && (
-            <div className={cn(
-              "p-5 grid gap-4",
-              selectedProject
-                ? "grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
-                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-            )}>
-              <AnimatePresence mode="popLayout">
-                {filteredProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} onSelect={() => setSelectedProject(project)} isSelected={selectedProject?.id === project.id} starred={favoriteProjectIds.has(project.id)} />
-                ))}
-              </AnimatePresence>
-              {filteredProjects.length === 0 && <EmptyState hasFilters={hasActiveFilters} onClear={clearFilters} />}
-            </div>
-          )}
-          {view === "map" && (
-            <ProjectsMapView
-              projects={filteredProjects}
-              canEdit={permissions.canEdit}
-              focusProjectId={focusProjectId}
-              onUpdateLocation={async (id, lat, lng, address) => {
-                await fetch(`/api/projects/${id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ latitude: lat, longitude: lng, address }),
-                });
-                updateProject({ id, latitude: lat, longitude: lng, address });
-              }}
-            />
-          )}
-        </div>
-      </div>
+// ─── Search input ─────────────────────────────────────────────────
+function SearchInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 h-8 pl-3 pr-2 min-w-[240px] rounded border border-friday-border-soft hover:border-friday-border focus-within:border-friday-accent transition-colors duration-150 bg-transparent focus-within:bg-friday-surface">
+      <I.Search size={12} className="text-friday-fg-muted" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter projects…"
+        className="flex-1 border-0 outline-none bg-transparent text-[12.5px] text-friday-fg h-full w-[180px]"
+      />
+      {value ? (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="bg-transparent border-0 p-0.5 cursor-pointer text-friday-fg-muted leading-none"
+        >
+          <I.X size={11} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
-      {/* ── Slide-over detail panel ── */}
-      <AnimatePresence>
-        {selectedProject && (
-          <ProjectDrawer
-            project={selectedProject}
-            onClose={() => setSelectedProject(null)}
-            onUpdate={updateProject}
-            canEdit={permissions.canEdit}
-            currentUserId={currentUserId}
-          />
-        )}
-      </AnimatePresence>
+// ─── View toggle ──────────────────────────────────────────────────
+function ViewIcon({
+  kind,
+  size = 13,
+  className,
+}: {
+  kind: "table" | "grid" | "map";
+  size?: number;
+  className?: string;
+}) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className,
+  };
+  if (kind === "table")
+    return (
+      <svg {...props}>
+        <rect x="3" y="4" width="18" height="16" rx="1" />
+        <path d="M3 10h18M3 16h18M9 4v16" />
+      </svg>
+    );
+  if (kind === "grid")
+    return (
+      <svg {...props}>
+        <rect x="3" y="3" width="8" height="8" rx="1" />
+        <rect x="13" y="3" width="8" height="8" rx="1" />
+        <rect x="3" y="13" width="8" height="8" rx="1" />
+        <rect x="13" y="13" width="8" height="8" rx="1" />
+      </svg>
+    );
+  return (
+    <svg {...props}>
+      <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6z" />
+      <path d="M9 4v16M15 6v16" />
+    </svg>
+  );
+}
 
-      <AddProjectModal
-        open={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
-        users={users}
-        onSuccess={(project) => { setProjects([project as unknown as Project, ...projects]); setAddModalOpen(false); }}
+function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: ViewKey;
+  onChange: (v: ViewKey) => void;
+}) {
+  const refs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const [bar, setBar] = React.useState({ x: 0, w: 0, ready: false });
+
+  React.useEffect(() => {
+    const el = refs.current[value];
+    if (!el) return;
+    setBar({ x: el.offsetLeft, w: el.offsetWidth, ready: true });
+  }, [value]);
+
+  return (
+    <div className="relative flex items-center">
+      {VIEWS.map((v) => {
+        const active = value === v.key;
+        return (
+          <button
+            key={v.key}
+            ref={(el) => {
+              refs.current[v.key] = el;
+            }}
+            type="button"
+            onClick={() => onChange(v.key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 h-8 px-3 bg-transparent border-0 cursor-pointer text-[12.5px] -tracking-[0.05px] transition-colors duration-150",
+              active
+                ? "text-friday-fg font-medium"
+                : "text-friday-fg-muted hover:text-friday-fg",
+            )}
+          >
+            <ViewIcon kind={v.key} />
+            <span>{v.label}</span>
+          </button>
+        );
+      })}
+      <div
+        className="absolute -bottom-px h-0.5 bg-friday-accent transition-[left,width] duration-200 ease-out"
+        style={{ left: bar.x, width: bar.w }}
       />
     </div>
   );
 }
 
-// ─── Table View ───────────────────────────────────────────────
-function TableView({
-  grouped, collapsedGroups, onToggleGroup, onSelectProject,
-  selectedProjectId, onUpdate, onDelete, canEdit, canDelete, currentUserId,
+// ─── Toolbar ──────────────────────────────────────────────────────
+type Filters = {
+  phase: string[];
+  status: string[];
+  country: string[];
+  year: number[];
+};
+
+function ProjectsToolbar({
+  search,
+  setSearch,
+  view,
+  setView,
+  filters,
+  setFilters,
+  count,
+  starredCount,
+  yearOptions,
+  canCreate,
 }: {
-  grouped: { phase: string; color: string; projects: Project[] }[];
-  collapsedGroups: Set<string>;
-  onToggleGroup: (phase: string) => void;
-  onSelectProject: (p: Project) => void;
-  selectedProjectId?: string;
-  onUpdate: (p: Partial<Project>) => void;
-  onDelete: (id: string) => void;
-  canEdit: boolean;
-  canDelete: boolean;
-  currentUserId: string;
+  search: string;
+  setSearch: (v: string) => void;
+  view: ViewKey;
+  setView: (v: ViewKey) => void;
+  filters: Filters;
+  setFilters: React.Dispatch<React.SetStateAction<Filters>>;
+  count: number;
+  starredCount: number;
+  yearOptions: { key: number; label: string }[];
+  canCreate: boolean;
 }) {
-  const t = useT();
-  const tp = (phase: string) => translatePhase(phase, t);
-  return (
-    <div className="min-w-[800px]">
-      {/* Column headers */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border grid grid-cols-[24px_1fr_120px_130px_110px_100px_90px_70px] gap-0 px-4 py-2">
-        <div />
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.project")}</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.assignees")}</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.status")}</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.phase")}</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.category")}</div>
-        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.col.billing")}</div>
-        <div />
-      </div>
-
-      {grouped.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 text-center">
-          <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
-        </div>
-      ) : (
-        grouped.map(({ phase, color, projects }) => {
-          const isCollapsed = collapsedGroups.has(phase);
-          return (
-            <div key={phase}>
-              {/* Group header */}
-              <div
-                className="flex items-center gap-2 px-4 py-2 bg-muted/30 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => onToggleGroup(phase)}
-              >
-                <div className="w-1 h-4 rounded-full shrink-0" style={{ background: color }} />
-                <ChevronRight className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", !isCollapsed && "rotate-90")} />
-                <span className="text-xs font-semibold">{tp(phase)}</span>
-                <span className="text-[10px] text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 font-medium">{projects.length}</span>
-              </div>
-
-              {/* Rows */}
-              <AnimatePresence>
-                {!isCollapsed && projects.map((project) => (
-                  <TableRow
-                    key={project.id}
-                    project={project}
-                    phaseColor={color}
-                    isSelected={selectedProjectId === project.id}
-                    onSelect={() => onSelectProject(project)}
-                    onUpdate={onUpdate}
-                    onDelete={onDelete}
-                    canEdit={canEdit}
-                    canDelete={canDelete}
-                    currentUserId={currentUserId}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-// ─── Table Row ────────────────────────────────────────────────
-function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelete, canEdit, canDelete, currentUserId }: {
-  project: Project; phaseColor: string; isSelected: boolean;
-  onSelect: () => void; onUpdate: (p: Partial<Project>) => void;
-  onDelete: (id: string) => void; canEdit: boolean; canDelete: boolean; currentUserId: string;
-}) {
-  const t = useT();
-  const [showActions, setShowActions] = useState(false);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [statusCoords, setStatusCoords] = useState({ top: 0, left: 0 });
-  const statusTriggerRef = useRef<HTMLButtonElement>(null);
-  const statusDropdownRef = useRef<HTMLDivElement>(null);
-  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
-  const ws = WORK_STATUS[wsKey];
-
-  const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
-  const canUpdateStatus = canEdit || isAssignee;
-
-  useEffect(() => {
-    if (!showStatusMenu) return;
-    function close(e: MouseEvent) {
-      const t = e.target as Node;
-      if (statusTriggerRef.current?.contains(t)) return;
-      if (statusDropdownRef.current?.contains(t)) return;
-      setShowStatusMenu(false);
-    }
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [showStatusMenu]);
-
-  const updateStatus = async (workStatus: WorkStatusKey) => {
-    setShowStatusMenu(false);
-    setUpdatingStatus(true);
-    onUpdate({ id: project.id, workStatus });
-    await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workStatus }) });
-    setUpdatingStatus(false);
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className={cn(
-        "group grid grid-cols-[24px_1fr_120px_130px_110px_100px_90px_70px] gap-0 px-4 py-0 border-b border-border/60 hover:bg-muted/20 transition-colors cursor-pointer items-center",
-        isSelected && "bg-blue-50/60 dark:bg-blue-900/10 hover:bg-blue-50/80 dark:hover:bg-blue-900/20"
-      )}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
-      onClick={onSelect}
-    >
-      {/* Left color bar */}
-      <div className="flex items-center justify-center py-3">
-        <div className="w-0.5 h-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: phaseColor }} />
-      </div>
-
-      {/* Project name */}
-      <div className="py-2.5 pr-3 min-w-0">
-        <div className="flex items-center gap-2">
-          {project.image ? (
-            <img src={project.image} alt="" className="w-6 h-6 rounded object-cover shrink-0" />
-          ) : (
-            <div className="w-6 h-6 rounded bg-muted flex items-center justify-center shrink-0">
-              <Building2 className="w-3 h-3 text-muted-foreground/50" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="text-sm font-medium truncate leading-tight">{project.title.replace(project.code + " ", "")}</p>
-            <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Assignees */}
-      <div className="py-2.5 pr-3">
-        {project.assignments.length > 0 ? (
-          <div className="flex -space-x-1.5">
-            {project.assignments.slice(0, 4).map((a) => (
-              <Avatar key={a.userId} className="h-6 w-6 border-2 border-background">
-                <AvatarFallback className="text-[8px] font-bold bg-foreground text-background">
-                  {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-                </AvatarFallback>
-              </Avatar>
-            ))}
-            {project.assignments.length > 4 && (
-              <div className="h-6 w-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[8px] font-bold text-muted-foreground">
-                +{project.assignments.length - 4}
-              </div>
-            )}
-          </div>
-        ) : (
-          <span className="text-[11px] text-muted-foreground/50">—</span>
-        )}
-      </div>
-
-      {/* Work Status */}
-      <div className="py-2.5 pr-3">
-        {/* Full-color status block — monday.com style */}
-        <button
-          ref={statusTriggerRef}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!canUpdateStatus) return;
-            if (!showStatusMenu && statusTriggerRef.current) {
-              const r = statusTriggerRef.current.getBoundingClientRect();
-              setStatusCoords({ top: r.bottom + 2, left: r.left });
-            }
-            setShowStatusMenu((v) => !v);
-          }}
-          className={cn(
-            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold transition-all",
-            canUpdateStatus && "hover:opacity-90 cursor-pointer",
-            !canUpdateStatus && "cursor-default"
-          )}
-          style={{ background: ws.solid, color: ws.text }}
-          disabled={updatingStatus}
-        >
-          {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : t(ws.tKey)}
-        </button>
-        <PortalDropdown coords={statusCoords} open={showStatusMenu}>
-          <div
-            ref={statusDropdownRef}
-            className="bg-background border border-border rounded-xl shadow-xl overflow-hidden min-w-[160px]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-3 py-2 border-b border-border">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("projects.change_status")}</span>
-            </div>
-            {WORK_STATUS_KEYS.map((key) => {
-              const s = WORK_STATUS[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => updateStatus(key)}
-                  className={cn(
-                    "flex items-center justify-between w-full px-3 py-2.5 text-white text-sm font-bold transition-opacity",
-                    wsKey === key ? "opacity-100" : "opacity-90 hover:opacity-100"
-                  )}
-                  style={{ background: s.solid }}
-                >
-                  {t(s.tKey)}
-                  {wsKey === key && <Check className="w-4 h-4 opacity-80" />}
-                </button>
-              );
-            })}
-          </div>
-        </PortalDropdown>
-      </div>
-
-      {/* Phase */}
-      <div className="py-2.5 pr-3">
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-white truncate block text-center" style={{ background: phaseColor }}>
-          {translatePhase(project.phase, t)}
-        </span>
-      </div>
-
-      {/* Category */}
-      <div className="py-2.5 pr-3">
-        <span className="text-[11px] text-muted-foreground truncate">{project.category}</span>
-      </div>
-
-      {/* Billing */}
-      <div className="py-2.5 pr-3">
-        <span className={cn(
-          "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
-          project.billing === "Completo" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-          project.billing === "Parziale" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-          "text-muted-foreground"
-        )}>
-          {project.billing || "—"}
-        </span>
-      </div>
-
-      {/* Actions */}
-      <div className="py-2.5 flex items-center justify-end gap-0.5">
-        <AnimatePresence>
-          {showActions && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-0.5">
-              <Link
-                href={`/dashboard/projects/${project.id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                title={t("projects.open_full")}
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </Link>
-              {canDelete && (
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (confirm(t("common.confirm_delete"))) {
-                      await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
-                      onDelete(project.id);
-                    }
-                  }}
-                  className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-muted-foreground hover:text-red-500"
-                  title="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Project Drawer (slide-over) ──────────────────────────────
-function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
-  project: Project;
-  onClose: () => void;
-  onUpdate: (p: Partial<Project>) => void;
-  canEdit: boolean;
-  currentUserId: string;
-}) {
-  const t = useT();
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [addressInput, setAddressInput] = useState(project.address || project.commune || "");
-  const [geocoding, setGeocoding] = useState(false);
-  const [geoError, setGeoError] = useState("");
-  const [locationEditing, setLocationEditing] = useState(false);
-
-  const geocodeAndSave = async () => {
-    if (!addressInput.trim()) return;
-    setGeocoding(true);
-    setGeoError("");
-    try {
-      const res = await fetch("/api/geocode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: addressInput }),
+  const allFilters: { group: keyof Filters; key: string | number; label: string }[] = [];
+  (Object.entries(filters) as [keyof Filters, (string | number)[]][]).forEach(
+    ([group, vals]) => {
+      const opts =
+        group === "year"
+          ? yearOptions
+          : (FILTER_GROUPS[group] as readonly { key: string | number; label: string }[]);
+      vals.forEach((v) => {
+        const opt = opts.find((o) => o.key === v);
+        if (opt) allFilters.push({ group, key: v, label: opt.label });
       });
-      const data = await res.json() as { lat?: number; lng?: number; formatted?: string; error?: string };
-      if (!res.ok || data.error || data.lat == null) {
-        setGeoError("Address not found. Try a more specific location.");
-        return;
-      }
-      await fetch(`/api/projects/${project.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: data.lat, longitude: data.lng, address: data.formatted }),
-      });
-      onUpdate({ id: project.id, latitude: data.lat, longitude: data.lng, address: data.formatted });
-      setLocationEditing(false);
-    } catch {
-      setGeoError("Geocoding failed. Please try again.");
-    } finally {
-      setGeocoding(false);
-    }
-  };
+    },
+  );
 
-  const removeLocation = async () => {
-    await fetch(`/api/projects/${project.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ latitude: null, longitude: null, address: null }),
+  const toggleFilter = (group: keyof Filters, key: string | number) => {
+    setFilters((f) => {
+      const next = { ...f };
+      const cur = (next[group] as (string | number)[]) || [];
+      next[group] = (
+        cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key]
+      ) as never;
+      return next;
     });
-    onUpdate({ id: project.id, latitude: null, longitude: null, address: null });
-  };
-  const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
-  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
-  const ws = WORK_STATUS[wsKey];
-  const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
-  const canUpdateStatus = canEdit || isAssignee;
-
-  const updateStatus = async (workStatus: WorkStatusKey) => {
-    setUpdatingStatus(true);
-    onUpdate({ id: project.id, workStatus });
-    await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workStatus }) });
-    setUpdatingStatus(false);
   };
 
   return (
-    <motion.div
-      initial={{ x: "100%", opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: "100%", opacity: 0 }}
-      transition={{ type: "spring", damping: 30, stiffness: 300 }}
-      className="w-[400px] shrink-0 border-l border-border flex flex-col bg-background overflow-hidden h-full"
-    >
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-border">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            {project.image ? (
-              <img src={project.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 mt-0.5" />
-            ) : (
-              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                <Building2 className="w-5 h-5 text-muted-foreground/40" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
-              <h3 className="font-semibold text-sm leading-tight mt-0.5 line-clamp-2">
-                {project.title.replace(project.code + " ", "")}
-              </h3>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors shrink-0">
-            <X className="w-4 h-4" />
+    <div className="bg-friday-bg border-b border-friday-border-soft shrink-0">
+      <div className="flex items-center gap-3 px-7 pt-3.5 pb-2.5">
+        <div className="flex items-baseline gap-3 flex-1 min-w-0">
+          <h1 className="font-display italic font-medium text-[26px] text-friday-fg m-0 -tracking-[0.5px] leading-none">
+            Projects
+          </h1>
+          <span className="text-[12px] text-friday-fg-muted whitespace-nowrap">
+            {count} {count === 1 ? "project" : "projects"}
+            <span className="text-friday-fg-subtle"> · </span>
+            <span style={{ color: STAR_GOLD }}>★</span> {starredCount} starred
+          </span>
+        </div>
+
+        <SearchInput value={search} onChange={setSearch} />
+
+        <ViewToggle value={view} onChange={setView} />
+
+        {canCreate ? (
+          <Button
+            kind="primary"
+            size="sm"
+            leading={<I.Plus size={11} color="#ffffff" />}
+            onClick={() => showToast("New project draft")}
+          >
+            Add project
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="flex items-center gap-1.5 px-7 pb-3 flex-wrap">
+        {allFilters.map((f) => (
+          <FilterChip
+            key={`${f.group}:${f.key}`}
+            label={f.label}
+            active
+            onToggle={() => toggleFilter(f.group, f.key)}
+            onRemove={() => toggleFilter(f.group, f.key)}
+          />
+        ))}
+
+        <FilterDropdown
+          label="Phase"
+          options={FILTER_GROUPS.phase as unknown as { key: string; label: string }[]}
+          selected={filters.phase}
+          onToggle={(k) => toggleFilter("phase", k)}
+        />
+        <FilterDropdown
+          label="Status"
+          options={FILTER_GROUPS.status as unknown as { key: string; label: string }[]}
+          selected={filters.status}
+          onToggle={(k) => toggleFilter("status", k)}
+        />
+        <FilterDropdown
+          label="Country"
+          options={FILTER_GROUPS.country as unknown as { key: string; label: string }[]}
+          selected={filters.country}
+          onToggle={(k) => toggleFilter("country", k)}
+        />
+        <FilterDropdown
+          label="Year"
+          options={yearOptions}
+          selected={filters.year}
+          onToggle={(k) => toggleFilter("year", k as number)}
+        />
+
+        {allFilters.length > 0 ? (
+          <button
+            type="button"
+            onClick={() =>
+              setFilters({ phase: [], status: [], country: [], year: [] })
+            }
+            className="bg-transparent border-0 px-1.5 h-[26px] text-[11.5px] text-friday-fg-muted hover:text-friday-fg cursor-pointer transition-colors duration-150 -tracking-[0.05px]"
+          >
+            Clear all
           </button>
-        </div>
-
-        {/* Phase + Status badges */}
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
-          <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
-            {translatePhase(project.phase, t)}
-          </span>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: ws.solid }}>
-            {t(ws.tKey)}
-          </span>
-        </div>
-
-        {/* Status selector (monday.com full-color buttons) */}
-        {canUpdateStatus && (
-          <div className="mt-3">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5">{t("projects.update_status")}</p>
-            <div className="grid grid-cols-2 gap-1">
-              {WORK_STATUS_KEYS.map((key) => {
-                const s = WORK_STATUS[key];
-                const isActive = wsKey === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => updateStatus(key)}
-                    disabled={updatingStatus}
-                    className={cn(
-                      "flex items-center justify-center gap-1.5 px-2 py-2 rounded text-xs font-bold text-white transition-all",
-                      isActive ? "ring-2 ring-offset-1 ring-offset-background" : "opacity-70 hover:opacity-100"
-                    )}
-                    style={{ background: s.solid, ...(isActive ? { ringColor: s.solid } : {}) }}
-                  >
-                    {isActive && updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                    {isActive && !updatingStatus ? <Check className="w-3 h-3" /> : null}
-                    {t(s.tKey)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
-
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Assignees */}
-        <div className="px-5 py-4 border-b border-border">
-          <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <Users className="w-3 h-3" /> {t("projects.team")} ({project.assignments.length})
-          </p>
-          {project.assignments.length === 0 ? (
-            <p className="text-xs text-muted-foreground">{t("projects.detail.no_assignees")}</p>
-          ) : (
-            <div className="space-y-2">
-              {project.assignments.map((a) => (
-                <div key={a.userId} className="flex items-center gap-2.5">
-                  <Avatar className="h-7 w-7 shrink-0">
-                    <AvatarFallback className="text-[10px] font-bold bg-foreground text-background">
-                      {a.user.initials ?? a.user.name?.slice(0, 2).toUpperCase() ?? "??"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-xs font-medium leading-tight">{a.user.name ?? "Unknown"}</p>
-                    {a.role && <p className="text-[10px] text-muted-foreground">{a.role}</p>}
-                  </div>
-                  {a.userId === currentUserId && (
-                    <span className="ml-auto text-[9px] bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded-full px-1.5 py-0.5 font-semibold">You</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Details */}
-        <div className="px-5 py-4 border-b border-border space-y-3">
-          <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
-            <FileText className="w-3 h-3" /> {t("projects.details")}
-          </p>
-          {[
-            { icon: Tag, label: t("projects.detail.category"), value: project.category },
-            { icon: MapPin, label: t("projects.detail.commune"), value: project.commune },
-            { icon: Users, label: t("projects.detail.client"), value: project.client },
-            { icon: Clock, label: t("projects.detail.year"), value: project.year },
-            { icon: CreditCard, label: t("projects.detail.billing"), value: project.billing },
-          ].filter((r) => r.value).map((row) => (
-            <div key={row.label} className="flex items-center gap-2.5">
-              <row.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span className="text-[11px] text-muted-foreground w-16 shrink-0">{row.label}</span>
-              <span className="text-xs font-medium truncate">{String(row.value)}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Location */}
-        <div className="px-5 py-4 border-b border-border">
-          <div className="flex items-center justify-between mb-2.5">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1.5">
-              <Globe className="w-3 h-3" /> Location
-            </p>
-            {project.latitude != null && canEdit && !locationEditing && (
-              <button
-                onClick={() => setLocationEditing(true)}
-                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Edit
-              </button>
-            )}
-          </div>
-
-          {project.latitude != null && project.longitude != null && !locationEditing ? (
-            <div className="space-y-2">
-              {project.address && (
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground leading-snug">{project.address}</p>
-                </div>
-              )}
-              <p className="text-[10px] font-mono text-muted-foreground/60">
-                {project.latitude.toFixed(5)}, {project.longitude.toFixed(5)}
-              </p>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => window.open(`https://earth.google.com/web/@${project.latitude},${project.longitude},0a,800d,35y,0h,0t,0r`, "_blank")}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-                >
-                  <Globe className="w-3 h-3" /> Google Earth
-                </button>
-                <button
-                  onClick={() => {
-                    const url = `${window.location.origin}/dashboard/projects?view=map&project=${project.id}`;
-                    navigator.clipboard
-                      .writeText(url)
-                      .then(() => showToast("Map link copied to clipboard"))
-                      .catch(() => showToast("Couldn't copy — clipboard access blocked", "warning"));
-                  }}
-                  title="Copy map link"
-                  className="px-3 py-1.5 rounded-lg border border-border hover:bg-muted text-xs transition-colors flex items-center gap-1"
-                >
-                  <Navigation className="w-3 h-3" /> Share
-                </button>
-                {canEdit && (
-                  <button
-                    onClick={removeLocation}
-                    className="px-2.5 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-xs transition-colors"
-                    title="Remove pin"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : canEdit ? (
-            <div className="space-y-2">
-              <input
-                value={addressInput}
-                onChange={(e) => setAddressInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && geocodeAndSave()}
-                placeholder="Address or place name…"
-                className="w-full h-8 px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-foreground/30"
-              />
-              {geoError && <p className="text-[10px] text-red-500">{geoError}</p>}
-              <div className="flex gap-1.5">
-                <button
-                  onClick={geocodeAndSave}
-                  disabled={geocoding || !addressInput.trim()}
-                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-foreground text-background text-xs font-medium disabled:opacity-50 transition-colors"
-                >
-                  {geocoding ? <Loader2 className="w-3 h-3 animate-spin" /> : <MapPin className="w-3 h-3" />}
-                  {geocoding ? "Pinning…" : "Pin on map"}
-                </button>
-                {locationEditing && (
-                  <button
-                    onClick={() => { setLocationEditing(false); setGeoError(""); }}
-                    className="px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted text-xs transition-colors"
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No location set.</p>
-          )}
-        </div>
-
-        {/* Notes */}
-        {project.notes && (
-          <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.notes")}</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">{project.notes}</p>
-          </div>
-        )}
-
-        {/* Description */}
-        {project.description && (
-          <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.description")}</p>
-            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">{project.description}</p>
-          </div>
-        )}
-
-        {/* Action buttons — inside scroll area, right after last detail */}
-        <div className="px-5 py-4 flex gap-2 sticky bottom-0 bg-background border-t border-border mt-auto">
-          <Link href={`/dashboard/projects/${project.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5">
-              <MessageSquare className="w-3.5 h-3.5" /> {t("projects.open_thread")}
-            </Button>
-          </Link>
-          <Link href={`/dashboard/projects/${project.id}`}>
-            <Button size="sm" className="h-8 text-xs gap-1.5">
-              <ArrowUpRight className="w-3.5 h-3.5" /> {t("projects.full_page")}
-            </Button>
-          </Link>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Empty State ──────────────────────────────────────────────
-function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
-  const t = useT();
-  return (
-    <div className="col-span-full flex flex-col items-center justify-center h-64 text-center">
-      <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
-      <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
-      {hasFilters && <button onClick={onClear} className="text-xs text-foreground underline mt-2">{t("projects.clear_filters")}</button>}
     </div>
   );
 }
 
-// ─── Project Card (grid view) ─────────────────────────────────
-function ProjectCard({
-  project,
-  onSelect,
-  isSelected,
-  starred,
-}: {
-  project: Project;
-  onSelect: () => void;
-  isSelected: boolean;
-  starred: boolean;
-}) {
-  const t = useT();
-  const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
-  const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
-  const ws = WORK_STATUS[wsKey];
+// ─── Placeholder hero ─────────────────────────────────────────────
+function PlaceholderHero({ code, label }: { code: string; label: string }) {
+  const hash = code.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0);
+  const angle = (hash % 90) - 45;
+  const stop = 24 + (hash % 30);
   return (
-    <motion.div
-      layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ y: -2 }}
-      onClick={onSelect}
-      className={cn(
-        "group bg-card border rounded-xl overflow-hidden cursor-pointer hover:shadow-lg transition-all",
-        isSelected ? "border-foreground/40 ring-1 ring-foreground/20" : "border-border hover:border-foreground/20"
-      )}
+    <div
+      className="w-full h-full relative bg-friday-surface-3 overflow-hidden"
     >
-      <div className="aspect-[4/3] bg-muted relative overflow-hidden">
-        {project.image ? (
-          <img src={project.image} alt={project.title} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-            <Building2 className="w-8 h-8 text-muted-foreground/30" />
-          </div>
-        )}
-        {/* Favourite star — always visible if starred, hover-revealed otherwise */}
-        <div className={cn(
-          "absolute bottom-2 left-2 rounded-full bg-background/85 backdrop-blur-sm transition-opacity",
-          starred ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-        )}>
-          <FavoriteStar entityType="project" entityId={project.id} initiallyStarred={starred} size={14} />
-        </div>
-        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
-          {translatePhase(project.phase, t)}
-        </div>
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ws.solid }}>
-          {t(ws.tKey)}
-        </div>
-        {project.assignments.length > 0 && (
-          <div className="absolute bottom-2 right-2 flex -space-x-1">
-            {project.assignments.slice(0, 3).map((a) => (
-              <Avatar key={a.userId} className="h-5 w-5 border border-background">
-                <AvatarFallback className="text-[8px] bg-foreground text-background">{a.user.initials ?? "??"}</AvatarFallback>
-              </Avatar>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="p-3">
-        <p className="text-[10px] text-muted-foreground font-mono">{project.code}</p>
-        <h3 className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">{project.title.replace(project.code + " ", "")}</h3>
-        <div className="flex items-center gap-1 mt-1.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{project.category}</span>
-          {project.commune && <><span className="text-muted-foreground/30">·</span><span className="text-[10px] text-muted-foreground truncate">{project.commune}</span></>}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Portal Dropdown ──────────────────────────────────────────
-// Renders dropdown content directly in <body> so no overflow/clip/
-// backdrop-filter ancestor can hide it.
-function PortalDropdown({
-  coords,
-  open,
-  children,
-}: {
-  coords: { top: number; left: number };
-  open: boolean;
-  children: React.ReactNode;
-}) {
-  const [mounted, setMounted] = useState(false);
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null;
-  return createPortal(
-    <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 9999, pointerEvents: open ? "auto" : "none" }}>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 4, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.96 }}
-            transition={{ duration: 0.1 }}
-          >
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>,
-    document.body
-  );
-}
-
-// ─── Filter Popover ───────────────────────────────────────────
-function FilterPopover({ label, options, selected, onToggle }: {
-  label: string; options: { value: string; label: string; color?: string }[];
-  selected: string[]; onToggle: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const count = selected.length;
-
-  useEffect(() => {
-    if (!open) return;
-    function h(e: MouseEvent) {
-      const t = e.target as Node;
-      if (triggerRef.current?.contains(t)) return;
-      if (dropdownRef.current?.contains(t)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
-
-  const handleOpen = () => {
-    if (!open && triggerRef.current) {
-      const r = triggerRef.current.getBoundingClientRect();
-      setCoords({ top: r.bottom + 4, left: r.left });
-    }
-    setOpen((v) => !v);
-  };
-
-  return (
-    <div className="shrink-0">
-      <button
-        ref={triggerRef}
-        onClick={handleOpen}
-        className={cn(
-          "flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors",
-          count > 0 ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40"
-        )}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(${angle}deg, var(--friday-surface-3) 0%, var(--friday-surface-2) ${stop}%, var(--friday-surface) 100%)`,
+        }}
+      />
+      <svg
+        viewBox="0 0 200 150"
+        preserveAspectRatio="xMidYMid slice"
+        className="absolute inset-0 w-full h-full"
+      >
+        <line
+          x1="0"
+          y1={70 + (hash % 30)}
+          x2="200"
+          y2={70 + (hash % 30)}
+          stroke="var(--friday-border)"
+          strokeWidth="0.5"
+        />
+        <line
+          x1={40 + (hash % 60)}
+          y1="0"
+          x2={40 + (hash % 60)}
+          y2="150"
+          stroke="var(--friday-border)"
+          strokeWidth="0.5"
+        />
+        <circle
+          cx={50 + (hash % 100)}
+          cy={60 + (hash % 30)}
+          r="22"
+          stroke="var(--friday-border)"
+          strokeWidth="0.5"
+          fill="none"
+        />
+      </svg>
+      <span
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-display italic font-medium text-friday-fg-subtle whitespace-nowrap text-center max-w-[80%] overflow-hidden text-ellipsis -tracking-[0.3px]"
+        style={{ fontSize: 24 }}
       >
         {label}
-        {count > 0 && <span className="bg-background/20 text-background rounded-full px-1 text-[9px] font-bold">{count}</span>}
-        <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
-      </button>
-      <PortalDropdown coords={coords} open={open}>
-        <div ref={dropdownRef} className="bg-background border border-border rounded-xl shadow-xl p-1 min-w-[170px]">
-          {options.map((opt) => {
-            const isSel = selected.includes(opt.value);
-            return (
-              <button
-                key={opt.value}
-                onClick={() => onToggle(opt.value)}
-                className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
-              >
-                <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", isSel ? "bg-foreground border-foreground" : "border-border")}>
-                  {isSel && <Check className="w-2.5 h-2.5 text-background" />}
-                </div>
-                {opt.color && <div className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />}
-                <span className={isSel ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </PortalDropdown>
+      </span>
     </div>
   );
 }
 
-// ─── Filter Select ────────────────────────────────────────────
-function FilterSelect({ label, value, options, onChange }: {
-  label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void;
+function HeroImg({
+  p,
+  grayscale = true,
+}: {
+  p: ProjectRow;
+  grayscale?: boolean;
 }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const isActive = value !== "all";
+  if (p.image) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={p.image}
+        alt={p.title}
+        className="w-full h-full object-cover"
+        style={{ filter: grayscale ? "grayscale(1) contrast(1.02)" : "none" }}
+      />
+    );
+  }
+  return <PlaceholderHero code={p.code} label={p.title} />;
+}
 
-  useEffect(() => {
-    if (!open) return;
-    function h(e: MouseEvent) {
-      const t = e.target as Node;
-      if (triggerRef.current?.contains(t)) return;
-      if (dropdownRef.current?.contains(t)) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
+// ─── Table view ───────────────────────────────────────────────────
+const TABLE_COLS = "36px 110px minmax(220px, 1fr) 180px 110px 70px 110px 110px 90px";
 
-  const handleOpen = () => {
-    if (!open && triggerRef.current) {
-      const r = triggerRef.current.getBoundingClientRect();
-      setCoords({ top: r.bottom + 4, left: r.left });
+function ProjectsTable({
+  rows,
+  onOpen,
+  onStar,
+}: {
+  rows: ProjectRow[];
+  onOpen: (p: ProjectRow) => void;
+  onStar: (p: ProjectRow) => void;
+}) {
+  return (
+    <div className="flex-1 overflow-auto bg-friday-bg">
+      <div className="min-w-[1100px]">
+        <div
+          className="grid sticky top-0 z-[5] items-center h-8 px-7 border-b border-friday-border bg-friday-bg text-[9.5px] tracking-[0.18em] uppercase text-friday-fg-muted font-semibold"
+          style={{ gridTemplateColumns: TABLE_COLS }}
+        >
+          <span />
+          <span>Code</span>
+          <span>Title</span>
+          <span>Phase</span>
+          <span>Status</span>
+          <span>Lead</span>
+          <span>Region</span>
+          <span>Team</span>
+          <span className="text-right">Updated</span>
+        </div>
+
+        {rows.map((p) => (
+          <div
+            key={p.code}
+            onClick={() => onOpen(p)}
+            className="group grid items-center h-11 px-7 border-b border-friday-border-soft hover:bg-friday-surface-2 cursor-pointer transition-colors duration-150"
+            style={{ gridTemplateColumns: TABLE_COLS }}
+          >
+            <StarButton
+              active={p.starred}
+              onClick={() => onStar(p)}
+              alwaysVisible={p.starred}
+              size={14}
+            />
+            <span className="font-mono text-[10.5px] text-friday-fg-muted tracking-wide">
+              {p.code}
+            </span>
+            <span className="text-[13px] text-friday-fg font-medium -tracking-[0.05px] truncate">
+              {p.title}
+            </span>
+            <PhasePill phase={p.phase} compact />
+            <StatusDot status={p.workStatus} withLabel />
+            {p.lead ? (
+              <Avatar initials={p.lead.initials} size={20} />
+            ) : (
+              <span className="text-[11.5px] text-friday-fg-subtle">—</span>
+            )}
+            <span className="text-[11.5px] text-friday-fg-muted truncate">
+              {p.commune ?? "—"}
+            </span>
+            {p.team.length > 0 ? (
+              <AvatarStack
+                members={p.team.slice(0, 3).map((t) => t.initials)}
+                extra={Math.max(0, p.team.length - 3)}
+                size={20}
+              />
+            ) : (
+              <span className="text-[11.5px] text-friday-fg-subtle">—</span>
+            )}
+            <span className="text-[11px] text-friday-fg-subtle text-right whitespace-nowrap">
+              {relTime(p.updatedAt)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Grid view ────────────────────────────────────────────────────
+function ProjectCard({
+  p,
+  onOpen,
+  onStar,
+}: {
+  p: ProjectRow;
+  onOpen: (p: ProjectRow) => void;
+  onStar: (p: ProjectRow) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(p)}
+      className="flex flex-col bg-friday-surface border border-friday-border-soft hover:border-friday-border rounded overflow-hidden cursor-pointer text-left transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-[0_4px_14px_rgba(20,18,12,0.06)]"
+    >
+      <div
+        className="relative w-full overflow-hidden bg-friday-surface-3"
+        style={{ aspectRatio: "4 / 3" }}
+      >
+        <HeroImg p={p} />
+        <div className="absolute top-2 left-2">
+          <PhasePill phase={p.phase} compact />
+        </div>
+        <div
+          className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1.5"
+          style={{ background: "rgba(26,26,24,0.78)" }}
+        >
+          <StatusDot status={p.workStatus} />
+          <span
+            className="text-[10px] tracking-wide"
+            style={{ color: "#fafaf8" }}
+          >
+            {(p.workStatus ?? "—").toString()}
+          </span>
+        </div>
+        {p.team.length > 0 ? (
+          <div className="absolute bottom-2 left-2">
+            <AvatarStack
+              members={p.team.slice(0, 3).map((t) => t.initials)}
+              extra={Math.max(0, p.team.length - 3)}
+              size={22}
+            />
+          </div>
+        ) : null}
+        <div className="absolute bottom-1 right-1">
+          <StarButton
+            active={p.starred}
+            onClick={() => onStar(p)}
+            alwaysVisible={p.starred}
+            size={16}
+          />
+        </div>
+      </div>
+      <div className="p-3 flex flex-col gap-1">
+        <span className="font-mono text-[10px] text-friday-fg-subtle tracking-wide">
+          {p.code}
+        </span>
+        <span className="font-display italic font-medium text-[16px] text-friday-fg -tracking-[0.2px] leading-tight truncate">
+          {p.title}
+        </span>
+        <span className="text-[11px] text-friday-fg-muted">
+          {p.commune ?? "—"}
+          {p.year ? (
+            <>
+              <span className="text-friday-fg-subtle"> · </span>
+              {p.year}
+            </>
+          ) : null}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function ProjectsGrid({
+  rows,
+  onOpen,
+  onStar,
+}: {
+  rows: ProjectRow[];
+  onOpen: (p: ProjectRow) => void;
+  onStar: (p: ProjectRow) => void;
+}) {
+  return (
+    <div className="flex-1 overflow-auto bg-friday-bg px-7 py-5">
+      <div
+        className="grid gap-3.5"
+        style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}
+      >
+        {rows.map((p) => (
+          <ProjectCard key={p.code} p={p} onOpen={onOpen} onStar={onStar} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Skeletons ────────────────────────────────────────────────────
+function TableSkeleton() {
+  return (
+    <div className="flex-1 overflow-hidden bg-friday-bg">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className="grid items-center h-11 px-7 border-b border-friday-border-soft"
+          style={{ gridTemplateColumns: TABLE_COLS }}
+        >
+          <Skeleton w={14} h={14} rounded={2} />
+          <Skeleton w={84} h={9} />
+          <Skeleton w="70%" h={11} />
+          <Skeleton w={110} h={9} rounded={999} />
+          <Skeleton w={70} h={9} />
+          <Skeleton w={20} h={20} rounded={20} />
+          <Skeleton w={70} h={9} />
+          <Skeleton w={70} h={20} rounded={20} />
+          <Skeleton w={50} h={9} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Project drawer ───────────────────────────────────────────────
+function ProjectDrawer({
+  project,
+  onClose,
+}: {
+  project: ProjectRow | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [enter, setEnter] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!project) {
+      setEnter(false);
+      return;
     }
-    setOpen((v) => !v);
+    const r = requestAnimationFrame(() => setEnter(true));
+    return () => cancelAnimationFrame(r);
+  }, [project]);
+
+  React.useEffect(() => {
+    if (!project) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [project, onClose]);
+
+  if (!project) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[90] flex justify-end transition-colors duration-200"
+      style={{ background: enter ? "rgba(26,26,24,0.32)" : "rgba(26,26,24,0)" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-friday-surface border-l border-friday-border h-full flex flex-col transition-[transform,opacity] duration-200 ease-out"
+        style={{
+          width: 520,
+          maxWidth: "92vw",
+          boxShadow: "0 0 40px rgba(20,18,12,0.12)",
+          transform: enter ? "translateX(0)" : "translateX(20px)",
+          opacity: enter ? 1 : 0,
+        }}
+      >
+        <div className="w-full h-[200px] relative bg-friday-surface-3 shrink-0">
+          <HeroImg p={project} grayscale={false} />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-3 right-3 w-7 h-7 rounded-full border-0 cursor-pointer flex items-center justify-center"
+            style={{ background: "rgba(26,26,24,0.72)", color: "#fafaf8" }}
+          >
+            <I.X size={13} />
+          </button>
+        </div>
+        <div className="p-5 flex flex-col gap-2.5">
+          <span className="font-mono text-[10.5px] text-friday-fg-muted tracking-wide">
+            {project.code}
+          </span>
+          <span className="font-display italic font-medium text-[22px] text-friday-fg -tracking-[0.3px]">
+            {project.title}
+          </span>
+          <div className="flex items-center gap-2">
+            <PhasePill phase={project.phase} />
+            <StatusDot status={project.workStatus} withLabel />
+          </div>
+          <div className="flex items-center gap-2 text-[12px] text-friday-fg-muted">
+            <span>
+              {project.commune ?? "—"}
+              {project.country ? `, ${project.country}` : ""}
+            </span>
+            {project.year ? (
+              <>
+                <span className="text-friday-fg-subtle">·</span>
+                <span>{project.year}</span>
+              </>
+            ) : null}
+          </div>
+          <div className="mt-2 pt-3 border-t border-friday-border-soft flex items-center gap-3">
+            {project.team.length > 0 ? (
+              <AvatarStack
+                members={project.team.slice(0, 4).map((t) => t.initials)}
+                extra={Math.max(0, project.team.length - 4)}
+                size={22}
+              />
+            ) : null}
+            <span className="flex-1" />
+            <Button
+              kind="primary"
+              size="sm"
+              onClick={() => router.push(`/dashboard/projects/${project.id}`)}
+            >
+              Open project
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main client ──────────────────────────────────────────────────
+export function ProjectsClient({
+  initialProjects,
+  canEdit,
+}: ProjectsClientProps) {
+  const [projects, setProjects] = React.useState<ProjectRow[]>(initialProjects);
+  const [view, setView] = React.useState<ViewKey>("table");
+  const [search, setSearch] = React.useState("");
+  const [filters, setFilters] = React.useState<Filters>({
+    phase: [],
+    status: [],
+    country: [],
+    year: [],
+  });
+  const [drawer, setDrawer] = React.useState<ProjectRow | null>(null);
+
+  const yearOptions = React.useMemo(() => {
+    const years = new Set<number>();
+    projects.forEach((p) => {
+      if (p.year) years.add(p.year);
+    });
+    return Array.from(years)
+      .sort((a, b) => b - a)
+      .map((y) => ({ key: y, label: String(y) }));
+  }, [projects]);
+
+  const rows = React.useMemo(() => {
+    let r = projects;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      r = r.filter(
+        (p) =>
+          p.title.toLowerCase().includes(q) ||
+          p.code.toLowerCase().includes(q) ||
+          (p.commune?.toLowerCase().includes(q) ?? false),
+      );
+    }
+    if (filters.phase.length) r = r.filter((p) => filters.phase.includes(p.phase));
+    if (filters.status.length)
+      r = r.filter((p) => filters.status.includes(p.workStatus ?? ""));
+    if (filters.country.length)
+      r = r.filter((p) => filters.country.includes(p.country ?? ""));
+    if (filters.year.length)
+      r = r.filter((p) => p.year != null && filters.year.includes(p.year));
+    return r;
+  }, [projects, search, filters]);
+
+  const starredCount = projects.filter((p) => p.starred).length;
+
+  const onStar = async (p: ProjectRow) => {
+    const wasStarred = p.starred;
+    setProjects((arr) =>
+      arr.map((x) => (x.id === p.id ? { ...x, starred: !wasStarred } : x)),
+    );
+    showToast(wasStarred ? "Removed from starred" : "Starred");
+    try {
+      if (wasStarred) {
+        await fetch(
+          `/api/favorites?entityType=project&entityId=${encodeURIComponent(p.id)}`,
+          { method: "DELETE" },
+        );
+      } else {
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entityType: "project", entityId: p.id }),
+        });
+      }
+    } catch {
+      // Revert on failure
+      setProjects((arr) =>
+        arr.map((x) => (x.id === p.id ? { ...x, starred: wasStarred } : x)),
+      );
+    }
+  };
+
+  const onOpen = (p: ProjectRow) => setDrawer(p);
+
+  const clearAll = () => {
+    setSearch("");
+    setFilters({ phase: [], status: [], country: [], year: [] });
   };
 
   return (
-    <div className="shrink-0">
-      <button
-        ref={triggerRef}
-        onClick={handleOpen}
-        className={cn(
-          "flex items-center gap-1 h-6 px-2.5 rounded-full border text-[11px] font-medium transition-colors",
-          isActive ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/40"
-        )}
-      >
-        {isActive ? value : label}
-        <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
-      </button>
-      <PortalDropdown coords={coords} open={open}>
-        <div ref={dropdownRef} className="bg-background border border-border rounded-xl shadow-xl p-1 min-w-[150px] max-h-60 overflow-y-auto">
-          <button
-            onClick={() => { onChange("all"); setOpen(false); }}
-            className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
-          >
-            <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", !isActive ? "bg-foreground border-foreground" : "border-border")}>
-              {!isActive && <Check className="w-2.5 h-2.5 text-background" />}
-            </div>
-            <span className="text-muted-foreground">{t("common.all")} {label}</span>
-          </button>
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className="flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-xs hover:bg-muted transition-colors text-left"
-            >
-              <div className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", value === opt.value ? "bg-foreground border-foreground" : "border-border")}>
-                {value === opt.value && <Check className="w-2.5 h-2.5 text-background" />}
-              </div>
-              <span className={value === opt.value ? "text-foreground font-medium" : "text-muted-foreground"}>{opt.label}</span>
-            </button>
-          ))}
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <ProjectsToolbar
+        search={search}
+        setSearch={setSearch}
+        view={view}
+        setView={setView}
+        filters={filters}
+        setFilters={setFilters}
+        count={rows.length}
+        starredCount={starredCount}
+        yearOptions={yearOptions}
+        canCreate
+      />
+
+      {projects.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center p-10">
+          <div className="max-w-[380px]">
+            <EmptyState
+              glyph="·"
+              title="No projects yet."
+              body="When DBS spins up its first project, it'll land here. Until then — quiet."
+            />
+          </div>
         </div>
-      </PortalDropdown>
+      ) : rows.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center p-10">
+          <div className="max-w-[380px]">
+            <EmptyState
+              glyph="·"
+              title="No projects match these filters."
+              body="Loosen a constraint or clear them all."
+              cta="Clear filters"
+              onCta={clearAll}
+            />
+          </div>
+        </div>
+      ) : view === "table" ? (
+        <ProjectsTable rows={rows} onOpen={onOpen} onStar={onStar} />
+      ) : view === "grid" ? (
+        <ProjectsGrid rows={rows} onOpen={onOpen} onStar={onStar} />
+      ) : (
+        <div className="flex-1 min-h-0">
+          <ProjectsMapView
+            projects={rows.map((p) => ({
+              id: p.id,
+              code: p.code,
+              title: p.title,
+              phase: p.phase,
+              workStatus: p.workStatus ?? "",
+              commune: p.commune,
+              image: p.image,
+              assignments: p.team.map((t) => ({
+                userId: t.initials,
+                user: { name: t.name, initials: t.initials },
+              })),
+            }))}
+            canEdit={canEdit}
+            onUpdateLocation={async () => {
+              /* not wired in the new design surface; legacy edit
+                 lived in the old shadcn projects-client. Will return
+                 when project-detail Round lands. */
+            }}
+          />
+        </div>
+      )}
+
+      <ProjectDrawer project={drawer} onClose={() => setDrawer(null)} />
     </div>
   );
 }
-
