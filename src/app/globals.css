@@ -28,9 +28,8 @@
   --friday-accent-soft:   rgba(30, 58, 138, 0.08);
   --friday-accent-ring:   rgba(30, 58, 138, 0.30);
 
-  /* Phase palette (locked — preserved from product spec, NOT replaced
-     by Claude Design's SIA palette because the database stores phase
-     names not numbers) */
+  /* Phase palette — DB-name vocabulary (legacy / what's stored in
+     prisma.project.phase) */
   --phase-etude-ap:   #ef4444;
   --phase-mae:        #22c55e;
   --phase-chantier:   #3b82f6;
@@ -39,11 +38,28 @@
   --phase-stuck:      #f59e0b;
   --phase-concorso:   #14b8a6;
 
-  /* Work-status palette (locked Monday-style) */
+  /* Phase palette — SIA-code vocabulary (what Claude Design uses).
+     Lookup at the component layer falls through both maps. */
+  --phase-p11: #a8a59d; /* grey   · Étude préliminaire */
+  --phase-p21: #fbbf24; /* amber  · Étude de faisabilité */
+  --phase-p31: #f59e0b; /* orange · Avant-projet */
+  --phase-p32: #fb923c; /* o-red  · Projet */
+  --phase-p41: #3b82f6; /* blue   · DAP */
+  --phase-p51: #22c55e; /* green  · Réalisation A */
+  --phase-p52: #16a34a; /* dgreen · Réalisation B */
+  --phase-p53: #0891b2; /* teal   · Mise en service */
+
+  /* Work-status palette — DB vocabulary (Monday-style) */
   --status-todo:      #c4c4cf;
   --status-doing:     #fdab3d;
   --status-stuck:     #e2445c;
   --status-completed: #00c875;
+
+  /* Work-status palette — design vocabulary (Claude Design) */
+  --status-on-track: #22c55e;
+  --status-at-risk:  #f59e0b;
+  --status-delayed:  #ef4444;
+  --status-done:     #a8a59d;
 
   /* Friendly error callout */
   --friday-error-bg:     #fdf6ec;
@@ -131,7 +147,7 @@
   --color-friday-accent-fg: var(--friday-accent-fg);
   --color-friday-accent-soft: var(--friday-accent-soft);
 
-  /* Phase / status colors as Tailwind utilities */
+  /* Phase / status colors as Tailwind utilities — DB vocabulary */
   --color-phase-etude-ap: var(--phase-etude-ap);
   --color-phase-mae: var(--phase-mae);
   --color-phase-chantier: var(--phase-chantier);
@@ -143,6 +159,20 @@
   --color-status-doing: var(--status-doing);
   --color-status-stuck: var(--status-stuck);
   --color-status-completed: var(--status-completed);
+
+  /* Phase / status colors as Tailwind utilities — design vocabulary */
+  --color-phase-p11: var(--phase-p11);
+  --color-phase-p21: var(--phase-p21);
+  --color-phase-p31: var(--phase-p31);
+  --color-phase-p32: var(--phase-p32);
+  --color-phase-p41: var(--phase-p41);
+  --color-phase-p51: var(--phase-p51);
+  --color-phase-p52: var(--phase-p52);
+  --color-phase-p53: var(--phase-p53);
+  --color-status-on-track: var(--status-on-track);
+  --color-status-at-risk:  var(--status-at-risk);
+  --color-status-delayed:  var(--status-delayed);
+  --color-status-done:     var(--status-done);
 
   /* Fonts — both legacy and Friday available simultaneously for the
      migration window. Default `font-sans` is now Inter (Friday),
