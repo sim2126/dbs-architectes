@@ -1,463 +1,757 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
-import {
-  FolderOpen,
-  Users,
-  TrendingUp,
-  Activity,
-  Globe,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { PHASE_COLORS } from "@/lib/utils";
+import * as React from "react";
+import { Avatar } from "@/components/friday/avatar";
+import { getPhaseColor, getPhaseLabel } from "@/lib/friday-tokens";
+import { showToast } from "@/components/toast";
 import { cn } from "@/lib/utils";
 
-interface ProjectLite {
+// ─── Types ────────────────────────────────────────────────────────
+interface ProjectStat {
   id: string;
   phase: string;
+  workStatus: string | null;
   category: string;
-  country?: string | null;
+  country: string | null;
+  commune: string | null;
+  year: number | null;
   userIds: string[];
 }
-interface UserLite {
+
+interface UserStat {
   id: string;
   name: string;
   initials: string;
-  country?: string | null;
+  country: string | null;
 }
 
 interface StatisticsClientProps {
-  projects: ProjectLite[];
-  users: UserLite[];
+  projects: ProjectStat[];
+  users: UserStat[];
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  Residenziale: "#3b82f6",
-  Commerciale: "#f59e0b",
-  Industriale: "#8b5cf6",
-  Mista: "#10b981",
-  Hospitality: "#ec4899",
-  Ristrutturazione: "#f97316",
+// ─── Constants ────────────────────────────────────────────────────
+const COUNTRIES: Record<string, { label: string; flag: string }> = {
+  CH: { label: "Switzerland", flag: "🇨🇭" },
+  IT: { label: "Italy", flag: "🇮🇹" },
+  IN: { label: "India", flag: "🇮🇳" },
+  ALL: { label: "All", flag: "◯" },
 };
 
-const COUNTRY_LABEL: Record<string, string> = {
-  CH: "🇨🇭 Switzerland",
-  IT: "🇮🇹 Italy",
-  IN: "🇮🇳 India",
-  UA: "🇺🇦 Ukraine",
-  FR: "🇫🇷 France",
-  DE: "🇩🇪 Germany",
+// Stable phase ordering for the distribution bar.
+const PHASE_ORDER = [
+  "ETUDE/AP",
+  "CONCORSO",
+  "MAE",
+  "CHANTIER",
+  "EXE/DG/DV/3D",
+  "TERMINATO",
+  "STUCK",
+];
+
+const CAT_COLORS: Record<string, string> = {
+  Hôtellerie: "#1f3a8a",
+  Hospitality: "#1f3a8a",
+  Residenziale: "#7a8b6f",
+  "Mixed Use": "#c4994a",
+  Refurbishment: "#5a6f8a",
+  "Single family homes": "#8a5a3a",
+  "Residential complexes": "#6a4a8a",
+  Public: "#5a8a8a",
+  default: "#6b6862",
 };
 
-export function StatisticsClient({ projects, users }: StatisticsClientProps) {
-  const [country, setCountry] = useState<string>("ALL");
+function colorForCategory(cat: string): string {
+  return CAT_COLORS[cat] ?? CAT_COLORS.default;
+}
 
-  const availableCountries = useMemo(() => {
-    const set = new Set<string>();
-    projects.forEach((p) => p.country && set.add(p.country));
-    return Array.from(set).sort();
-  }, [projects]);
+// Coordinate hints for known DBS communes (% within the small map
+// canvas — illustrative only). Falls back to country centroid.
+const COMMUNE_COORDS: Record<string, { x: number; y: number }> = {
+  Sion: { x: 47, y: 44 },
+  "Crans-Montana": { x: 49, y: 38 },
+  Verbier: { x: 50, y: 47 },
+  Conthey: { x: 48, y: 42 },
+  Lavey: { x: 46, y: 50 },
+  Montreux: { x: 44, y: 49 },
+  Gstaad: { x: 53, y: 41 },
+  Savièse: { x: 47, y: 41 },
+  Milano: { x: 56, y: 52 },
+  Bolzano: { x: 60, y: 36 },
+  Bressanone: { x: 60, y: 33 },
+  Negrar: { x: 58, y: 49 },
+  Trento: { x: 59, y: 41 },
+  Mumbai: { x: 78, y: 64 },
+  Delhi: { x: 81, y: 35 },
+  Kashmir: { x: 80, y: 30 },
+};
+const COUNTRY_FALLBACK: Record<string, { x: number; y: number }> = {
+  CH: { x: 48, y: 44 },
+  IT: { x: 58, y: 48 },
+  IN: { x: 80, y: 50 },
+  UA: { x: 70, y: 28 },
+};
 
-  const filteredProjects = useMemo(
-    () => (country === "ALL" ? projects : projects.filter((p) => p.country === country)),
-    [projects, country]
-  );
-
-  const filteredUsers = useMemo(() => {
-    if (country === "ALL") return users;
-    // Team = users assigned to ≥1 project in this country
-    const assignedIds = new Set<string>();
-    filteredProjects.forEach((p) => p.userIds.forEach((u) => assignedIds.add(u)));
-    return users.filter((u) => assignedIds.has(u.id) || u.country === country);
-  }, [users, filteredProjects, country]);
-
-  const stats = useMemo(() => {
-    const totalProjects = filteredProjects.length;
-    const activeProjects = filteredProjects.filter(
-      (p) => p.phase !== "TERMINATO" && p.phase !== "STUCK"
-    ).length;
-    const teamMembers = filteredUsers.length;
-    const avgPerPerson = teamMembers > 0 ? (totalProjects / teamMembers).toFixed(1) : "0";
-    return { totalProjects, activeProjects, teamMembers, avgPerPerson };
-  }, [filteredProjects, filteredUsers]);
-
-  const phaseDistribution = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredProjects.forEach((p) => {
-      counts[p.phase] = (counts[p.phase] || 0) + 1;
-    });
-    return Object.entries(counts).map(([phase, count]) => ({ phase, count }));
-  }, [filteredProjects]);
-
-  const userWorkload = useMemo(() => {
-    const countsById: Record<string, { active: number; done: number }> = {};
-    for (const u of filteredUsers) countsById[u.id] = { active: 0, done: 0 };
-    for (const p of filteredProjects) {
-      for (const uid of p.userIds) {
-        if (!countsById[uid]) continue;
-        if (p.phase === "TERMINATO" || p.phase === "STUCK") countsById[uid].done++;
-        else countsById[uid].active++;
-      }
-    }
-    return filteredUsers.map((u) => {
-      const c = countsById[u.id] ?? { active: 0, done: 0 };
-      return {
-        name: u.initials,
-        fullName: u.name,
-        active: c.active,
-        stuckTerminated: c.done,
-        total: c.active + c.done,
-      };
-    });
-  }, [filteredProjects, filteredUsers]);
-
-  const categoryData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredProjects.forEach((p) => {
-      counts[p.category] = (counts[p.category] || 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [filteredProjects]);
-
-  const pieData = phaseDistribution.map((d) => ({
-    name: d.phase,
-    value: d.count,
-    color: PHASE_COLORS[d.phase] || "#94a3b8",
-  }));
-
-  const barData = userWorkload
-    .filter((u) => u.total > 0)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 20);
-
+// ─── Header ───────────────────────────────────────────────────────
+function StatsHeader({
+  country,
+  setCountry,
+}: {
+  country: string;
+  setCountry: (c: string) => void;
+}) {
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Statistics & Workload</h1>
-          <p className="text-muted-foreground mt-1">
-            Performance overview and project distribution
-            {country !== "ALL" && ` · ${COUNTRY_LABEL[country] ?? country}`}
-          </p>
-        </div>
-
-        {/* Country filter */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted rounded-xl">
-          <Globe className="w-4 h-4 ml-2 text-muted-foreground" />
-          <button
-            onClick={() => setCountry("ALL")}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-              country === "ALL"
-                ? "bg-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            All countries
-          </button>
-          {availableCountries.map((c) => (
+    <div className="h-15 px-7 border-b border-friday-border-soft flex items-center gap-3.5 shrink-0" style={{ height: 60 }}>
+      <div className="flex-1 min-w-0">
+        <h1 className="font-display italic font-medium text-[24px] text-friday-fg m-0 -tracking-[0.3px] leading-[1.15]">
+          Statistics
+        </h1>
+      </div>
+      <div className="flex items-center gap-1.5">
+        {(["CH", "IT", "IN", "ALL"] as const).map((c) => {
+          const active = country === c;
+          return (
             <button
               key={c}
+              type="button"
               onClick={() => setCountry(c)}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                country === c
-                  ? "bg-background shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                "inline-flex items-center gap-1.5 h-7 px-3 rounded-full cursor-pointer text-[11.5px] font-medium tracking-wide transition-colors duration-150 border",
+                active
+                  ? "bg-friday-fg text-friday-bg border-friday-fg"
+                  : "bg-friday-surface text-friday-fg-muted border-friday-border-soft hover:text-friday-fg",
               )}
             >
-              {COUNTRY_LABEL[c] ?? c}
+              <span className="text-[12px]">{COUNTRIES[c].flag}</span>
+              {c}
             </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Card frame ───────────────────────────────────────────────────
+function StatsCard({
+  title,
+  subtitle,
+  children,
+  noPadding,
+}: {
+  title?: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+  noPadding?: boolean;
+}) {
+  return (
+    <section className="bg-friday-bg border border-friday-border-soft rounded-lg overflow-hidden">
+      {title || subtitle ? (
+        <div className="px-5 pt-3.5 pb-3 border-b border-friday-border-soft flex items-baseline gap-2.5">
+          {title ? (
+            <h2 className="font-display italic font-medium text-[16px] text-friday-fg m-0 -tracking-[0.2px]">
+              {title}
+            </h2>
+          ) : null}
+          {subtitle ? (
+            <span className="text-[11px] text-friday-fg-muted">{subtitle}</span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className={noPadding ? "" : "p-5"}>{children}</div>
+    </section>
+  );
+}
+
+// ─── KPI strip ────────────────────────────────────────────────────
+function KpiStrip({ data }: { data: ProjectStat[] }) {
+  const total = data.length;
+  const active = data.filter((p) => p.phase !== "TERMINATO").length;
+  const stuck = data.filter(
+    (p) => p.phase === "STUCK" || p.workStatus === "stuck",
+  ).length;
+  const thisYear = new Date().getFullYear();
+  const completedYr = data.filter(
+    (p) => p.phase === "TERMINATO" && p.year === thisYear,
+  ).length;
+
+  const items: { l: string; v: number; tone?: "warn" }[] = [
+    { l: "Total projects", v: total },
+    { l: "Active", v: active },
+    { l: "Stuck", v: stuck, tone: stuck > 0 ? "warn" : undefined },
+    { l: "Completed this year", v: completedYr },
+  ];
+
+  return (
+    <StatsCard noPadding>
+      <div className="grid grid-cols-4">
+        {items.map((k, i) => (
+          <div
+            key={k.l}
+            className={cn(
+              "px-[22px] py-5",
+              i < 3 ? "border-r border-friday-border-soft" : "",
+            )}
+          >
+            <div className="text-[9.5px] tracking-[0.18em] uppercase text-friday-fg-muted font-medium mb-1.5">
+              {k.l}
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span
+                className="font-display font-medium text-[32px] -tracking-[0.6px] leading-none"
+                style={{
+                  color:
+                    k.tone === "warn" && k.v > 0
+                      ? "#9b2c1a"
+                      : "var(--friday-fg)",
+                }}
+              >
+                {k.v}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </StatsCard>
+  );
+}
+
+// ─── Phase distribution ───────────────────────────────────────────
+function PhaseDistribution({ data }: { data: ProjectStat[] }) {
+  const [hover, setHover] = React.useState<string | null>(null);
+  const counts = PHASE_ORDER.map((p) => ({
+    p,
+    n: data.filter((d) => d.phase === p).length,
+  })).filter((c) => c.n > 0);
+  const total = counts.reduce((a, c) => a + c.n, 0);
+
+  if (total === 0) return null;
+
+  return (
+    <StatsCard
+      title="Phase distribution"
+      subtitle={`${total} projects across ${counts.length} ${counts.length === 1 ? "phase" : "phases"}`}
+    >
+      <div
+        className="relative flex w-full rounded overflow-hidden bg-friday-surface-2"
+        style={{ height: 32 }}
+      >
+        {counts.map(({ p, n }) => {
+          const pct = (n / total) * 100;
+          const isHover = hover === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => showToast(`Filter by phase ${p}`)}
+              onMouseEnter={() => setHover(p)}
+              onMouseLeave={() => setHover(null)}
+              className="relative h-full border-0 p-0 cursor-pointer transition-[opacity,width] duration-200 ease-out"
+              style={{
+                width: `${pct}%`,
+                background: getPhaseColor(p),
+                opacity: hover && !isHover ? 0.55 : 1,
+              }}
+            >
+              {pct > 6 ? (
+                <span
+                  className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-semibold tracking-wide pointer-events-none"
+                  style={{ color: "rgba(255,255,255,0.85)" }}
+                >
+                  {n}
+                </span>
+              ) : null}
+              {isHover ? (
+                <div
+                  className="absolute z-10 px-2.5 py-1.5 rounded text-[10.5px] font-medium tracking-wide whitespace-nowrap pointer-events-none"
+                  style={{
+                    bottom: "calc(100% + 8px)",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "var(--friday-fg)",
+                    color: "var(--friday-bg)",
+                    boxShadow: "0 4px 12px rgba(20,18,12,0.18)",
+                  }}
+                >
+                  {p} · {n} · {pct.toFixed(0)}%
+                </div>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4">
+        {counts.map(({ p, n }) => (
+          <span
+            key={p}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-friday-surface border border-friday-border-soft rounded-full text-[10.5px] text-friday-fg-muted"
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: getPhaseColor(p) }}
+            />
+            <span className="text-friday-fg font-medium">{p}</span>
+            <span className="hidden sm:inline">{getPhaseLabel(p)}</span>
+            <span className="font-mono text-[9.5px] text-friday-fg-subtle ml-0.5">
+              {n}
+            </span>
+          </span>
+        ))}
+      </div>
+    </StatsCard>
+  );
+}
+
+// ─── Team workload ────────────────────────────────────────────────
+function tier(n: number) {
+  if (n >= 14) return { label: "High", bg: "#fde4dd", fg: "#9b2c1a" };
+  if (n >= 9) return { label: "Steady", bg: "#fdf2dd", fg: "#9c6810" };
+  return { label: "Available", bg: "#e8efe6", fg: "#3f6534" };
+}
+
+function TeamWorkload({
+  data,
+  users,
+}: {
+  data: ProjectStat[];
+  users: UserStat[];
+}) {
+  const stats = users
+    .map((u) => {
+      const proj = data.filter((p) => p.userIds.includes(u.id));
+      return {
+        id: u.id,
+        name: u.name,
+        initials: u.initials,
+        total: proj.length,
+        doing: proj.filter(
+          (p) => p.phase !== "TERMINATO" && p.workStatus !== "stuck",
+        ).length,
+        stuck: proj.filter(
+          (p) => p.phase === "STUCK" || p.workStatus === "stuck",
+        ).length,
+        done: proj.filter((p) => p.phase === "TERMINATO").length,
+      };
+    })
+    .filter((s) => s.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 12);
+
+  if (stats.length === 0) return null;
+
+  const max = Math.max(...stats.map((s) => s.total), 1);
+
+  return (
+    <StatsCard title="Team workload" subtitle="Projects assigned per person">
+      <div className="grid gap-7" style={{ gridTemplateColumns: "1fr 1.2fr" }}>
+        <div className="flex flex-col gap-3.5">
+          {stats.map((s) => {
+            const t = tier(s.total);
+            const pct = (s.total / max) * 100;
+            return (
+              <div key={s.id}>
+                <div className="flex items-baseline gap-2 mb-1.5">
+                  <Avatar initials={s.initials} size={20} />
+                  <span className="text-[12px] text-friday-fg font-medium">
+                    {s.name}
+                  </span>
+                  <span className="flex-1" />
+                  <span className="font-mono text-[11px] text-friday-fg tracking-wide">
+                    {s.total}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-friday-surface-2 overflow-hidden">
+                  <div
+                    className="h-full transition-[width] duration-300 ease-out"
+                    style={{
+                      width: `${pct}%`,
+                      background: t.fg,
+                      opacity: 0.85,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border border-friday-border-soft rounded overflow-hidden">
+          <div
+            className="grid px-3 py-2 bg-friday-surface-2 border-b border-friday-border-soft text-[9.5px] tracking-[0.18em] uppercase text-friday-fg-muted font-medium gap-2"
+            style={{
+              gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.7fr 0.7fr 1.1fr",
+            }}
+          >
+            <span>Person</span>
+            <span className="text-right">Total</span>
+            <span className="text-right">Doing</span>
+            <span className="text-right">Stuck</span>
+            <span className="text-right">Done</span>
+            <span className="text-right">Tier</span>
+          </div>
+          {stats.map((s, i) => {
+            const t = tier(s.total);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => showToast(`Open profile · ${s.name}`)}
+                className={cn(
+                  "grid w-full px-3 py-2.5 bg-friday-bg border-0 cursor-pointer text-left text-[11.5px] text-friday-fg gap-2 items-center transition-colors duration-100 hover:bg-friday-surface",
+                  i < stats.length - 1 ? "border-b border-friday-border-soft" : "",
+                )}
+                style={{
+                  gridTemplateColumns: "1.6fr 0.7fr 0.7fr 0.7fr 0.7fr 1.1fr",
+                }}
+              >
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  <Avatar initials={s.initials} size={18} />
+                  <span className="truncate">{s.name}</span>
+                </span>
+                <span className="text-right font-mono text-[11px] text-friday-fg">
+                  {s.total}
+                </span>
+                <span className="text-right font-mono text-[11px] text-friday-fg-muted">
+                  {s.doing}
+                </span>
+                <span
+                  className="text-right font-mono text-[11px]"
+                  style={{
+                    color: s.stuck > 0 ? "#9b2c1a" : "var(--friday-fg-subtle)",
+                  }}
+                >
+                  {s.stuck}
+                </span>
+                <span className="text-right font-mono text-[11px] text-friday-fg-muted">
+                  {s.done}
+                </span>
+                <span className="text-right">
+                  <span
+                    className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium"
+                    style={{ background: t.bg, color: t.fg }}
+                  >
+                    {t.label}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </StatsCard>
+  );
+}
+
+// ─── Category donut ───────────────────────────────────────────────
+function CategoryDonut({ data }: { data: ProjectStat[] }) {
+  const counts = new Map<string, number>();
+  data.forEach((p) => {
+    counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+  });
+  const cats = Array.from(counts.entries())
+    .map(([c, n]) => ({ c, n }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n);
+  const total = cats.reduce((a, c) => a + c.n, 0);
+
+  const [hover, setHover] = React.useState<string | null>(null);
+
+  if (total === 0) return null;
+
+  const R = 70,
+    r = 44,
+    cx = 90,
+    cy = 90;
+  let acc = 0;
+  const segs = cats.map(({ c, n }) => {
+    const a0 = (acc / total) * Math.PI * 2 - Math.PI / 2;
+    acc += n;
+    const a1 = (acc / total) * Math.PI * 2 - Math.PI / 2;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    const x0 = cx + R * Math.cos(a0);
+    const y0 = cy + R * Math.sin(a0);
+    const x1 = cx + R * Math.cos(a1);
+    const y1 = cy + R * Math.sin(a1);
+    const xi1 = cx + r * Math.cos(a1);
+    const yi1 = cy + r * Math.sin(a1);
+    const xi0 = cx + r * Math.cos(a0);
+    const yi0 = cy + r * Math.sin(a0);
+    return {
+      c,
+      n,
+      d: `M${x0} ${y0} A${R} ${R} 0 ${large} 1 ${x1} ${y1} L${xi1} ${yi1} A${r} ${r} 0 ${large} 0 ${xi0} ${yi0} Z`,
+    };
+  });
+
+  const hoveredCount = hover ? cats.find((x) => x.c === hover)?.n ?? total : total;
+
+  return (
+    <StatsCard title="Category breakdown" subtitle={`${total} projects`}>
+      <div
+        className="grid gap-7 items-center"
+        style={{ gridTemplateColumns: "180px 1fr" }}
+      >
+        <div
+          className="relative mx-auto"
+          style={{ width: 180, height: 180 }}
+        >
+          <svg width="180" height="180" viewBox="0 0 180 180">
+            {segs.map((s) => (
+              <path
+                key={s.c}
+                d={s.d}
+                fill={colorForCategory(s.c)}
+                opacity={hover && hover !== s.c ? 0.4 : 1}
+                onMouseEnter={() => setHover(s.c)}
+                onMouseLeave={() => setHover(null)}
+                style={{
+                  cursor: "pointer",
+                  transition: "opacity 150ms ease",
+                }}
+              />
+            ))}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="font-display font-medium text-[28px] text-friday-fg -tracking-[0.6px] leading-none">
+              {hoveredCount}
+            </span>
+            <span className="text-[10px] text-friday-fg-muted tracking-[0.15em] uppercase mt-1">
+              {hover ?? "Total"}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {cats.map((s) => (
+            <div
+              key={s.c}
+              onMouseEnter={() => setHover(s.c)}
+              onMouseLeave={() => setHover(null)}
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-1.5 rounded cursor-pointer transition-colors duration-100",
+                hover === s.c ? "bg-friday-surface" : "bg-transparent",
+              )}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-sm"
+                style={{ background: colorForCategory(s.c) }}
+              />
+              <span className="flex-1 text-[12px] text-friday-fg">{s.c}</span>
+              <span className="font-mono text-[11px] text-friday-fg-muted tracking-wide">
+                {s.n}
+              </span>
+              <span
+                className="font-mono text-[9.5px] text-friday-fg-subtle text-right"
+                style={{ width: 32 }}
+              >
+                {((s.n / total) * 100).toFixed(0)}%
+              </span>
+            </div>
           ))}
         </div>
       </div>
+    </StatsCard>
+  );
+}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+// ─── Geographic spread ────────────────────────────────────────────
+function GeoSpread({
+  data,
+  country,
+}: {
+  data: ProjectStat[];
+  country: string;
+}) {
+  const [hover, setHover] = React.useState<string | null>(null);
+
+  // Aggregate by commune (or country fallback).
+  const buckets = new Map<string, { x: number; y: number; n: number; country: string }>();
+  data.forEach((p) => {
+    const key = p.commune ?? p.country ?? "Unknown";
+    if (!buckets.has(key)) {
+      const coords =
+        (p.commune && COMMUNE_COORDS[p.commune]) ||
+        (p.country && COUNTRY_FALLBACK[p.country]) ||
+        null;
+      if (!coords) return;
+      buckets.set(key, { ...coords, n: 0, country: p.country ?? "ALL" });
+    }
+    buckets.get(key)!.n += 1;
+  });
+
+  const visible = Array.from(buckets.entries())
+    .map(([name, v]) => ({ name, ...v }))
+    .filter((p) => country === "ALL" || p.country === country);
+
+  return (
+    <StatsCard
+      title="Geographic spread"
+      subtitle={`${visible.length} ${visible.length === 1 ? "location" : "locations"}`}
+      noPadding
+    >
+      <div
+        className="relative overflow-hidden"
+        style={{
+          height: 320,
+          background:
+            "radial-gradient(ellipse at 50% 35%, #f3ede0 0%, #ece6d8 55%, #ddd5c2 100%)",
+        }}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="absolute inset-0"
+          style={{ opacity: 0.45 }}
+        >
+          <path
+            d="M30 30 L60 28 L62 50 L40 56 L28 48 Z"
+            fill="none"
+            stroke="#a8a59d"
+            strokeWidth="0.2"
+            strokeDasharray="0.5 0.5"
+          />
+          <path
+            d="M40 50 L70 45 L72 80 L48 80 Z"
+            fill="none"
+            stroke="#a8a59d"
+            strokeWidth="0.2"
+            strokeDasharray="0.5 0.5"
+          />
+          <path
+            d="M70 30 L92 32 L92 80 L72 78 Z"
+            fill="none"
+            stroke="#a8a59d"
+            strokeWidth="0.2"
+            strokeDasharray="0.5 0.5"
+          />
+        </svg>
         {[
-          {
-            title: "Total Projects",
-            value: stats.totalProjects,
-            sub: `${stats.totalProjects - stats.activeProjects} completed`,
-            icon: FolderOpen,
-            color: "text-blue-600",
-            bg: "bg-blue-50 dark:bg-blue-950/20",
-          },
-          {
-            title: "Active Team",
-            value: stats.teamMembers,
-            sub: country === "ALL" ? "Members with assigned projects" : "Working on this country",
-            icon: Users,
-            color: "text-emerald-600",
-            bg: "bg-emerald-50 dark:bg-emerald-950/20",
-          },
-          {
-            title: "Avg. Projects",
-            value: stats.avgPerPerson,
-            sub: "Projects per person",
-            icon: TrendingUp,
-            color: "text-purple-600",
-            bg: "bg-purple-50 dark:bg-purple-950/20",
-          },
-          {
-            title: "Active Projects",
-            value: stats.activeProjects,
-            sub: "In progress (excl. STUCK/TERMINATO)",
-            icon: Activity,
-            color: "text-amber-600",
-            bg: "bg-amber-50 dark:bg-amber-950/20",
-          },
-        ].map((card, i) => (
-          <motion.div
-            key={card.title}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-          >
-            <Card>
-              <CardContent className="p-5">
-                <div className={`inline-flex p-2 rounded-lg ${card.bg} mb-3`}>
-                  <card.icon className={`w-4 h-4 ${card.color}`} />
+          { l: "CH", x: 47, y: 32 },
+          { l: "IT", x: 58, y: 60 },
+          { l: "IN", x: 80, y: 55 },
+        ]
+          .filter((c) => country === "ALL" || country === c.l)
+          .map((c) => (
+            <span
+              key={c.l}
+              className="absolute font-display italic font-medium text-[14px] -tracking-[0.2px] pointer-events-none"
+              style={{
+                left: `${c.x}%`,
+                top: `${c.y}%`,
+                transform: "translate(-50%, -50%)",
+                color: "rgba(20,18,12,0.32)",
+              }}
+            >
+              {c.l}
+            </span>
+          ))}
+
+        {visible.map((p) => {
+          const size = 14 + Math.min(p.n, 10) * 1.6;
+          const isHover = hover === p.name;
+          return (
+            <div
+              key={p.name}
+              onMouseEnter={() => setHover(p.name)}
+              onMouseLeave={() => setHover(null)}
+              className="absolute rounded-full bg-friday-accent text-white font-mono font-semibold tracking-wide flex items-center justify-center cursor-pointer transition-shadow duration-150"
+              style={{
+                left: `${p.x}%`,
+                top: `${p.y}%`,
+                transform: "translate(-50%, -50%)",
+                width: size,
+                height: size,
+                fontSize: 9,
+                border: "2px solid var(--friday-bg)",
+                boxShadow: isHover
+                  ? "0 4px 14px rgba(20,18,12,0.22)"
+                  : "0 1px 3px rgba(20,18,12,0.20)",
+              }}
+            >
+              {p.n}
+              {isHover ? (
+                <div
+                  className="absolute px-2 py-1 rounded-sm text-[10.5px] font-medium whitespace-nowrap pointer-events-none tracking-wide"
+                  style={{
+                    bottom: "calc(100% + 8px)",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "var(--friday-fg)",
+                    color: "var(--friday-bg)",
+                    boxShadow: "0 4px 12px rgba(20,18,12,0.18)",
+                  }}
+                >
+                  {p.name} · {p.n}
                 </div>
-                <p className="text-3xl font-bold">{card.value}</p>
-                <p className="text-sm font-medium mt-0.5">{card.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Workload per Person</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {country === "ALL"
-                  ? "Projects assigned to each team member"
-                  : `Load on the ${COUNTRY_LABEL[country] ?? country} portfolio`}
-              </p>
-            </CardHeader>
-            <CardContent>
-              {barData.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  No workload in this country.
-                </p>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={barData} margin={{ bottom: 30 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 11 }}
-                      angle={-45}
-                      textAnchor="end"
-                      height={50}
-                    />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "8px",
-                        border: "1px solid var(--border)",
-                        background: "var(--background)",
-                      }}
-                      formatter={(value, name) => [
-                        value,
-                        name === "active" ? "Active Projects" : "Stuck/Terminated",
-                      ]}
-                    />
-                    <Legend
-                      formatter={(value) =>
-                        value === "active" ? "Active Projects" : "Stuck/Terminated"
-                      }
-                      iconType="circle"
-                      iconSize={8}
-                    />
-                    <Bar dataKey="active" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="stuckTerminated" stackId="a" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Phase Distribution</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Overview of projects by phase
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center">
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={90}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "8px",
-                        border: "1px solid var(--border)",
-                        background: "var(--background)",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 mt-2">
-                {pieData.map((item) => (
-                  <div key={item.name} className="flex items-center gap-2">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: item.color }}
-                    />
-                    <span className="text-xs text-muted-foreground truncate">{item.name}</span>
-                    <span className="text-xs font-semibold ml-auto">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Category breakdown */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Distribution by Category</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {categoryData.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">No categories.</p>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {categoryData.map((cat) => (
-                  <div
-                    key={cat.name}
-                    className="flex items-center gap-3 p-4 rounded-xl bg-muted/50 border border-border"
-                  >
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{
-                        background: CATEGORY_COLORS[cat.name] || "#94a3b8",
-                      }}
-                    />
-                    <div>
-                      <p className="text-sm font-semibold">{cat.name}</p>
-                      <p className="text-2xl font-bold mt-0.5">{cat.value}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {stats.totalProjects > 0
-                          ? `${((cat.value / stats.totalProjects) * 100).toFixed(0)}% of total`
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Team detail */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Team Detail</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {userWorkload
-                .filter((u) => u.total > 0 || country === "ALL")
-                .sort((a, b) => b.total - a.total)
-                .map((u) => {
-                  const maxTotal = Math.max(...userWorkload.map((x) => x.total), 1);
-                  return (
-                    <div
-                      key={u.fullName}
-                      className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="text-xs bg-foreground text-background">
-                          {u.name}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{u.fullName}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 rounded-full"
-                              style={{
-                                width: `${(u.active / maxTotal) * 100}%`,
-                              }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground w-8 text-right">
-                            {u.total}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="text-right">
-                          <p className="text-xs text-blue-600 font-medium">{u.active} active</p>
-                          <p className="text-xs text-muted-foreground">{u.stuckTerminated} done</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              ) : null}
             </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+          );
+        })}
+      </div>
+    </StatsCard>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────
+function EmptyCountry({
+  country,
+  onAll,
+}: {
+  country: string;
+  onAll: () => void;
+}) {
+  const meta = COUNTRIES[country] ?? COUNTRIES.ALL;
+  return (
+    <div className="max-w-[460px] mx-auto mt-15 p-9 bg-friday-bg border border-friday-border-soft rounded-md text-center flex flex-col items-center gap-3">
+      <span className="text-[28px]">{meta.flag}</span>
+      <h3 className="font-display italic font-medium text-[18px] text-friday-fg m-0 -tracking-[0.2px]">
+        No projects in {country} yet.
+      </h3>
+      <button
+        type="button"
+        onClick={onAll}
+        className="h-[30px] px-3.5 bg-friday-fg text-friday-bg border-0 rounded text-[12px] font-medium cursor-pointer"
+      >
+        View all →
+      </button>
+    </div>
+  );
+}
+
+// ─── Main client ──────────────────────────────────────────────────
+export function StatisticsClient({ projects, users }: StatisticsClientProps) {
+  const [country, setCountry] = React.useState<string>("ALL");
+
+  const filtered = React.useMemo(
+    () =>
+      country === "ALL"
+        ? projects
+        : projects.filter((p) => p.country === country),
+    [country, projects],
+  );
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-friday-bg">
+      <StatsHeader country={country} setCountry={setCountry} />
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div
+          className="mx-auto flex flex-col gap-4"
+          style={{ maxWidth: 1240, padding: "20px 28px 40px" }}
+        >
+          {filtered.length === 0 ? (
+            <EmptyCountry country={country} onAll={() => setCountry("ALL")} />
+          ) : (
+            <>
+              <KpiStrip data={filtered} />
+              <PhaseDistribution data={filtered} />
+              <TeamWorkload data={filtered} users={users} />
+              <CategoryDonut data={filtered} />
+              <GeoSpread data={filtered} country={country} />
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
