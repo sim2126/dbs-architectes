@@ -1,39 +1,32 @@
-// Friday status dot — small colored dot indicator. Accepts both
-// vocabularies (DB: todo/doing/stuck/completed; design: onTrack/atRisk/
-// delayed/done) via getStatusColor.
+// Friday status dot — Monday-style colored dot for work-status indication
+// (todo / doing / stuck / completed). Pairs naturally with a label next to it.
 
 import * as React from "react";
-import { getStatusColor } from "@/lib/friday-tokens";
+import { getStatusColor, type WorkStatus } from "@/lib/friday-tokens";
 import { cn } from "@/lib/utils";
 
-const DESIGN_LABELS: Record<string, string> = {
-  // DB
-  todo: "To-do",
-  doing: "Working on it",
-  stuck: "Stuck",
-  completed: "Done",
-  // Design
-  onTrack: "On track",
-  atRisk: "At risk",
-  delayed: "Delayed",
-  done: "Done",
-};
-
 interface StatusDotProps {
-  status: string | null | undefined;
+  status: WorkStatus | string | null | undefined;
   size?: number;
   withLabel?: boolean;
   className?: string;
 }
 
+const LABELS: Record<string, string> = {
+  todo: "To-do",
+  doing: "Working on it",
+  stuck: "Stuck",
+  completed: "Done",
+};
+
 export function StatusDot({
   status,
-  size = 7,
+  size = 8,
   withLabel = false,
   className,
 }: StatusDotProps) {
   const color = getStatusColor(status);
-  const label = status ? (DESIGN_LABELS[status] ?? DESIGN_LABELS[status.toLowerCase()] ?? status) : "";
+  const label = status ? (LABELS[status.toLowerCase()] ?? status) : "";
 
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
