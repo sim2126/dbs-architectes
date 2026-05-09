@@ -1,12 +1,16 @@
 "use client";
 
-import * as React from "react";
-import { I } from "@/components/friday/icons";
-import { EmptyState } from "@/components/friday/empty-state";
-import { showToast } from "@/components/toast";
+// Saved DBS GPT insights — snapshots of Aria responses the user wants to
+// keep. Pinned items float to the top. Each card shows the saved blocks
+// rendered with the same components used in the live chat.
+
+import { useCallback, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Bookmark, Loader2, Pin, PinOff, Trash2, Pencil } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
 import { BlocksView } from "@/components/agent-blocks";
 import type { Block } from "@/lib/agent/blocks";
-import { cn } from "@/lib/utils";
 
 interface SavedItem {
   id: string;
@@ -20,251 +24,13 @@ interface SavedItem {
   updatedAt: string;
 }
 
-function fmtSavedAt(d: Date): string {
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-  if (days === 0) return "Saved today";
-  if (days === 1) return "Saved yesterday";
-  if (days < 7) return `Saved ${days} days ago`;
-  if (days < 14) return "Saved last week";
-  if (days < 30) return `Saved ${Math.round(days / 7)} weeks ago`;
-  return `Saved ${Math.round(days / 30)} mo ago`;
-}
-
-function SectionHeading({
-  label,
-  count,
-}: {
-  label: string;
-  count: number;
-}) {
-  return (
-    <div className="flex items-center gap-2 mt-1.5 mb-3 text-[9.5px] tracking-[0.18em] uppercase text-friday-fg-muted font-medium">
-      <span>{label}</span>
-      <span className="flex-1 h-px bg-friday-border-soft" />
-      <span className="font-mono text-[9.5px] text-friday-fg-subtle tracking-wide">
-        {count}
-      </span>
-    </div>
-  );
-}
-
-function CardIconBtn({
-  children,
-  title,
-  onClick,
-  danger,
-  active,
-}: {
-  children: React.ReactNode;
-  title: string;
-  onClick: () => void;
-  danger?: boolean;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      className={cn(
-        "w-[26px] h-[26px] p-0 bg-transparent border-0 rounded-sm cursor-pointer flex items-center justify-center transition-colors duration-100",
-        active
-          ? "text-[#b45309]"
-          : danger
-            ? "text-friday-fg-muted hover:text-[#9b2c1a] hover:bg-[#fde4dd]"
-            : "text-friday-fg-muted hover:bg-friday-surface-2 hover:text-friday-fg",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SavedCard({
-  item,
-  onRename,
-  onPin,
-  onDelete,
-}: {
-  item: SavedItem;
-  onRename: (id: string, title: string) => void;
-  onPin: (item: SavedItem) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [hover, setHover] = React.useState(false);
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(item.title);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  React.useEffect(() => {
-    setDraft(item.title);
-  }, [item.title]);
-
-  React.useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [editing]);
-
-  const commitRename = () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (next && next !== item.title) {
-      onRename(item.id, next);
-    } else {
-      setDraft(item.title);
-    }
-  };
-
-  return (
-    <article
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      className="bg-friday-bg border border-friday-border-soft rounded-md overflow-hidden mb-3.5"
-      style={{
-        boxShadow: item.pinned
-          ? "0 0 0 1.5px rgba(233,184,80,0.55)"
-          : undefined,
-      }}
-    >
-      <div
-        className="bg-friday-surface border-b border-friday-border-soft px-3.5 py-2.5 flex items-center gap-2"
-        style={{ minHeight: 44 }}
-      >
-        {item.pinned ? (
-          <span
-            title="Pinned"
-            className="leading-none mr-0.5"
-            style={{ color: "#b45309" }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 3l5 5-3 1-4 4 1 5-3-3-5 5-1-1 5-5-3-3 5-1 4-4 1-3z" />
-            </svg>
-          </span>
-        ) : null}
-        <div className="flex-1 min-w-0">
-          {editing ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitRename();
-                } else if (e.key === "Escape") {
-                  setDraft(item.title);
-                  setEditing(false);
-                }
-              }}
-              className="w-full h-6 -my-0.5 -ml-1.5 px-1.5 border border-friday-accent rounded-[3px] bg-friday-bg outline-none font-display italic font-medium text-[15px] text-friday-fg"
-              style={{
-                boxShadow: "0 0 0 3px var(--friday-accent-ring)",
-              }}
-            />
-          ) : (
-            <h3
-              onClick={() => setEditing(true)}
-              className="font-display italic font-medium text-[15px] text-friday-fg m-0 -tracking-[0.1px] leading-snug cursor-text truncate"
-            >
-              {item.title}
-            </h3>
-          )}
-        </div>
-
-        <span className="text-[11px] text-friday-fg-subtle whitespace-nowrap">
-          {fmtSavedAt(new Date(item.createdAt))}
-        </span>
-
-        <div
-          className="flex items-center gap-px transition-opacity duration-150"
-          style={{
-            opacity: hover || editing ? 1 : 0,
-            pointerEvents: hover || editing ? "auto" : "none",
-          }}
-        >
-          <CardIconBtn title="Rename" onClick={() => setEditing(true)}>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 20h4l10-10-4-4L4 16v4z" />
-              <path d="M14 6l4 4" />
-            </svg>
-          </CardIconBtn>
-          <CardIconBtn
-            title={item.pinned ? "Unpin" : "Pin"}
-            onClick={() => onPin(item)}
-            active={item.pinned}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill={item.pinned ? "#b45309" : "none"}
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M16 3l5 5-3 1-4 4 1 5-3-3-5 5-1-1 5-5-3-3 5-1 4-4 1-3z" />
-            </svg>
-          </CardIconBtn>
-          <CardIconBtn
-            title="Delete"
-            onClick={() => onDelete(item.id)}
-            danger
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14" />
-            </svg>
-          </CardIconBtn>
-        </div>
-      </div>
-
-      <div className="px-4 py-4 flex flex-col gap-3.5">
-        {item.blocks && item.blocks.length > 0 ? (
-          <BlocksView blocks={item.blocks} />
-        ) : (
-          <p
-            className="text-friday-fg leading-relaxed m-0 whitespace-pre-wrap"
-            style={{
-              fontFamily: "var(--font-friday-serif), Georgia, serif",
-              fontSize: 14,
-              lineHeight: 1.65,
-            }}
-          >
-            {item.text}
-          </p>
-        )}
-      </div>
-    </article>
-  );
-}
-
 export default function SavedInsightsPage() {
-  const [items, setItems] = React.useState<SavedItem[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [items, setItems] = useState<SavedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
-  const fetchItems = React.useCallback(async () => {
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/ai-saved");
@@ -278,141 +44,176 @@ export default function SavedInsightsPage() {
     }
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchItems();
   }, [fetchItems]);
 
-  const onRename = async (id: string, title: string) => {
-    setItems((prev) => prev.map((p) => (p.id === id ? { ...p, title } : p)));
-    showToast("Renamed");
-    try {
-      await fetch(`/api/ai-saved/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-    } catch {
-      fetchItems();
-    }
-  };
-
-  const onPin = async (item: SavedItem) => {
+  const togglePin = async (item: SavedItem) => {
     const next = !item.pinned;
-    setItems((prev) =>
-      prev.map((p) => (p.id === item.id ? { ...p, pinned: next } : p)),
-    );
-    showToast(next ? "Pinned" : "Unpinned");
+    setItems((prev) => {
+      const updated = prev.map((p) => (p.id === item.id ? { ...p, pinned: next } : p));
+      return updated.sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    });
     try {
       await fetch(`/api/ai-saved/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pinned: next }),
       });
-    } catch {
+    } catch (err) {
+      console.error("[saved-ai] pin failed:", err);
       fetchItems();
     }
   };
 
-  const onDelete = async (id: string) => {
+  const remove = async (id: string) => {
     setItems((prev) => prev.filter((p) => p.id !== id));
-    showToast("Deleted");
     try {
       await fetch(`/api/ai-saved/${id}`, { method: "DELETE" });
-    } catch {
+    } catch (err) {
+      console.error("[saved-ai] delete failed:", err);
       fetchItems();
     }
   };
 
-  const sorted = React.useMemo(() => {
-    const pinned = items
-      .filter((s) => s.pinned)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-    const rest = items
-      .filter((s) => !s.pinned)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-    return { pinned, rest };
-  }, [items]);
+  const startRename = (item: SavedItem) => {
+    setEditingId(item.id);
+    setEditValue(item.title);
+  };
+
+  const commitRename = async (id: string) => {
+    const title = editValue.trim();
+    setEditingId(null);
+    if (!title) return;
+    setItems((prev) => prev.map((p) => (p.id === id ? { ...p, title } : p)));
+    try {
+      await fetch(`/api/ai-saved/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+    } catch (err) {
+      console.error("[saved-ai] rename failed:", err);
+      fetchItems();
+    }
+  };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-friday-bg">
-      <div
-        className="px-7 border-b border-friday-border-soft flex items-center gap-2.5 shrink-0"
-        style={{ height: 60 }}
-      >
-        <span className="text-friday-fg-muted leading-none">
-          <I.Star size={18} />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h1 className="font-display italic font-medium text-[24px] text-friday-fg m-0 -tracking-[0.3px] leading-[1.15]">
-            Saved Insights
-          </h1>
-          <div className="text-[11.5px] text-friday-fg-muted mt-0.5">
-            <span className="font-mono tracking-wide">{items.length}</span>{" "}
-            saved
-            <span className="text-friday-fg-subtle mx-1.5">·</span>
-            <span className="font-mono tracking-wide">
-              {sorted.pinned.length}
-            </span>{" "}
-            pinned
-          </div>
+    <div className="flex h-[calc(100vh-64px)] flex-col bg-background">
+      <div className="shrink-0 border-b border-border bg-card/70 px-6 py-3.5 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-4xl items-center gap-2">
+          <Bookmark className="h-4 w-4 text-amber-500" />
+          <h1 className="text-sm font-semibold">Saved Insights</h1>
+          <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            {items.length}
+          </span>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
-        {loading ? (
-          <div className="text-[12px] text-friday-fg-muted text-center py-16">
-            Loading…
-          </div>
-        ) : items.length === 0 ? (
-          <div className="max-w-[460px] mx-auto mt-20">
-            <EmptyState
-              icon={<I.Star size={22} />}
-              title="Nothing saved yet"
-              body="When DBS GPT gives you a useful answer, hit the bookmark icon and it'll land here for quick reference later."
-            />
-          </div>
-        ) : (
-          <div
-            className="mx-auto"
-            style={{ maxWidth: 880, padding: "24px 28px 60px" }}
-          >
-            {sorted.pinned.length > 0 ? (
-              <>
-                <SectionHeading label="Pinned" count={sorted.pinned.length} />
-                {sorted.pinned.map((s) => (
-                  <SavedCard
-                    key={s.id}
-                    item={s}
-                    onRename={onRename}
-                    onPin={onPin}
-                    onDelete={onDelete}
-                  />
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+                <Bookmark className="h-8 w-8 text-muted-foreground/30" />
+              </div>
+              <p className="text-sm font-semibold">Nothing saved yet</p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                When DBS GPT gives you a useful answer, hit the bookmark icon and
+                it&apos;ll land here for quick reference later.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <AnimatePresence>
+                {items.map((item) => (
+                  <motion.article
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: 16 }}
+                    transition={{ duration: 0.18 }}
+                    className={cn(
+                      "rounded-[24px] border border-border bg-card shadow-sm",
+                      item.pinned && "border-amber-300/70 ring-1 ring-amber-300/40",
+                    )}
+                  >
+                    <header className="flex items-start gap-3 border-b border-border px-5 py-3">
+                      <div className="min-w-0 flex-1">
+                        {editingId === item.id ? (
+                          <input
+                            autoFocus
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => commitRename(item.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") commitRename(item.id);
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            className="w-full bg-transparent text-sm font-semibold outline-none border-b border-foreground"
+                          />
+                        ) : (
+                          <h2 className="truncate text-sm font-semibold">{item.title}</h2>
+                        )}
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          Saved {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.pinned && (
+                          <span className="hidden rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-800 sm:inline-flex">
+                            Pinned
+                          </span>
+                        )}
+                        <button
+                          onClick={() => startRename(item)}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="Rename"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => togglePin(item)}
+                          className={cn(
+                            "rounded-md p-1.5 transition-colors",
+                            item.pinned
+                              ? "text-amber-600 hover:bg-amber-50"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                          title={item.pinned ? "Unpin" : "Pin"}
+                        >
+                          {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => remove(item.id)}
+                          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </header>
+                    <div className="px-5 py-4">
+                      {item.blocks && item.blocks.length > 0 ? (
+                        <BlocksView blocks={item.blocks} />
+                      ) : (
+                        <p className="whitespace-pre-wrap text-sm leading-7">{item.text}</p>
+                      )}
+                    </div>
+                  </motion.article>
                 ))}
-              </>
-            ) : null}
-            {sorted.rest.length > 0 ? (
-              <>
-                {sorted.pinned.length > 0 ? <div className="h-4" /> : null}
-                <SectionHeading label="All saved" count={sorted.rest.length} />
-                {sorted.rest.map((s) => (
-                  <SavedCard
-                    key={s.id}
-                    item={s}
-                    onRename={onRename}
-                    onPin={onPin}
-                    onDelete={onDelete}
-                  />
-                ))}
-              </>
-            ) : null}
-          </div>
-        )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
