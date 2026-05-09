@@ -7,11 +7,8 @@ export default async function StatisticsPage() {
       select: {
         id: true,
         phase: true,
-        workStatus: true,
         category: true,
         country: true,
-        commune: true,
-        year: true,
         assignments: {
           select: { userId: true },
         },
@@ -28,14 +25,12 @@ export default async function StatisticsPage() {
     }),
   ]);
 
+  // Shape for client
   const projects = rawProjects.map((p) => ({
     id: p.id,
     phase: p.phase,
-    workStatus: p.workStatus,
     category: p.category,
     country: p.country,
-    commune: p.commune,
-    year: p.year,
     userIds: p.assignments.map((a) => a.userId),
   }));
   const users = rawUsers.map((u) => ({
