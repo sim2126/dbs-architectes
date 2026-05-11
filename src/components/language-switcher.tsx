@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Globe, Check, Languages, ChevronDown } from "lucide-react";
 import { useLanguageStore, TRANSLATION_LANGUAGES, type Language } from "@/lib/language-store";
@@ -20,11 +20,35 @@ export function LanguageSwitcher() {
   const { language, setLanguage, translationLang, setTranslationLang } = useLanguageStore();
   const [open, setOpen] = useState(false);
   const [transOpen, setTransOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const currentTransLang = TRANSLATION_LANGUAGES.find((l) => l.code === translationLang);
 
+  // Close on outside click (mousedown so it fires before any click handlers inside)
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setTransOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setTransOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         onClick={() => { setOpen(!open); setTransOpen(false); }}
         className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-transparent hover:border-border"
@@ -36,15 +60,13 @@ export function LanguageSwitcher() {
 
       <AnimatePresence>
         {open && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setTransOpen(false); }} />
-            <motion.div
-              initial={{ opacity: 0, y: -8, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.96 }}
-              transition={{ duration: 0.14 }}
-              className="absolute right-0 top-10 w-64 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
-            >
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-10 w-64 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden z-50"
+          >
               <div className="px-4 py-3 border-b border-border bg-muted/30">
                 <p className="text-xs font-semibold text-foreground">Language Preferences</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Saved automatically to your session</p>
@@ -132,8 +154,7 @@ export function LanguageSwitcher() {
                   </AnimatePresence>
                 </div>
               </div>
-            </motion.div>
-          </>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
