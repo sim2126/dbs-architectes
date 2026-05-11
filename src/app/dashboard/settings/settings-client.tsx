@@ -13,6 +13,7 @@ import {
   RadioGroup,
 } from "@/components/friday/forms";
 import { cn } from "@/lib/utils";
+import { useLanguageStore, type Language } from "@/lib/language-store";
 
 // ─── Sub-nav data ─────────────────────────────────────────────────
 const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: boolean }[] }[] = [
@@ -96,37 +97,109 @@ function SubNav({
 }
 
 // ─── Profile ──────────────────────────────────────────────────────
+type ProfileForm = {
+  name: string;
+  email: string;
+  phone: string;
+  defaultCountry: string;
+};
+
+function initialsFrom(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "·";
+}
+
 function ProfilePanel() {
-  const [data, setData] = useState({
-    name: "Giulio Sovran",
-    email: "g.sovran@dbsarc.com",
-    phone: "+41 79 412 88 30",
-    country: "CH",
-  });
-  const [orig, setOrig] = useState(data);
-  const dirty = JSON.stringify(data) !== JSON.stringify(orig);
+  const [data, setData] = useState<ProfileForm | null>(null);
+  const [orig, setOrig] = useState<ProfileForm | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/users/me");
+        if (!res.ok) throw new Error("load failed");
+        const u = await res.json() as Partial<ProfileForm> & { defaultCountry?: string | null };
+        if (cancelled) return;
+        const next: ProfileForm = {
+          name: u.name ?? "",
+          email: u.email ?? "",
+          phone: u.phone ?? "",
+          defaultCountry: u.defaultCountry ?? "",
+        };
+        setData(next);
+        setOrig(next);
+      } catch {
+        if (!cancelled) showToast("Couldn't load profile", "danger");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const dirty = data !== null && orig !== null && JSON.stringify(data) !== JSON.stringify(orig);
+
   const set =
-    <K extends keyof typeof data>(k: K) =>
-    (v: string) =>
+    <K extends keyof ProfileForm>(k: K) =>
+    (v: string) => {
+      if (!data) return;
       setData({ ...data, [k]: v });
+    };
+
+  const save = async () => {
+    if (!data || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/users/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          defaultCountry: data.defaultCountry || null,
+        }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setOrig(data);
+      showToast("Profile saved");
+    } catch {
+      showToast("Couldn't save — try again", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!data) {
+    return (
+      <Panel title="Profile" description="Personal information shown to your team.">
+        <div className="text-[12px] text-friday-fg-muted italic">Loading…</div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel
       title="Profile"
       description="Personal information shown to your team."
       dirty={dirty}
-      onSave={() => {
-        setOrig(data);
-        showToast("Profile saved");
-      }}
-      onCancel={() => setData(orig)}
+      onSave={save}
+      onCancel={() => orig && setData(orig)}
     >
       <div className="grid gap-[18px] items-start" style={{ gridTemplateColumns: "120px 1fr 1fr" }}>
         <div className="flex flex-col items-center gap-2">
-          <Avatar initials="GS" size={88} />
+          <Avatar initials={initialsFrom(data.name)} size={88} />
           <button
             type="button"
-            className="bg-transparent border-0 p-0 text-friday-accent text-[11px] font-medium cursor-pointer"
+            className="bg-transparent border-0 p-0 text-friday-accent text-[11px] font-medium cursor-pointer opacity-50 cursor-not-allowed"
+            title="Photo upload coming soon"
+            disabled
           >
             Change photo
           </button>
@@ -135,17 +208,18 @@ function ProfilePanel() {
           <Field label="Full name">
             <TextInput value={data.name} onChange={set("name")} />
           </Field>
-          <Field label="Email">
-            <TextInput value={data.email} onChange={set("email")} mono />
+          <Field label="Email" hint="Contact an admin to change your email.">
+            <TextInput value={data.email} onChange={() => {}} mono disabled />
           </Field>
           <Field label="Phone">
             <TextInput value={data.phone} onChange={set("phone")} mono />
           </Field>
           <Field label="Default country">
             <Select
-              value={data.country}
-              onChange={set("country")}
+              value={data.defaultCountry || ""}
+              onChange={set("defaultCountry")}
               options={[
+                { v: "", l: "— not set —" },
                 { v: "CH", l: "Switzerland" },
                 { v: "IT", l: "Italy" },
                 { v: "IN", l: "India" },
@@ -205,24 +279,31 @@ function NotificationsPanel() {
 }
 
 // ─── Language ─────────────────────────────────────────────────────
+const LANG_OPTIONS: { v: Language; l: string }[] = [
+  { v: "en", l: "English" },
+  { v: "fr", l: "Français" },
+  { v: "it", l: "Italiano" },
+  { v: "de", l: "Deutsch" },
+];
+
 function LanguagePanel() {
-  const [lang, setLang] = useState("FR");
+  // Drive the same Zustand store that the topbar switcher uses, so changes
+  // here propagate everywhere instantly (and survive reload via persist).
+  const { language, setLanguage } = useLanguageStore();
+
   return (
     <Panel
       title="Language"
       description="Interface language. Project content stays in the language it was written in."
     >
       <RadioGroup
-        value={lang}
-        options={[
-          { v: "EN", l: "English" },
-          { v: "FR", l: "Français" },
-          { v: "IT", l: "Italiano" },
-          { v: "DE", l: "Deutsch" },
-        ]}
+        value={language}
+        options={LANG_OPTIONS.map((o) => ({ v: o.v, l: o.l }))}
         onChange={(v) => {
-          setLang(v);
-          showToast(`Language: ${v}`);
+          const code = v as Language;
+          setLanguage(code);
+          const label = LANG_OPTIONS.find((o) => o.v === code)?.l ?? code.toUpperCase();
+          showToast(`Language: ${label}`);
         }}
       />
     </Panel>
