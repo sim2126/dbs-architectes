@@ -1,16 +1,31 @@
 /**
- * Friday.com — Role & Permission Model
+ * Friday.com — Role & Permission Model (legacy convenience predicates).
  *
- * permission = role capability + scope + region
+ * Every function in this file is now a thin wrapper over the single
+ * authorize() decision function in @/lib/auth. The convenience names
+ * stay so the ~139 existing callers don't need touching; new code
+ * should prefer authorize() / requirePermission() directly.
  *
  * Role hierarchy (most → least privileged):
  *   admin > director > manager > employee > intern
  *
  * Legacy aliases kept for DB backwards-compatibility:
- *   super_admin  → treated as admin
+ *   super_admin    → treated as admin
  *   project_manager → treated as manager
  *   viewer / collaborator → treated as employee
  */
+
+import { authorize, type RegionAccess as AuthRegionAccess, type Subject } from "@/lib/auth/authorize";
+
+// Re-export the canonical RegionAccess type so legacy callers continue
+// to import it from "@/lib/permissions".
+export type RegionAccess = AuthRegionAccess;
+
+// ─── Subject builder (private — predicates need a Subject) ─────
+
+function subject(role: string, regions: RegionAccess[] = []): Subject {
+  return { userId: "__predicate__", role, regions };
+}
 
 // ─── Role predicates ─────────────────────────────────────────
 
@@ -19,76 +34,58 @@ const DIRECTOR_ROLES = new Set(["admin", "super_admin", "director"]);
 const MANAGER_ROLES  = new Set(["admin", "super_admin", "director", "manager", "project_manager"]);
 const WRITE_ROLES    = new Set(["admin", "super_admin", "director", "manager", "project_manager", "employee", "collaborator"]);
 
-export function isAdmin(role: string): boolean {
-  return ADMIN_ROLES.has(role);
-}
+export function isAdmin(role: string): boolean { return ADMIN_ROLES.has(role); }
+export function isDirectorOrAbove(role: string): boolean { return DIRECTOR_ROLES.has(role); }
+export function isManagerOrAbove(role: string): boolean { return MANAGER_ROLES.has(role); }
+export function canWrite(role: string): boolean { return WRITE_ROLES.has(role); }
+export function isIntern(role: string): boolean { return role === "intern"; }
 
-export function isDirectorOrAbove(role: string): boolean {
-  return DIRECTOR_ROLES.has(role);
-}
+// ─── Capability checks (wrappers over authorize) ──────────────
 
-export function isManagerOrAbove(role: string): boolean {
-  return MANAGER_ROLES.has(role);
-}
-
-export function canWrite(role: string): boolean {
-  return WRITE_ROLES.has(role);
-}
-
-/** Interns have restricted write access */
-export function isIntern(role: string): boolean {
-  return role === "intern";
-}
-
-// ─── Capability checks ───────────────────────────────────────
-
-/** Can create new projects */
+/** Can create new projects. */
 export function canCreateProject(role: string): boolean {
-  return isManagerOrAbove(role);
+  return authorize(subject(role), "project:create", null).allow;
 }
 
-/** Can edit any project (not just assigned ones) */
+/** Can edit any project (regardless of assignment). */
 export function canEditAnyProject(role: string): boolean {
   return isDirectorOrAbove(role);
 }
 
-/** Can manage users (invite, change role, deactivate) */
+/** Can manage users (invite, change role, deactivate). */
 export function canManageUsers(role: string): boolean {
-  return isAdmin(role);
+  return authorize(subject(role), "user:invite", null).allow;
 }
 
-/** Can view financial / billing fields */
+/** Can view financial / billing fields. */
 export function canViewBilling(role: string): boolean {
-  return isDirectorOrAbove(role);
+  return authorize(subject(role), "billing:read", { kind: "billing" }).allow;
 }
 
-/** Can access analytics & statistics */
+/** Can access analytics & statistics. */
 export function canViewAnalytics(role: string): boolean {
   return isDirectorOrAbove(role);
 }
 
-/** Can view and run AI agent queries */
+/** Can view and run AI agent queries. */
 export function canUseAI(role: string): boolean {
-  return isManagerOrAbove(role);
+  return authorize(subject(role), "ai:invoke", { kind: "ai" }).allow;
 }
 
-/** Can delete records (hard) */
+/** Can hard-delete records. */
 export function canDelete(role: string): boolean {
   return isAdmin(role);
 }
 
-/** Can access system settings */
+/** Can access system settings. */
 export function canManageSystem(role: string): boolean {
-  return isAdmin(role);
+  return authorize(subject(role), "settings:workspace.update", {
+    kind: "settings",
+    scope: "workspace",
+  }).allow;
 }
 
 // ─── Region checks ───────────────────────────────────────────
-
-export type RegionAccess = {
-  country: string;
-  operatingRegion?: string | null;
-  accessLevel: "view" | "manage";
-};
 
 /**
  * Returns true if the user can access (view or manage) the given country.
@@ -97,7 +94,7 @@ export type RegionAccess = {
 export function canAccessCountry(
   role: string,
   regionAccess: RegionAccess[],
-  country: string
+  country: string,
 ): boolean {
   if (isDirectorOrAbove(role)) return true;
   return regionAccess.some((r) => r.country === country);
@@ -109,11 +106,11 @@ export function canAccessCountry(
 export function canManageCountry(
   role: string,
   regionAccess: RegionAccess[],
-  country: string
+  country: string,
 ): boolean {
   if (isAdmin(role)) return true;
   return regionAccess.some(
-    (r) => r.country === country && r.accessLevel === "manage"
+    (r) => r.country === country && r.accessLevel === "manage",
   );
 }
 

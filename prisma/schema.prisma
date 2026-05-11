@@ -538,6 +538,35 @@ model RoleChangeLog {
   @@index([changedBy, createdAt])
 }
 
+// ─── AUTHORIZATION LOG ──────────────────────────────────────
+// Every authorize() decision is recorded here, allow or deny. The audit
+// trail is the source of truth a security team will reach for first;
+// see CLAUDE.md / feedback_auth_architecture for the rationale.
+//
+// Fields are intentionally denormalised:
+//   - subjectRole is captured at decision time, so the log stays
+//     truthful even if the user's role changes afterwards.
+//   - resourceKind + resourceId are nullable for actions with no
+//     resource (e.g. "project:create" before the project exists).
+
+model AuthorizationLog {
+  id           String   @id @default(cuid())
+  subjectId    String
+  subjectRole  String
+  action       String
+  resourceKind String?
+  resourceId   String?
+  decision     String   // "allow" | "deny"
+  reason       String?
+  context      String?  // optional JSON: ip, route, requestId, etc.
+  createdAt    DateTime @default(now())
+
+  @@index([subjectId, createdAt])
+  @@index([action, decision, createdAt])
+  @@index([resourceKind, resourceId, createdAt])
+  @@index([decision, createdAt])
+}
+
 // ─── FAVORITES / STARS ──────────────────────────────────────
 // Polymorphic per-user favourites: any project, sheet, AI chat session,
 // agenda item, or team member can be starred. Resolved on read by the
