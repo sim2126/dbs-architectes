@@ -286,7 +286,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                 return (
                   <Link
                     key={p.id}
-                    href={`/dashboard/projects/${p.code}`}
+                    href={`/dashboard/projects/${p.id}`}
                     className="group shrink-0 w-60 rounded-2xl border border-border bg-card hover:border-foreground/25 transition-colors overflow-hidden"
                   >
                     <div className="relative aspect-[4/3] bg-muted/60 overflow-hidden">
