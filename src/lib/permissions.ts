@@ -15,7 +15,7 @@
  *   viewer / collaborator → treated as employee
  */
 
-import { authorize, type RegionAccess as AuthRegionAccess, type Subject } from "@/lib/auth/authorize";
+import { authorize, type RegionAccess as AuthRegionAccess, type Subject } from "@/lib/authz/authorize";
 
 // Re-export the canonical RegionAccess type so legacy callers continue
 // to import it from "@/lib/permissions".
