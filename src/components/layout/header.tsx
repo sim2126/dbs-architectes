@@ -184,23 +184,26 @@ export function Header({ title }: { title?: string }) {
 
   return (
     <header className="h-14 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-5 gap-3 shrink-0">
-      {title && (
-        <h1 className="text-base font-semibold text-foreground shrink-0">{title}</h1>
-      )}
+      <div className="flex items-center min-w-0">
+        {title && (
+          <h1 className="text-base font-semibold text-foreground truncate">{title}</h1>
+        )}
+      </div>
 
-      {/* Search */}
-      <button
-        onClick={openSearch}
-        className="flex-1 max-w-xs flex items-center gap-2.5 h-9 px-3 rounded-xl border border-border bg-muted/40 hover:bg-muted/80 hover:border-foreground/20 text-muted-foreground text-sm transition-all group"
-      >
-        <Search className="w-3.5 h-3.5 shrink-0 group-hover:text-foreground transition-colors" />
-        <span className="flex-1 text-left text-sm truncate">{t("common.search")} pages, projects…</span>
-        <div className="hidden sm:flex items-center gap-0.5 shrink-0">
-          <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-background border border-border rounded">⌘K</kbd>
-        </div>
-      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Search — relocated to the right cluster */}
+        <button
+          onClick={openSearch}
+          aria-label={`${t("common.search")} pages, projects`}
+          className="flex items-center gap-2.5 h-9 px-3 w-56 sm:w-72 rounded-xl border border-border bg-muted/40 hover:bg-muted/80 hover:border-foreground/20 text-muted-foreground text-sm transition-all group"
+        >
+          <Search className="w-3.5 h-3.5 shrink-0 group-hover:text-foreground transition-colors" />
+          <span className="flex-1 text-left text-sm truncate">{t("common.search")} pages, projects…</span>
+          <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+            <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-background border border-border rounded">⌘K</kbd>
+          </div>
+        </button>
 
-      <div className="flex items-center gap-1 shrink-0">
         <LanguageSwitcher />
 
         <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-8 w-8">

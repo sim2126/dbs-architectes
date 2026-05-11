@@ -1,391 +1,371 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import {
-  AlertTriangle,
-  ArrowRight,
-  BarChart3,
-  Bot,
-  Building2,
-  CalendarClock,
-  CheckCircle2,
-  Clock3,
-  FolderOpen,
-  ShieldCheck,
-  TimerReset,
-  TrendingUp,
-  Users,
-  Activity,
-  MapPin,
-} from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { ArrowUpRight, CalendarClock, Clock3, Sparkles, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { PHASE_COLORS, COUNTRIES } from "@/lib/utils";
-import { useT, translatePhase } from "@/lib/translations";
+import { PHASE_COLORS } from "@/lib/utils";
+import { translatePhase, useT } from "@/lib/translations";
 import { formatDistanceToNow } from "date-fns";
 
-interface DashboardClientProps {
-  user: { name?: string | null; role?: string; email?: string };
-  stats: {
-    projectCount: number;
-    activeProjects: number;
-    userCount: number;
-    assignedCount: number;
-    unassignedCount: number;
-    blockedProjects: number;
-    phaseStats: { phase: string; count: number }[];
-    workStatusStats: { status: string; count: number }[];
-    regionStats: { country: string; count: number }[];
-  };
-  recentActivity: Array<{
+// ── Types ─────────────────────────────────────────────────────
+
+export type RoleTier = "admin" | "lead" | "employee";
+
+export interface KpiCard {
+  label: string;
+  value: number;
+  sub: string;
+  href: string;
+  tone: "default" | "warn";
+}
+
+export interface DashboardData {
+  kpis: [KpiCard, KpiCard, KpiCard];
+  todayFocus: Array<{
+    id: string;
+    title: string;
+    date: string;
+    type: string;
+    priority: string;
+    project: { code: string; title: string } | null;
+  }>;
+  whatChanged: Array<{
     id: string;
     type: string;
     description: string;
     createdAt: string;
     user: { name?: string | null; initials?: string | null } | null;
-    project: { title: string; code: string } | null;
+    project: { code: string; title: string } | null;
   }>;
-  upcomingAgenda: Array<{
+  starred: Array<{
     id: string;
+    code: string;
     title: string;
-    date: string;
-    priority: string;
-    project: { title: string; code: string } | null;
+    image?: string | null;
+    phase: string;
+    commune?: string | null;
+    country?: string | null;
   }>;
 }
 
-const ROLE_CONFIG: Record<string, { label: string; accent: string; icon: React.ElementType }> = {
-  super_admin:     { label: "Executive",      accent: "from-slate-950 to-slate-800",         icon: ShieldCheck },
-  admin:           { label: "Admin",          accent: "from-slate-950 to-slate-800",         icon: ShieldCheck },
-  director:        { label: "Director",       accent: "from-blue-950 to-indigo-900",         icon: TrendingUp  },
-  manager:         { label: "Manager",        accent: "from-teal-900 to-cyan-800",           icon: TimerReset  },
-  project_manager: { label: "Project Mgr",   accent: "from-teal-900 to-cyan-800",           icon: TimerReset  },
-  employee:        { label: "Employee",       accent: "from-violet-900 to-indigo-800",       icon: CheckCircle2},
-  collaborator:    { label: "Collaborator",   accent: "from-violet-900 to-indigo-800",       icon: CheckCircle2},
-  intern:          { label: "Intern",         accent: "from-slate-800 to-slate-700",         icon: BarChart3   },
-  viewer:          { label: "Viewer",         accent: "from-slate-800 to-slate-700",         icon: BarChart3   },
+interface DashboardClientProps {
+  user: { name?: string | null; role?: string | null; email?: string | null };
+  tier: RoleTier;
+  data: DashboardData;
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+
+const ROLE_LABEL: Record<RoleTier, string> = {
+  admin: "Studio overview",
+  lead: "Your portfolio",
+  employee: "Your day",
 };
 
-const STATUS_META = [
-  { key: "todo",      label: "Not Started",   color: "#c4c4cf" },
-  { key: "doing",     label: "Working on it", color: "#fdab3d" },
-  { key: "stuck",     label: "Stuck",         color: "#e2445c" },
-  { key: "completed", label: "Done",          color: "#00c875" },
-];
-
-function getPriorityColor(p: string) {
-  if (p === "critical" || p === "high") return "bg-red-500";
+function priorityTone(p: string) {
+  if (p === "critical" || p === "high") return "bg-rose-400";
   if (p === "medium") return "bg-amber-400";
   return "bg-emerald-400";
 }
 
+function timeShort(iso: string) {
+  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+function greetingByHour() {
+  const h = new Date().getHours();
+  if (h < 5) return "Good night";
+  if (h < 12) return "Buongiorno";
+  if (h < 18) return "Buon pomeriggio";
+  return "Buonasera";
+}
+
 const fade = (delay = 0) => ({
-  initial: { opacity: 0, y: 12 },
+  initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.35, delay, ease: "easeOut" as const },
 });
 
-export function DashboardClient({ user, stats, recentActivity, upcomingAgenda }: DashboardClientProps) {
+// ── Component ─────────────────────────────────────────────────
+
+export function DashboardClient({ user, tier, data }: DashboardClientProps) {
   const t = useT();
-  const role = user.role || "viewer";
-  const rc = ROLE_CONFIG[role] || ROLE_CONFIG.viewer;
-  const RoleIcon = rc.icon;
-  const firstName = user.name?.split(" ")[0] || "User";
-
-  const pieData = stats.phaseStats.map((s) => ({
-    name: translatePhase(s.phase, t),
-    value: s.count,
-    color: PHASE_COLORS[s.phase] || "#94a3b8",
-  }));
-
-  const statusRows = STATUS_META.map((s) => ({
-    ...s,
-    count: stats.workStatusStats.find((w) => w.status === s.key)?.count ?? 0,
-  }));
-  const statusTotal = statusRows.reduce((sum, r) => sum + r.count, 0) || 1;
-
-  const avgLoad = stats.userCount > 0 ? (stats.assignedCount / stats.userCount).toFixed(1) : "0";
-
-  const aiSignals = [
-    { icon: AlertTriangle, text: `${stats.blockedProjects} blocked project${stats.blockedProjects !== 1 ? "s" : ""} need review`, urgent: stats.blockedProjects > 0 },
-    { icon: Users,         text: `${stats.unassignedCount} project${stats.unassignedCount !== 1 ? "s" : ""} still need ownership`, urgent: stats.unassignedCount > 2 },
-    { icon: CalendarClock, text: `${upcomingAgenda.length} agenda item${upcomingAgenda.length !== 1 ? "s" : ""} sequenced and upcoming`, urgent: false },
-  ];
+  const firstName = user.name?.split(" ")[0] || "there";
+  const today = new Date();
+  const dateLine = today.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   return (
     <div className="min-h-full bg-background">
-      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-5">
+      <div className="max-w-[1320px] mx-auto px-6 sm:px-8 py-8 sm:py-10 space-y-10">
 
-        {/* ── Row 1: Hero banner ── */}
-        <motion.div {...fade(0)} className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${rc.accent} p-6`}>
-          {/* Subtle noise overlay */}
-          <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")" }} />
-          <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
-            {/* Left: identity */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white/10">
-                  <RoleIcon className="w-3.5 h-3.5 text-white/80" />
-                </div>
-                <span className="text-[11px] font-semibold text-white/50 uppercase tracking-widest">{rc.label}</span>
+        {/* ── Greeting ─────────────────────────────────────── */}
+        <motion.div {...fade(0)} className="space-y-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+            {ROLE_LABEL[tier]} · {dateLine}
+          </p>
+          <h1 className="font-display italic text-foreground leading-[1.05] text-4xl sm:text-5xl">
+            {greetingByHour()},{" "}
+            <span className="text-foreground">{firstName}.</span>
+          </h1>
+          <p className="text-sm text-muted-foreground max-w-xl leading-relaxed">
+            {tier === "admin" && "A quiet picture of the studio. Three numbers worth looking at, then your day."}
+            {tier === "lead"  && "Your projects, your team, what changed since you last looked."}
+            {tier === "employee" && "What's on your plate today. The rest can wait."}
+          </p>
+        </motion.div>
+
+        {/* ── 3 KPI cards ──────────────────────────────────── */}
+        <motion.div {...fade(0.05)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {data.kpis.map((kpi, i) => (
+            <Link
+              key={kpi.label + i}
+              href={kpi.href}
+              className="group block rounded-2xl border border-border bg-card hover:border-foreground/25 transition-colors px-5 py-5"
+            >
+              <div className="flex items-start justify-between">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {kpi.label}
+                </p>
+                <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
               </div>
-              <h1 className="text-2xl font-semibold text-white leading-tight">
-                {firstName}, {t("dashboard.greeting")}
-              </h1>
-              <p className="mt-1 text-sm text-white/50 leading-relaxed max-w-lg">
-                Portfolio snapshot as of today. {stats.blockedProjects > 0 && <span className="text-amber-300 font-medium">{stats.blockedProjects} project{stats.blockedProjects > 1 ? "s" : ""} need attention.</span>}
+              <p
+                className={`font-display italic mt-3 leading-none tabular-nums ${
+                  kpi.tone === "warn" ? "text-amber-700 dark:text-amber-300" : "text-foreground"
+                }`}
+                style={{ fontSize: "44px", fontWeight: 500 }}
+              >
+                {kpi.value}
               </p>
-            </div>
-
-            {/* Right: inline KPIs */}
-            <div className="flex items-center gap-3 sm:gap-4 shrink-0 flex-wrap">
-              {[
-                { label: "Projects",    value: stats.projectCount,   icon: FolderOpen  },
-                { label: "Active",      value: stats.activeProjects, icon: Activity    },
-                { label: "Team",        value: stats.userCount,      icon: Users       },
-                { label: "Blocked",     value: stats.blockedProjects,icon: AlertTriangle, warn: stats.blockedProjects > 0 },
-              ].map((kpi) => (
-                <div key={kpi.label} className="flex flex-col items-center gap-0.5 px-4 py-2.5 rounded-xl bg-white/8 border border-white/10 min-w-[64px]">
-                  <span className={`text-xl font-bold ${kpi.warn ? "text-amber-300" : "text-white"}`}>{kpi.value}</span>
-                  <span className="text-[10px] text-white/50 font-medium tracking-wide">{kpi.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* ── Row 2: 4 metric cards ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: t("dashboard.total_projects"),  value: stats.projectCount,    sub: `${stats.unassignedCount} unassigned`, icon: FolderOpen,    href: "/dashboard/projects",   accent: "#3b82f6" },
-            { label: t("dashboard.active_delivery"), value: stats.activeProjects,  sub: "currently in progress",              icon: Activity,      href: "/dashboard/projects",   accent: "#10b981" },
-            { label: t("dashboard.active_team"),     value: stats.userCount,       sub: `avg load ${avgLoad}×`,               icon: Users,         href: "/dashboard/users",      accent: "#8b5cf6" },
-            { label: t("dashboard.blocked"),         value: stats.blockedProjects, sub: "projects in STUCK phase",            icon: AlertTriangle, href: "/dashboard/statistics", accent: "#f59e0b", warn: stats.blockedProjects > 0 },
-          ].map((card, i) => (
-            <motion.div key={card.label} {...fade(0.06 * i)}>
-              <Link href={card.href}>
-                <div className="group relative bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-foreground/15 transition-all cursor-pointer overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-0.5 rounded-t-xl" style={{ background: card.accent }} />
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: card.accent + "18" }}>
-                      <card.icon className="w-4 h-4" style={{ color: card.accent }} />
-                    </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
-                  </div>
-                  <p className={`text-3xl font-bold leading-none ${card.warn ? "text-amber-500" : ""}`}>{card.value}</p>
-                  <p className="text-sm font-medium text-foreground mt-1.5">{card.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
-                </div>
-              </Link>
-            </motion.div>
+              <p className="text-xs text-muted-foreground mt-2">{kpi.sub}</p>
+            </Link>
           ))}
-        </div>
-
-        {/* ── Row 3: Phase chart | AI signals | Agenda ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px_320px] gap-4">
-
-          {/* Phase distribution */}
-          <motion.div {...fade(0.12)}>
-            <div className="bg-card border border-border rounded-xl p-5 h-full">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold">{t("dashboard.phase_distribution")}</p>
-                <Link href="/dashboard/statistics" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                  Details <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="shrink-0">
-                  <ResponsiveContainer width={160} height={160}>
-                    <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={72} paddingAngle={2} dataKey="value">
-                        {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ borderRadius: "10px", border: "1px solid var(--border)", background: "var(--background)", fontSize: "12px" }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-1 space-y-2 min-w-0">
-                  {pieData.map((item) => (
-                    <div key={item.name} className="flex items-center gap-2.5">
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: item.color }} />
-                      <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                      <span className="text-xs font-bold tabular-nums">{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* AI signals */}
-          <motion.div {...fade(0.16)}>
-            <div className="bg-card border border-border rounded-xl p-5 h-full flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-white/10 flex items-center justify-center shrink-0">
-                  <Bot className="w-3.5 h-3.5 text-blue-400" />
-                </div>
-                <p className="text-sm font-semibold">AI Signals</p>
-              </div>
-              <div className="flex-1 space-y-2">
-                {aiSignals.map((sig, i) => (
-                  <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${sig.urgent ? "bg-amber-50 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40" : "bg-muted/40"}`}>
-                    <sig.icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${sig.urgent ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} />
-                    <p className={`text-xs leading-relaxed ${sig.urgent ? "text-amber-950 dark:text-amber-200 font-semibold" : "text-muted-foreground"}`}>{sig.text}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Link href="/dashboard/projects" className="flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-muted/30 hover:bg-accent transition-colors group">
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Projects</span>
-                  </div>
-                  <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-                </Link>
-                <Link href="/dashboard/agenda" className="flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-muted/30 hover:bg-accent transition-colors group">
-                  <div className="flex items-center gap-2">
-                    <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Agenda</span>
-                  </div>
-                  <ArrowRight className="w-3 h-3 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-                </Link>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Upcoming agenda */}
-          <motion.div {...fade(0.2)}>
-            <div className="bg-card border border-border rounded-xl p-5 h-full flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold">{t("dashboard.upcoming_agenda")}</p>
-                <Link href="/dashboard/agenda" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                  View all <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-              <div className="flex-1 space-y-2.5 overflow-hidden">
-                {upcomingAgenda.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center py-8 text-center">
-                    <CalendarClock className="w-8 h-8 text-muted-foreground/20 mb-2" />
-                    <p className="text-xs text-muted-foreground">{t("dashboard.no_upcoming")}</p>
-                  </div>
-                ) : (
-                  upcomingAgenda.map((item) => (
-                    <div key={item.id} className="flex items-start gap-3 py-2 border-b border-border/50 last:border-0">
-                      <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${getPriorityColor(item.priority)}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground leading-snug truncate">{item.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Clock3 className="w-2.5 h-2.5 text-muted-foreground" />
-                          <span className="text-[10px] text-muted-foreground">{new Date(item.date).toLocaleDateString("en-GB")}</span>
-                          {item.project && <span className="text-[10px] text-muted-foreground font-mono">{item.project.code}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </motion.div>
-        </div>
-
-        {/* ── Row 4: Work status breakdown ── */}
-        <motion.div {...fade(0.24)}>
-          <div className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold">{t("dashboard.tasks_by_status")}</p>
-              <span className="text-xs text-muted-foreground">{statusTotal} total</span>
-            </div>
-            <div className="flex h-3 w-full rounded-full overflow-hidden gap-px mb-4">
-              {statusRows.map((r) => r.count > 0 && (
-                <div key={r.key} style={{ width: `${(r.count / statusTotal) * 100}%`, background: r.color }} title={`${r.label}: ${r.count}`} />
-              ))}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {statusRows.map((r) => (
-                <div key={r.key} className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: r.color }} />
-                  <div>
-                    <p className="text-sm font-bold leading-none">{r.count}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{r.label}</p>
-                  </div>
-                  <div className="ml-auto text-xs text-muted-foreground">{Math.round((r.count / statusTotal) * 100)}%</div>
-                </div>
-              ))}
-            </div>
-          </div>
         </motion.div>
 
-        {/* ── Row 5: Recent activity (full width) ── */}
-        <motion.div {...fade(0.28)}>
-          <div className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold">{t("dashboard.recent_activity")}</p>
-              <Link href="/dashboard/activity" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                View all <ArrowRight className="w-3 h-3" />
+        {/* ── Today's Focus + What Changed ─────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* Today's Focus */}
+          <motion.section {...fade(0.1)} className="rounded-2xl border border-border bg-card">
+            <header className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  Today
+                </p>
+                <h2 className="font-display italic text-foreground text-xl leading-tight mt-0.5">
+                  Today's focus
+                </h2>
+              </div>
+              <Link
+                href="/dashboard/agenda"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Agenda
+              </Link>
+            </header>
+            <div className="px-2 py-1">
+              {data.todayFocus.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <CalendarClock className="w-6 h-6 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground italic font-display">
+                    Nothing on the calendar today.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {data.todayFocus.map((item) => (
+                    <li key={item.id} className="px-3 py-3 hover:bg-muted/40 rounded-lg transition-colors">
+                      <Link href="/dashboard/agenda" className="flex items-start gap-3">
+                        <span className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${priorityTone(item.priority)}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground leading-snug truncate">{item.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Clock3 className="w-3 h-3 text-muted-foreground/70" />
+                            <span className="text-[11px] text-muted-foreground">{timeShort(item.date)}</span>
+                            {item.project && (
+                              <span className="text-[11px] text-muted-foreground/70 font-mono">
+                                · {item.project.code}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </motion.section>
+
+          {/* What Changed */}
+          <motion.section {...fade(0.14)} className="rounded-2xl border border-border bg-card">
+            <header className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                  Since you last looked
+                </p>
+                <h2 className="font-display italic text-foreground text-xl leading-tight mt-0.5">
+                  What changed
+                </h2>
+              </div>
+              <Link
+                href="/dashboard/activity"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Activity
+              </Link>
+            </header>
+            <div className="px-2 py-1">
+              {data.whatChanged.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <Sparkles className="w-6 h-6 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground italic font-display">
+                    Nothing new — a quiet stretch.
+                  </p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/60">
+                  {data.whatChanged.slice(0, 6).map((act) => (
+                    <li key={act.id} className="px-3 py-3 hover:bg-muted/40 rounded-lg transition-colors">
+                      <div className="flex items-start gap-3">
+                        <Avatar className="h-7 w-7 mt-0.5 shrink-0">
+                          <AvatarFallback className="text-[10px] font-semibold bg-muted text-foreground">
+                            {act.user?.initials || act.user?.name?.slice(0, 2).toUpperCase() || "·"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground leading-snug">{act.description}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {act.project && (
+                              <span className="text-[11px] font-mono text-muted-foreground/70">
+                                {act.project.code}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-muted-foreground">
+                              {formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </motion.section>
+        </div>
+
+        {/* ── Starred projects (grayscale scroller) ───────── */}
+        {data.starred.length > 0 && (
+          <motion.section {...fade(0.18)} className="space-y-4">
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                  Starred
+                </p>
+                <h2 className="font-display italic text-foreground text-2xl leading-tight mt-0.5">
+                  Projects you watch
+                </h2>
+              </div>
+              <Link
+                href="/dashboard/projects"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                All projects
               </Link>
             </div>
-            {recentActivity.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-6 text-center">{t("dashboard.no_recent_activity")}</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                {recentActivity.slice(0, 8).map((act) => (
-                  <div key={act.id} className="flex items-start gap-3 py-3 border-b border-border/40 last:border-0 md:[&:nth-last-child(2)]:border-0">
-                    <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-                      <AvatarFallback className="text-[9px] font-bold bg-muted text-foreground">
-                        {act.user?.initials || act.user?.name?.slice(0, 2).toUpperCase() || "?"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-foreground leading-snug">{act.description}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {act.project && (
-                          <span className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{act.project.code}</span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(act.createdAt), { addSuffix: true })}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </motion.div>
 
-        {/* ── Row 6: Regional portfolio ── */}
-        {stats.regionStats.length > 0 && (
-          <motion.div {...fade(0.36)}>
-            <div className="bg-card border border-border rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <MapPin className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-semibold">Regional Portfolio</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {COUNTRIES.map((c) => {
-                  const stat = stats.regionStats.find((r) => r.country === c.value);
-                  const pct = stat ? Math.round((stat.count / (stats.projectCount || 1)) * 100) : 0;
-                  return (
-                    <div key={c.value} className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 border border-border/50">
-                      <span className="text-3xl leading-none shrink-0">{c.flag}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-xs font-semibold">{c.label}</p>
-                          <span className="text-sm font-bold">{stat?.count ?? 0}</span>
+            <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin]">
+              {data.starred.map((p) => {
+                const phaseColor = PHASE_COLORS[p.phase] || "#94a3b8";
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/dashboard/projects/${p.code}`}
+                    className="group shrink-0 w-60 rounded-2xl border border-border bg-card hover:border-foreground/25 transition-colors overflow-hidden"
+                  >
+                    <div className="relative aspect-[4/3] bg-muted/60 overflow-hidden">
+                      {p.image ? (
+                        <Image
+                          src={p.image}
+                          alt={p.title}
+                          fill
+                          sizes="240px"
+                          className="object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="font-display italic text-3xl text-muted-foreground/40">
+                            {p.code.slice(0, 2)}
+                          </span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-foreground/30 transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground mt-1">{pct}% of portfolio</p>
-                      </div>
+                      )}
+                      <span
+                        className="absolute top-2 left-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-background/90 backdrop-blur-sm text-foreground"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: phaseColor }} />
+                        {translatePhase(p.phase, t)}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="px-3.5 py-3">
+                      <p className="text-[10px] font-mono text-muted-foreground/80">{p.code}</p>
+                      <p className="text-sm text-foreground leading-snug truncate mt-0.5">{p.title}</p>
+                      {(p.commune || p.country) && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                          {[p.commune, p.country].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
-          </motion.div>
+          </motion.section>
         )}
+
+        {data.starred.length === 0 && (
+          <motion.section {...fade(0.18)} className="rounded-2xl border border-dashed border-border/80 bg-muted/20 px-6 py-8 text-center">
+            <Star className="w-5 h-5 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="font-display italic text-foreground text-lg">
+              Nothing starred yet.
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Star the projects you watch most — they'll appear here.
+            </p>
+            <Link
+              href="/dashboard/projects"
+              className="inline-block mt-3 text-xs font-medium text-foreground underline underline-offset-4 hover:no-underline"
+            >
+              Browse projects
+            </Link>
+          </motion.section>
+        )}
+
+        {/* ── Aria seam (quiet AI invocation) ─────────────── */}
+        <motion.div {...fade(0.22)} className="rounded-2xl bg-muted/40 border border-border/60 px-5 py-4 flex items-center gap-4">
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-card border border-border shrink-0">
+            <Sparkles className="w-4 h-4 text-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-foreground font-medium">
+              Ask Aria about your projects.
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Grounded in your phases, your team, your last meetings — not a generic chatbot.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/ai/gpt"
+            className="text-xs font-medium text-foreground border border-border bg-card px-3 py-1.5 rounded-full hover:border-foreground/40 transition-colors shrink-0"
+          >
+            Open Aria
+          </Link>
+        </motion.div>
 
       </div>
     </div>

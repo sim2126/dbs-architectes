@@ -91,29 +91,47 @@ export function Sidebar({ user }: SidebarProps) {
         >
           {/* ── Logo — height matches the top header (h-14 = 56px) ── */}
           <div className="flex items-center h-14 px-4 border-b border-border shrink-0">
-            <Link href="/dashboard" className="flex items-center gap-3 min-w-0">
-              {/* DBS | Friday logo mark — Logo 2 */}
-              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 shrink-0">
-                {/* Square frame */}
-                <rect x="2" y="2" width="28" height="28" stroke="currentColor" strokeWidth="2.8" className="text-foreground"/>
-                {/* Gold corner accents — top-right and bottom-left */}
-                <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e"/>
-                <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e"/>
-                {/* DBS monogram */}
-                <text x="16" y="20.5" textAnchor="middle" fontSize="9.5" fontWeight="800" fill="currentColor" fontFamily="system-ui, -apple-system, sans-serif" className="text-foreground">DBS</text>
-              </svg>
+            <Link
+              href="/dashboard"
+              aria-label="DBS Friday.com"
+              className="flex items-baseline gap-2 min-w-0 group"
+            >
+              {/* Italic "d" mark — Cormorant Garamond italic, architectural footer cue */}
+              <span
+                aria-hidden
+                className="font-display italic text-foreground leading-none shrink-0 select-none"
+                style={{ fontSize: "30px", fontWeight: 500, transform: "translateY(2px)" }}
+              >
+                d
+              </span>
+
               <AnimatePresence>
                 {!collapsed && (
                   <motion.div
-                    initial={{ opacity: 0, x: -8 }}
+                    initial={{ opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -8 }}
+                    exit={{ opacity: 0, x: -6 }}
                     transition={{ duration: 0.18 }}
-                    className="flex flex-col min-w-0"
+                    className="flex items-baseline gap-1.5 min-w-0"
                   >
-                    <span className="text-sm font-bold leading-none tracking-tight">DBS</span>
-                    <span className="text-[11px] text-muted-foreground leading-none mt-0.5 tracking-wide">
+                    <span className="text-[11px] font-semibold text-foreground tracking-[0.22em] uppercase leading-none">
+                      DBS
+                    </span>
+                    <span
+                      aria-hidden
+                      className="text-muted-foreground/60 leading-none"
+                      style={{ fontSize: "11px" }}
+                    >
+                      ·
+                    </span>
+                    <span className="font-display italic text-foreground leading-none" style={{ fontSize: "17px", fontWeight: 500 }}>
                       Friday
+                    </span>
+                    <span
+                      className="font-display italic text-muted-foreground/70 leading-none tracking-tight"
+                      style={{ fontSize: "10px", letterSpacing: "0.01em" }}
+                    >
+                      .com
                     </span>
                   </motion.div>
                 )}
