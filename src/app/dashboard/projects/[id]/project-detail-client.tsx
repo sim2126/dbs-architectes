@@ -376,7 +376,7 @@ export function ProjectDetailClient({ data }: { data: ProjectDetailData }) {
                 <button
                   disabled
                   title="3D model not linked yet"
-                  className="hidden sm:inline-flex shrink-0 items-center gap-2 px-3.5 py-2 rounded-md bg-friday-fg/80 text-white text-[12px] font-medium tracking-wide cursor-not-allowed opacity-80"
+                  className="hidden sm:inline-flex shrink-0 items-center gap-2 px-3.5 py-2 rounded-md bg-black/40 backdrop-blur-sm text-white/80 border border-white/15 text-[12px] font-medium tracking-wide cursor-not-allowed"
                 >
                   <Boxes className="w-3.5 h-3.5" />
                   Open in 3D
@@ -670,12 +670,13 @@ export function ProjectDetailClient({ data }: { data: ProjectDetailData }) {
               Project
             </p>
 
-            {/* Map thumb */}
+            {/* Map thumb — gradient drawn from Friday tokens so it stays
+                tonally consistent in both light and dark modes. */}
             <div
               className="relative w-full aspect-[2/1] rounded border border-friday-border-soft overflow-hidden"
               style={{
                 background:
-                  "linear-gradient(135deg, #e8e6e0 0%, #f5f5f1 45%, #dfe6e0 100%)",
+                  "linear-gradient(135deg, var(--friday-surface-2) 0%, var(--friday-surface) 45%, var(--friday-surface-3) 100%)",
               }}
             >
               {hasCoords && (
