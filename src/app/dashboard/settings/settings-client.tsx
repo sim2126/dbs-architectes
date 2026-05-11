@@ -14,6 +14,8 @@ import {
 } from "@/components/friday/forms";
 import { cn } from "@/lib/utils";
 import { useLanguageStore, type Language } from "@/lib/language-store";
+import { ACTIONS, type Action } from "@/lib/authz/actions";
+import { authorize, type Resource, type Subject } from "@/lib/authz/authorize";
 
 // ─── Sub-nav data ─────────────────────────────────────────────────
 const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: boolean }[] }[] = [
@@ -420,45 +422,145 @@ function BrandingPanel() {
 }
 
 // ─── Workspace > Members ──────────────────────────────────────────
-type Member = {
-  k: string;
-  name: string;
-  email: string;
-  role: "Owner" | "Admin" | "Editor" | "Viewer";
-  joined: string;
-  last: string;
-  you?: boolean;
+// Roles offered in the picker. Legacy aliases (super_admin, project_manager,
+// viewer, collaborator) are still supported in the DB and display as their
+// canonical label, but new role assignments only use the five below.
+const PICKABLE_ROLES = ["admin", "director", "manager", "employee", "intern"] as const;
+type PickableRole = (typeof PICKABLE_ROLES)[number];
+
+const ROLE_LABEL: Record<string, string> = {
+  super_admin:     "Admin",
+  admin:           "Admin",
+  director:        "Director",
+  manager:         "Manager",
+  project_manager: "Manager",
+  employee:        "Member",
+  collaborator:    "Member",
+  intern:          "Intern",
+  viewer:          "Viewer",
 };
 
-const MEMBERS: Member[] = [
-  { k: "GS", name: "Giulio Sovran", email: "g.sovran@dbsarc.com", role: "Owner", joined: "Mar 2018", last: "now", you: true },
-  { k: "LD", name: "Luigi Di Berardino", email: "l.diberardino@dbsarc.com", role: "Admin", joined: "Mar 2018", last: "2h ago" },
-  { k: "FS", name: "Florencia Schilling", email: "f.schilling@dbsarc.com", role: "Editor", joined: "Sep 2020", last: "5h ago" },
-  { k: "MI", name: "Marco Iebba", email: "m.iebba@dbsarc.com", role: "Editor", joined: "Jan 2022", last: "yesterday" },
-  { k: "EV", name: "Erica Vidale", email: "e.vidale@dbsarc.com", role: "Editor", joined: "Jun 2023", last: "3 days ago" },
-  { k: "NV", name: "Niklas Vogt", email: "n.vogt@dbsarc.com", role: "Viewer", joined: "Feb 2024", last: "2 weeks ago" },
-];
+type MemberRow = {
+  id: string;
+  name: string;
+  email: string;
+  initials: string;
+  role: string;            // raw role value as stored in DB
+  isActive: boolean;
+  joined: string;          // formatted createdAt
+  you: boolean;
+};
 
-function MembersPanel({ onInvite }: { onInvite: () => void }) {
-  const [members, setMembers] = useState<Member[]>(MEMBERS);
-  const [confirm, setConfirm] = useState<{ k: string; name: string; from: string; to: Member["role"] } | null>(null);
+function joinedShort(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+}
 
-  const requestRoleChange = (k: string, newRole: Member["role"]) => {
-    const m = members.find((x) => x.k === k);
+function MembersPanel({
+  onInvite,
+  currentUserId,
+}: {
+  onInvite: () => void;
+  currentUserId: string;
+}) {
+  const [members, setMembers] = useState<MemberRow[] | null>(null);
+  const [confirm, setConfirm] = useState<{
+    id: string;
+    name: string;
+    from: string;
+    to: PickableRole;
+  } | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) throw new Error("load failed");
+        const raw = (await res.json()) as Array<{
+          id: string;
+          name: string | null;
+          email: string;
+          initials: string | null;
+          role: string;
+          isActive: boolean;
+          createdAt: string;
+        }>;
+        if (cancelled) return;
+        setMembers(
+          raw.map((u) => ({
+            id: u.id,
+            name: u.name ?? u.email.split("@")[0],
+            email: u.email,
+            initials: u.initials ?? (u.name ?? "·").slice(0, 2).toUpperCase(),
+            role: u.role,
+            isActive: u.isActive,
+            joined: joinedShort(u.createdAt),
+            you: u.id === currentUserId,
+          })),
+        );
+      } catch {
+        if (!cancelled) showToast("Couldn't load team", "danger");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
+
+  const requestRoleChange = (id: string, newRole: PickableRole) => {
+    const m = members?.find((x) => x.id === id);
     if (!m || m.role === newRole) return;
-    setConfirm({ k, name: m.name, from: m.role, to: newRole });
+    if (m.you) {
+      showToast("You can't change your own role here.", "warning");
+      return;
+    }
+    setConfirm({ id, name: m.name, from: ROLE_LABEL[m.role] ?? m.role, to: newRole });
   };
-  const applyRoleChange = () => {
+
+  const applyRoleChange = async () => {
     if (!confirm) return;
-    setMembers((ms) => ms.map((m) => (m.k === confirm.k ? { ...m, role: confirm.to } : m)));
-    showToast(`${confirm.name} is now ${confirm.to}`);
-    setConfirm(null);
+    setSavingId(confirm.id);
+    try {
+      const res = await fetch(`/api/users/${confirm.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: confirm.to }),
+      });
+      if (!res.ok) {
+        // The new authz layer puts the human-readable deny reason in
+        // body.error — surface it directly instead of a generic message.
+        let reason = "Couldn't change role — try again";
+        try {
+          const j = (await res.json()) as { error?: string };
+          if (j.error) reason = j.error;
+        } catch {
+          /* fall through to generic */
+        }
+        showToast(reason, "danger");
+        return;
+      }
+      setMembers((ms) =>
+        ms?.map((m) => (m.id === confirm.id ? { ...m, role: confirm.to } : m)) ?? null,
+      );
+      showToast(`${confirm.name} is now ${ROLE_LABEL[confirm.to]}`);
+      setConfirm(null);
+    } catch {
+      showToast("Couldn't change role — network error", "danger");
+    } finally {
+      setSavingId(null);
+    }
   };
 
   return (
     <Panel
       title="Members"
-      description={`${members.length} people in your workspace.`}
+      description={
+        members === null
+          ? "Loading…"
+          : `${members.length} ${members.length === 1 ? "person" : "people"} in your workspace.`
+      }
       footer={
         <button
           type="button"
@@ -473,70 +575,98 @@ function MembersPanel({ onInvite }: { onInvite: () => void }) {
       <div className="border border-friday-border-soft rounded overflow-hidden">
         <div
           className="grid px-3.5 py-2.5 bg-friday-surface-2 border-b border-friday-border-soft text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-muted font-semibold gap-3"
-          style={{ gridTemplateColumns: "2fr 2fr 1.1fr 1fr 1fr 0.5fr" }}
+          style={{ gridTemplateColumns: "2fr 2fr 1.1fr 1fr 0.7fr" }}
         >
           <span>Name</span>
           <span>Email</span>
           <span>Role</span>
           <span>Joined</span>
-          <span>Last active</span>
-          <span></span>
+          <span>Status</span>
         </div>
-        {members.map((m, i) => (
-          <div
-            key={m.k}
-            className={cn(
-              "grid px-3.5 py-3 text-[12px] text-friday-fg items-center gap-3",
-              i < members.length - 1 ? "border-b border-friday-border-soft" : "",
-            )}
-            style={{ gridTemplateColumns: "2fr 2fr 1.1fr 1fr 1fr 0.5fr" }}
-          >
-            <span className="inline-flex items-center gap-2.5 min-w-0">
-              <Avatar initials={m.k} size={24} />
-              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{m.name}</span>
-              {m.you ? (
-                <span className="text-[9.5px] text-friday-fg-muted px-1.5 py-px bg-friday-surface-2 rounded-full">
-                  you
-                </span>
-              ) : null}
-            </span>
-            <span className="font-mono text-[11px] text-friday-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">
-              {m.email}
-            </span>
-            <span>
-              <select
-                value={m.role}
-                onChange={(e) => requestRoleChange(m.k, e.target.value as Member["role"])}
-                disabled={m.role === "Owner"}
+        {members === null ? (
+          <div className="px-3.5 py-6 text-[12px] text-friday-fg-muted italic">Loading team…</div>
+        ) : members.length === 0 ? (
+          <div className="px-3.5 py-6 text-[12px] text-friday-fg-muted italic">No members yet.</div>
+        ) : (
+          members.map((m, i) => {
+            const isRoleSaving = savingId === m.id;
+            const pickerValue = (PICKABLE_ROLES as readonly string[]).includes(m.role)
+              ? m.role
+              : ""; // Legacy role — picker shows "Change role to…" placeholder
+            return (
+              <div
+                key={m.id}
                 className={cn(
-                  "h-[26px] pl-2 pr-6 bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] text-[11px] appearance-none",
-                  m.role === "Owner" ? "opacity-60 cursor-default" : "cursor-pointer",
+                  "grid px-3.5 py-3 text-[12px] text-friday-fg items-center gap-3",
+                  i < members.length - 1 ? "border-b border-friday-border-soft" : "",
+                  !m.isActive && "opacity-60",
                 )}
+                style={{ gridTemplateColumns: "2fr 2fr 1.1fr 1fr 0.7fr" }}
               >
-                {(["Owner", "Admin", "Editor", "Viewer"] as Member["role"][]).map((r) => (
-                  <option key={r} value={r} disabled={r === "Owner" && m.role !== "Owner"}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </span>
-            <span className="text-[11px] text-friday-fg-muted">{m.joined}</span>
-            <span className="text-[11px] text-friday-fg-subtle">{m.last}</span>
-            <span className="text-right">
-              <button
-                type="button"
-                aria-label="More"
-                className="bg-transparent border-0 p-1 cursor-pointer text-friday-fg-muted leading-none rounded-sm hover:text-friday-fg"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="6" r="1.6" />
-                  <circle cx="12" cy="12" r="1.6" />
-                  <circle cx="12" cy="18" r="1.6" />
-                </svg>
-              </button>
-            </span>
-          </div>
-        ))}
+                <span className="inline-flex items-center gap-2.5 min-w-0">
+                  <Avatar initials={m.initials} size={24} />
+                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{m.name}</span>
+                  {m.you ? (
+                    <span className="text-[9.5px] text-friday-fg-muted px-1.5 py-px bg-friday-surface-2 rounded-full">
+                      you
+                    </span>
+                  ) : null}
+                </span>
+                <span className="font-mono text-[11px] text-friday-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">
+                  {m.email}
+                </span>
+                <span>
+                  <select
+                    value={pickerValue}
+                    onChange={(e) => requestRoleChange(m.id, e.target.value as PickableRole)}
+                    disabled={m.you || isRoleSaving}
+                    title={
+                      m.you
+                        ? "Ask another admin to change your role"
+                        : pickerValue === ""
+                          ? `Current: ${ROLE_LABEL[m.role] ?? m.role} — pick a new role`
+                          : undefined
+                    }
+                    className={cn(
+                      "h-[26px] pl-2 pr-6 bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] text-[11px] appearance-none",
+                      m.you || isRoleSaving ? "opacity-60 cursor-default" : "cursor-pointer",
+                    )}
+                  >
+                    {pickerValue === "" && (
+                      <option value="" disabled>
+                        {ROLE_LABEL[m.role] ?? m.role}
+                      </option>
+                    )}
+                    {PICKABLE_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABEL[r] ?? r}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                <span className="text-[11px] text-friday-fg-muted">{m.joined}</span>
+                <span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10px] font-medium tracking-wide",
+                    )}
+                    style={
+                      m.isActive
+                        ? { background: "#e8efe6", color: "#3f6534" }
+                        : { background: "var(--friday-surface-2)", color: "var(--friday-fg-subtle)" }
+                    }
+                  >
+                    <span
+                      className="w-[5px] h-[5px] rounded-full"
+                      style={{ background: m.isActive ? "#3f6534" : "var(--friday-fg-subtle)" }}
+                    />
+                    {m.isActive ? "Active" : "Inactive"}
+                  </span>
+                </span>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {confirm ? (
@@ -556,7 +686,7 @@ function MembersPanel({ onInvite }: { onInvite: () => void }) {
             <p className="text-[12px] text-friday-fg-muted m-0 mb-4 leading-relaxed">
               {confirm.name} will go from{" "}
               <strong className="text-friday-fg font-medium">{confirm.from}</strong> to{" "}
-              <strong className="text-friday-fg font-medium">{confirm.to}</strong>.
+              <strong className="text-friday-fg font-medium">{ROLE_LABEL[confirm.to] ?? confirm.to}</strong>.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -582,94 +712,144 @@ function MembersPanel({ onInvite }: { onInvite: () => void }) {
 }
 
 // ─── Workspace > Permissions ──────────────────────────────────────
-const RESOURCES = ["Projects", "Threads", "Sheets", "Tasks", "Insights", "Settings"] as const;
-const ROLES = ["Admin", "Editor", "Viewer"] as const;
+// The matrix is derived from the live authorize() function — what you see
+// IS what the gate will decide. Editing is disabled because the policy
+// lives in code (src/lib/authz/authorize.ts); a future iteration can
+// move it to a DB-backed policy and make these cells editable.
 
-type ResourceName = (typeof RESOURCES)[number];
-type RoleName = (typeof ROLES)[number];
-type Perms = Record<RoleName, Record<ResourceName, { r: boolean; w: boolean; d: boolean }>>;
+const PERM_ROLES: { id: PickableRole; label: string }[] = [
+  { id: "admin",    label: "Admin"    },
+  { id: "director", label: "Director" },
+  { id: "manager",  label: "Manager"  },
+  { id: "employee", label: "Member"   },
+  { id: "intern",   label: "Intern"   },
+];
 
-function buildInitialPerms(): Perms {
-  const init = {} as Perms;
-  ROLES.forEach((role) => {
-    init[role] = {} as Perms[RoleName];
-    RESOURCES.forEach((res) => {
-      const fullW = role === "Admin" || (role === "Editor" && res !== "Settings");
-      const fullD = role === "Admin";
-      init[role][res] = { r: true, w: fullW, d: fullD };
-    });
-  });
-  return init;
+// Group actions by resource prefix for readable presentation.
+const RESOURCE_GROUPS: { key: string; label: string }[] = [
+  { key: "project",  label: "Projects" },
+  { key: "thread",   label: "Threads" },
+  { key: "user",     label: "Users" },
+  { key: "agenda",   label: "Agenda" },
+  { key: "chat",     label: "Chat" },
+  { key: "sheet",    label: "Sheets" },
+  { key: "task",     label: "Tasks" },
+  { key: "ai",       label: "AI" },
+  { key: "billing",  label: "Billing" },
+  { key: "settings", label: "Settings" },
+];
+
+// Build a synthetic Subject + Resource for a given role/action combo so
+// authorize() can evaluate "in principle, can this role do this?".
+// We grant a permissive context (global region access, editor-tier
+// project assignment, own ownership for self-scoped resources) so the
+// matrix reflects "yes if the user is otherwise eligible".
+function previewSubject(role: PickableRole): Subject {
+  return {
+    userId: "__preview__",
+    role,
+    regions: [
+      { country: "CH", accessLevel: "manage" },
+      { country: "IT", accessLevel: "manage" },
+      { country: "IN", accessLevel: "manage" },
+    ],
+  };
+}
+
+function previewResourceForAction(action: Action, subject: Subject): Resource {
+  const prefix = action.split(":")[0];
+  switch (prefix) {
+    case "project":
+    case "thread":
+      return { kind: "project", id: "__preview__", country: "CH", assignmentRole: "editor" };
+    case "user":
+      return { kind: "user", id: "__other__" };
+    case "agenda":
+      return { kind: "agenda", userId: subject.userId, projectId: null };
+    case "chat":
+      return { kind: "chat", channelId: "__preview__", messageUserId: subject.userId };
+    case "sheet":
+      return { kind: "sheet", ownerId: subject.userId };
+    case "task":
+      return { kind: "task", userId: subject.userId, projectId: null };
+    case "billing":
+      return { kind: "billing" };
+    case "ai":
+      return { kind: "ai" };
+    case "settings": {
+      const isSelf = action.includes("self");
+      const scope = isSelf
+        ? "self"
+        : action.includes("workspace")
+          ? "workspace"
+          : action.includes("integrations")
+            ? "integrations"
+            : "permissions";
+      return {
+        kind: "settings",
+        scope,
+        targetUserId: isSelf ? subject.userId : undefined,
+      };
+    }
+    default:
+      return null;
+  }
 }
 
 function PermissionsPanel() {
-  const [perms, setPerms] = useState<Perms>(() => buildInitialPerms());
-  const [orig, setOrig] = useState<Perms>(perms);
-  const dirty = JSON.stringify(perms) !== JSON.stringify(orig);
-
-  const toggle = (role: RoleName, res: ResourceName, k: "r" | "w" | "d") => {
-    setPerms((p) => ({
-      ...p,
-      [role]: { ...p[role], [res]: { ...p[role][res], [k]: !p[role][res][k] } },
-    }));
-  };
+  const allActions = (Object.keys(ACTIONS) as Action[]).sort();
+  const byGroup = RESOURCE_GROUPS.map((g) => ({
+    ...g,
+    actions: allActions.filter((a) => a.split(":")[0] === g.key),
+  })).filter((g) => g.actions.length > 0);
 
   return (
     <Panel
       title="Permissions"
-      description="Fine-grained access for each role. Owners always have everything."
-      dirty={dirty}
-      onSave={() => {
-        setOrig(perms);
-        showToast("Permissions saved");
-      }}
-      onCancel={() => setPerms(orig)}
+      description="Derived from the live policy. Read-only — the policy lives in code (src/lib/authz/authorize.ts)."
     >
-      <div className="border border-friday-border-soft rounded overflow-hidden">
-        <div
-          className="grid px-3.5 py-2.5 bg-friday-surface-2 border-b border-friday-border-soft text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-muted font-semibold"
-          style={{ gridTemplateColumns: "1.4fr repeat(3, 1fr)" }}
-        >
-          <span>Resource</span>
-          {ROLES.map((r) => (
-            <span key={r} className="text-center">
-              {r}
-            </span>
-          ))}
-        </div>
-        {RESOURCES.map((res, i) => (
-          <div
-            key={res}
-            className={cn(
-              "grid px-3.5 py-2.5 text-[12px] text-friday-fg items-center",
-              i < RESOURCES.length - 1 ? "border-b border-friday-border-soft" : "",
-            )}
-            style={{ gridTemplateColumns: "1.4fr repeat(3, 1fr)" }}
-          >
-            <span className="font-medium">{res}</span>
-            {ROLES.map((role) => (
-              <div key={role} className="flex justify-center gap-3">
-                {(["r", "w", "d"] as const).map((k) => {
-                  const v = perms[role][res][k];
-                  const label = { r: "R", w: "W", d: "D" }[k];
+      <div className="space-y-5">
+        {byGroup.map((group) => (
+          <div key={group.key} className="border border-friday-border-soft rounded overflow-hidden">
+            <div
+              className="grid px-3.5 py-2.5 bg-friday-surface-2 border-b border-friday-border-soft text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-muted font-semibold gap-3"
+              style={{ gridTemplateColumns: `2.2fr repeat(${PERM_ROLES.length}, 1fr)` }}
+            >
+              <span>{group.label}</span>
+              {PERM_ROLES.map((r) => (
+                <span key={r.id} className="text-center">{r.label}</span>
+              ))}
+            </div>
+            {group.actions.map((action, i) => (
+              <div
+                key={action}
+                className={cn(
+                  "grid px-3.5 py-2.5 text-[12px] text-friday-fg items-center gap-3",
+                  i < group.actions.length - 1 ? "border-b border-friday-border-soft" : "",
+                )}
+                style={{ gridTemplateColumns: `2.2fr repeat(${PERM_ROLES.length}, 1fr)` }}
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-[10.5px] text-friday-fg-muted">{action}</div>
+                  <div className="text-[11.5px] text-friday-fg leading-snug">
+                    {ACTIONS[action]}
+                  </div>
+                </div>
+                {PERM_ROLES.map((r) => {
+                  const subj = previewSubject(r.id);
+                  const res = previewResourceForAction(action, subj);
+                  const decision = authorize(subj, action, res);
                   return (
-                    <label
-                      key={k}
-                      className="inline-flex items-center gap-1 cursor-pointer select-none"
-                    >
-                      <span
-                        onClick={() => toggle(role, res, k)}
-                        className={cn(
-                          "w-4 h-4 rounded-sm flex items-center justify-center transition-colors duration-150 border-[1.5px]",
-                          v
-                            ? "bg-friday-accent border-friday-accent"
-                            : "bg-friday-bg border-friday-border",
-                        )}
-                      >
-                        {v ? (
+                    <div key={r.id} className="flex justify-center">
+                      {decision.allow ? (
+                        <span
+                          className="inline-flex w-5 h-5 rounded-sm items-center justify-center"
+                          style={{ background: "var(--friday-accent)" }}
+                          title="Allowed"
+                        >
                           <svg
-                            width="10"
-                            height="10"
+                            width="11"
+                            height="11"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="#fff"
@@ -679,23 +859,27 @@ function PermissionsPanel() {
                           >
                             <path d="M5 12.5l4.5 4.5L19 7" />
                           </svg>
-                        ) : null}
-                      </span>
-                      <span
-                        className={cn(
-                          "font-mono text-[9.5px] tracking-wider",
-                          v ? "text-friday-fg" : "text-friday-fg-subtle",
-                        )}
-                      >
-                        {label}
-                      </span>
-                    </label>
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex w-5 h-5 rounded-sm items-center justify-center text-friday-fg-subtle"
+                          title={decision.reason}
+                        >
+                          —
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             ))}
           </div>
         ))}
+        <p className="text-[11px] text-friday-fg-subtle italic m-0">
+          Hover a dash to see the deny reason. Some actions also depend on
+          per-project assignment role or regional access — this preview
+          grants both, so the matrix shows the best case for each role.
+        </p>
       </div>
     </Panel>
   );
@@ -1152,7 +1336,13 @@ function InviteDrawer({
 }
 
 // ─── Page ─────────────────────────────────────────────────────────
-export function SettingsClient({ isAdmin }: { isAdmin: boolean }) {
+export function SettingsClient({
+  isAdmin,
+  currentUserId,
+}: {
+  isAdmin: boolean;
+  currentUserId: string;
+}) {
   const [active, setActive] = useState("profile");
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -1182,7 +1372,12 @@ export function SettingsClient({ isAdmin }: { isAdmin: boolean }) {
       case "branding":
         return <BrandingPanel />;
       case "members":
-        return <MembersPanel onInvite={() => setInviteOpen(true)} />;
+        return (
+          <MembersPanel
+            onInvite={() => setInviteOpen(true)}
+            currentUserId={currentUserId}
+          />
+        );
       case "permissions":
         return <PermissionsPanel />;
       case "plan":
