@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { isManagerOrAbove } from "@/lib/permissions";
+import { PermissionError, permissionResponse, requirePermission } from "@/lib/authz";
 
 function boundedLimit(value: string | null, fallback = 100, max = 500) {
   const parsed = Number(value);
@@ -9,6 +9,10 @@ function boundedLimit(value: string | null, fallback = 100, max = 500) {
   return Math.min(Math.floor(parsed), max);
 }
 
+// List endpoints don't run authorize() — the contract there is "filter
+// at query time by what the caller is allowed to see", not gate the
+// whole list. Audit log stays for per-resource decisions; coarse access
+// logging belongs to the proxy/CloudWatch layer.
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,11 +71,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  if (!isManagerOrAbove(session.user.role)) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  let subjectUserId: string;
+  try {
+    const { subject } = await requirePermission(request, "project:create", {
+      context: { route: "POST /api/projects" },
+    });
+    subjectUserId = subject.userId;
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
   }
 
   const body = await request.json();
@@ -110,7 +118,7 @@ export async function POST(request: NextRequest) {
       type: "created",
       description: `Progetto "${project.title}" creato`,
       projectId: project.id,
-      userId: session.user.id,
+      userId: subjectUserId,
     },
   });
 

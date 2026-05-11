@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  loadProjectForAuth,
+  PermissionError,
+  permissionResponse,
+  requirePermission,
+} from "@/lib/authz";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -8,26 +13,9 @@ function boundedLimit(value: string | null, fallback = 50, max = 100) {
   return Math.min(Math.floor(parsed), max);
 }
 
-// ── Access gate ───────────────────────────────────────────────────────────────
-// Admins and super_admins can access any project thread.
-// Project managers can access any project thread (firm-wide visibility).
-// Other roles must be assigned to the project.
-
-async function assertProjectAccess(projectId: string, userId: string, role: string) {
-  const managerRoles = new Set(["admin", "super_admin", "project_manager"]);
-  if (managerRoles.has(role)) return true;
-
-  const assignment = await prisma.projectAssignment.findUnique({
-    where: { projectId_userId: { projectId, userId } },
-    select: { userId: true },
-  });
-
-  return assignment !== null;
-}
-
-// ── Get (or lazily create) the project thread channel ────────────────────────
-// The channel is only created/joined if the caller already has access.
-
+// Lazy-get/create the channel for this project. Always called AFTER
+// requirePermission() has approved the action, so the membership upsert
+// is only triggered for callers who already have access.
 async function getOrCreateThreadChannel(projectId: string, userId: string) {
   let channel = await prisma.channel.findFirst({
     where: { projectId, type: "project" },
@@ -44,7 +32,6 @@ async function getOrCreateThreadChannel(projectId: string, userId: string) {
     });
   }
 
-  // Ensure the caller is a member so they get Pusher events
   await prisma.channelMember.upsert({
     where:  { channelId_userId: { channelId: channel.id, userId } },
     create: { channelId: channel.id, userId },
@@ -56,20 +43,27 @@ async function getOrCreateThreadChannel(projectId: string, userId: string) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await params;
   const { searchParams } = new URL(request.url);
   const cursor = searchParams.get("cursor") || "";
   const limit = boundedLimit(searchParams.get("limit"));
 
-  const hasAccess = await assertProjectAccess(id, session.user.id, session.user.role);
-  if (!hasAccess) return Response.json({ error: "Forbidden" }, { status: 403 });
+  let subjectUserId: string;
+  try {
+    const { subject, resource } = await requirePermission(request, "thread:read", {
+      loadResource: (s) => loadProjectForAuth(id, s.userId),
+      context: { route: `GET /api/projects/${id}/thread` },
+    });
+    if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+    subjectUserId = subject.userId;
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
+  }
 
-  const channel = await getOrCreateThreadChannel(id, session.user.id);
+  const channel = await getOrCreateThreadChannel(id, subjectUserId);
 
   const messages = await prisma.message.findMany({
     where: {
@@ -104,25 +98,32 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await params;
 
-  const hasAccess = await assertProjectAccess(id, session.user.id, session.user.role);
-  if (!hasAccess) return Response.json({ error: "Forbidden" }, { status: 403 });
+  let subjectUserId: string;
+  try {
+    const { subject, resource } = await requirePermission(request, "thread:post", {
+      loadResource: (s) => loadProjectForAuth(id, s.userId),
+      context: { route: `POST /api/projects/${id}/thread` },
+    });
+    if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+    subjectUserId = subject.userId;
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
+  }
 
   const { content, parentId } = await request.json();
   if (!content?.trim()) return Response.json({ error: "Empty message" }, { status: 400 });
 
-  const channel = await getOrCreateThreadChannel(id, session.user.id);
+  const channel = await getOrCreateThreadChannel(id, subjectUserId);
 
   const message = await prisma.message.create({
     data: {
       channelId: channel.id,
-      userId:    session.user.id,
+      userId:    subjectUserId,
       content:   content.trim(),
       parentId:  parentId ?? null,
     },

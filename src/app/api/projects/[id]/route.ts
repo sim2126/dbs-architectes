@@ -1,21 +1,38 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  loadProjectForAuth,
+  PermissionError,
+  permissionResponse,
+  requirePermission,
+} from "@/lib/authz";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await params;
+
+  let subjectUserId: string;
+  try {
+    const { subject, resource } = await requirePermission(request, "project:read", {
+      loadResource: (s) => loadProjectForAuth(id, s.userId),
+      context: { route: `GET /api/projects/${id}` },
+    });
+    // null resource means the project doesn't exist — surface a clean 404
+    // rather than the 403 authorize() returns for a missing project.
+    if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+    subjectUserId = subject.userId;
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
+  }
+  void subjectUserId;
+
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
-      assignments: {
-        include: { user: true },
-      },
+      assignments: { include: { user: true } },
       agendaItems: true,
       activities: {
         include: { user: true },
@@ -31,28 +48,29 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
   const { id } = await params;
   const body = await request.json();
 
-  const isAdmin =
-    session.user.role === "super_admin" ||
-    session.user.role === "admin" ||
-    session.user.role === "project_manager";
+  // Narrow vs broad update: assignees can change workStatus only;
+  // everything else requires "project:update" which goes through the
+  // assignment-role / region-access checks in authorize().
+  const workStatusOnly =
+    Object.keys(body).length === 1 && body.workStatus !== undefined;
+  const action = workStatusOnly ? "project:update.status" : "project:update";
 
-  // Any assignee can update workStatus; all other fields require admin
-  const isAssignee = await prisma.projectAssignment.findUnique({
-    where: { projectId_userId: { projectId: id, userId: session.user.id } },
-  });
-
-  const workStatusOnly = Object.keys(body).length === 1 && body.workStatus !== undefined;
-
-  if (!isAdmin && !(isAssignee && workStatusOnly)) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  let subjectUserId: string;
+  try {
+    const { subject, resource } = await requirePermission(request, action, {
+      loadResource: (s) => loadProjectForAuth(id, s.userId),
+      context: { route: `PATCH /api/projects/${id}`, requestId: action },
+    });
+    if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+    subjectUserId = subject.userId;
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
   }
 
   const project = await prisma.project.update({
@@ -83,7 +101,7 @@ export async function PATCH(
       type: "updated",
       description: `Progetto "${project.title}" aggiornato`,
       projectId: project.id,
-      userId: session.user.id,
+      userId: subjectUserId,
     },
   });
 
@@ -92,17 +110,20 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
-
-  const canDelete =
-    session.user.role === "super_admin" || session.user.role === "admin";
-
-  if (!canDelete) return Response.json({ error: "Forbidden" }, { status: 403 });
-
   const { id } = await params;
+
+  try {
+    const { resource } = await requirePermission(request, "project:delete", {
+      loadResource: (s) => loadProjectForAuth(id, s.userId),
+      context: { route: `DELETE /api/projects/${id}` },
+    });
+    if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+  } catch (e) {
+    if (e instanceof PermissionError) return permissionResponse(e);
+    throw e;
+  }
 
   await prisma.project.delete({ where: { id } });
   return Response.json({ success: true });
