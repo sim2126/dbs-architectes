@@ -7,5 +7,10 @@ export default async function SettingsPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  return <SettingsClient isAdmin={isAdmin(session.user.role)} />;
+  return (
+    <SettingsClient
+      isAdmin={isAdmin(session.user.role)}
+      currentUserId={session.user.id}
+    />
+  );
 }
