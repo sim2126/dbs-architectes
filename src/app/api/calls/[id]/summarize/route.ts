@@ -15,7 +15,7 @@ import {
   getRoomRecordings,
   getRecordingAccessLink,
 } from "@/platform/integrations/daily";
-import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
+import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 
 export const maxDuration = 120;
 

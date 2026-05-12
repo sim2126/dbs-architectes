@@ -1,6 +1,6 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { DashboardClient, type DashboardData, type RoleTier } from "./dashboard-client";
+import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
 
 function roleTier(role?: string | null): RoleTier {
   if (role === "super_admin" || role === "admin") return "admin";

@@ -1,7 +1,7 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { redirect } from "next/navigation";
-import { ChatClient } from "./chat-client";
+import { ChatClient } from "@/features/chat";
 
 export default async function ChatPage() {
   const session = await auth();

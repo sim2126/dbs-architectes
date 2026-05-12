@@ -28,7 +28,7 @@ import { cn } from "@/ui/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { CommandPalette } from "@/ui/components/command-palette";
 import { useT } from "@/i18n/translations";
-import { useUserPrefs } from "@/lib/user-prefs-store";
+import { useUserPrefs } from "@/ui/stores/user-prefs-store";
 import { StarredSidebarSection } from "@/ui/layout/starred-sidebar-section";
 
 const navItems = [

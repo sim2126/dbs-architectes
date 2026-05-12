@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import type { Block } from "@/lib/agent/blocks";
+import type { Block } from "@/features/ai/server/agent/blocks";
 import type { Prisma } from "@prisma/client";
 
 // GET /api/ai-saved — list user's saved insights, pinned-first

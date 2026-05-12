@@ -34,9 +34,9 @@ import {
   AiArtifact,
   generateSessionTitle,
   PersistedToolStep,
-} from "@/lib/agent/artifacts";
-import type { Block } from "@/lib/agent/blocks";
-import { BlocksView } from "@/components/agent-blocks";
+} from "@/features/ai/server/agent/artifacts";
+import type { Block } from "@/features/ai/server/agent/blocks";
+import { BlocksView } from "@/features/ai/client/agent-blocks";
 
 // ─── Types ────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ import type {
   ProseBlock,
   StatCardsBlock,
   TableBlock,
-} from "@/lib/agent/blocks";
+} from "@/features/ai/server/agent/blocks";
 
 // ── Prose ─────────────────────────────────────────────────────────────────
 

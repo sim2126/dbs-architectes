@@ -6,8 +6,8 @@ import {
   parseStoredAssistantMessage,
   PersistedToolStep,
   serializeAssistantMessage,
-} from "@/lib/agent/artifacts";
-import type { Block } from "@/lib/agent/blocks";
+} from "@/features/ai/server/agent/artifacts";
+import type { Block } from "@/features/ai/server/agent/blocks";
 
 // GET /api/ai-chats/[id] — get messages for a session
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

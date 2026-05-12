@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/platform/auth";
 import { isAdmin } from "@/platform/authz/permissions";
-import { SettingsClient } from "./settings-client";
+import { SettingsClient } from "@/features/settings";
 
 export default async function SettingsPage() {
   const session = await auth();
