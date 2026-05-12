@@ -29,7 +29,7 @@ import { Button } from "@/ui/components/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/ui/utils";
-import { AriaLogo } from "@/ui/components/aria-logo";
+import { AiLogo } from "@/features/ai/client/ai-logo";
 import {
   AiArtifact,
   generateSessionTitle,
@@ -164,7 +164,7 @@ function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?
 
         <span className="flex-1 text-xs font-medium text-muted-foreground">
           {isStreaming && steps.length === 0
-            ? "Aria is thinking…"
+            ? "DBS AI is thinking…"
             : allDone
             ? `Used ${steps.length} tool${steps.length !== 1 ? "s" : ""}`
             : `Running ${steps.length - doneCount} of ${steps.length} tools…`}
@@ -416,7 +416,7 @@ function MessageBubble({
       className="flex gap-3 justify-start"
     >
       <div className="shrink-0 mt-1">
-        <AriaLogo variant="icon" size={36} />
+        <AiLogo variant="icon" size={36} />
       </div>
 
       <div className="flex-1 min-w-0 max-w-[90%] space-y-1">
@@ -1135,7 +1135,7 @@ export default function DBSGPTPage() {
         {/* Top bar */}
         <div className="shrink-0 border-b border-border bg-card/80 px-6 py-3 backdrop-blur-sm flex items-center justify-between">
           <span className="text-sm font-medium truncate max-w-xs">
-            {activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title ?? "Chat" : "DBS GPT — Aria"}
+            {activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title ?? "Chat" : "DBS AI"}
           </span>
           <div className="flex items-center gap-2">
             {messages.length > 0 && (
@@ -1157,16 +1157,16 @@ export default function DBSGPTPage() {
               className="mx-auto flex h-full max-w-2xl items-center justify-center px-6 py-10"
             >
               <div className="rounded-[28px] border border-border bg-card p-8 text-center shadow-sm">
-                <AriaLogo variant="icon" size={48} />
+                <AiLogo variant="icon" size={48} />
                 <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-                  Aria · scheduled break
+                  DBS AI · scheduled break
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold leading-tight">
                   Back online {aiStatus.eta ?? "soon"}
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
                   {aiStatus.message ??
-                    "Aria is taking a short planned break. She'll be back online shortly."}
+                    "DBS AI is taking a short planned break. It will be back online shortly."}
                 </p>
                 <p className="mt-5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground/60">
                   DBS Architectes · Friday
@@ -1176,7 +1176,7 @@ export default function DBSGPTPage() {
           ) : messages.length === 0 ? (
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl px-6 py-10">
               <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#155e75_100%)] px-8 py-10 text-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
-                <AriaLogo variant="hero" size={56} />
+                <AiLogo variant="hero" size={56} />
                 <h2 className="mt-6 text-3xl font-semibold tracking-tight">
                   Ask anything about DBS projects, deadlines, team, or regulations.
                 </h2>
@@ -1225,7 +1225,7 @@ export default function DBSGPTPage() {
               placeholder={
                 aiStatus.enabled
                   ? "Ask about projects, deadlines, team workload, regulations…"
-                  : `Aria is offline — back ${aiStatus.eta ?? "soon"}`
+                  : `DBS AI is offline — back ${aiStatus.eta ?? "soon"}`
               }
               value={input}
               onChange={handleTextareaChange}

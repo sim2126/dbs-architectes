@@ -346,14 +346,14 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
           </motion.section>
         )}
 
-        {/* ── Aria seam (quiet AI invocation) ─────────────── */}
+        {/* ── DBS AI seam (quiet AI invocation) ─────────── */}
         <motion.div {...fade(0.22)} className="rounded-2xl bg-muted/40 border border-border/60 px-5 py-4 flex items-center gap-4">
           <div className="flex items-center justify-center w-9 h-9 rounded-full bg-card border border-border shrink-0">
             <Sparkles className="w-4 h-4 text-foreground" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-foreground font-medium">
-              Ask Aria about your projects.
+              Ask DBS AI about your projects.
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
               Grounded in your phases, your team, your last meetings — not a generic chatbot.
@@ -363,7 +363,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
             href="/dashboard/ai/gpt"
             className="text-xs font-medium text-foreground border border-border bg-card px-3 py-1.5 rounded-full hover:border-foreground/40 transition-colors shrink-0"
           >
-            Open Aria
+            Open DBS AI
           </Link>
         </motion.div>
 

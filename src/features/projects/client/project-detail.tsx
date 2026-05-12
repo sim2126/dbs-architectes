@@ -328,8 +328,8 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
                 />
               </button>
               <button
-                aria-label="Ask Aria"
-                title="Ask Aria"
+                aria-label="Ask DBS AI"
+                title="Ask DBS AI"
                 className="w-8 h-8 rounded-md backdrop-blur-sm bg-black/30 text-white/80 hover:bg-black/45 hover:text-white flex items-center justify-center transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5" />

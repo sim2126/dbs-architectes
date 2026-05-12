@@ -1,5 +1,5 @@
 /**
- * AI feature — agent runtime + Aria assistant UI.
+ * AI feature — agent runtime + DBS AI assistant UI.
  *
  * server/agent/ holds the agent runtime (artifacts, blocks, prompt,
  * tools, context reconstruction). It is server-only and deep-imported
@@ -10,4 +10,5 @@
  * and domain-level AI flags.
  */
 export * from "./client/agent-blocks";
+export * from "./client/ai-logo";
 export * from "./domain/ai-flags";
