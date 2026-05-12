@@ -1,5 +1,5 @@
 import { prisma } from "@/platform/db";
-import { StatisticsClient } from "./statistics-client";
+import { StatisticsClient } from "@/features/statistics";
 
 export default async function StatisticsPage() {
   const [rawProjects, rawUsers] = await Promise.all([

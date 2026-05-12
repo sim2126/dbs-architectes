@@ -2,12 +2,12 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
-import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
-import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
-import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/lib/agent/blocks";
-import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
-import { reconstructHistory } from "@/lib/agent/context-reconstruction";
+import { DBS_AGENT_SYSTEM_PROMPT } from "@/features/ai/server/agent/prompt";
+import { AGENT_TOOLS, executeTool } from "@/features/ai/server/agent/tools";
+import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifacts";
+import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/features/ai/server/agent/blocks";
+import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
+import { reconstructHistory } from "@/features/ai/server/agent/context-reconstruction";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;

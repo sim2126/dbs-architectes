@@ -2,7 +2,7 @@ import { auth } from "@/platform/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/platform/db";
 import { isAdmin } from "@/platform/authz/permissions";
-import { UsersClient } from "./users-client";
+import { UsersClient } from "@/features/users";
 
 export default async function UsersPage() {
   const session = await auth();

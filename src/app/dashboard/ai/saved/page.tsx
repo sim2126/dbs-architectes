@@ -9,8 +9,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Bookmark, Loader2, Pin, PinOff, Trash2, Pencil } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/ui/utils";
-import { BlocksView } from "@/components/agent-blocks";
-import type { Block } from "@/lib/agent/blocks";
+import { BlocksView } from "@/features/ai/client/agent-blocks";
+import type { Block } from "@/features/ai/server/agent/blocks";
 
 interface SavedItem {
   id: string;

@@ -1,5 +1,5 @@
 import { auth } from "@/platform/auth";
-import { LandingPage } from "@/components/marketing/landing-page";
+import { LandingPage } from "@/ui/marketing/landing-page";
 
 export default async function RootPage() {
   const session = await auth();

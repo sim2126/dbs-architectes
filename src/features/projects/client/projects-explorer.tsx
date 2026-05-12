@@ -23,7 +23,7 @@ import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIE
 import { cn } from "@/ui/utils";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/i18n/translations";
-import { useUserPrefs } from "@/lib/user-prefs-store";
+import { useUserPrefs } from "@/ui/stores/user-prefs-store";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Project {

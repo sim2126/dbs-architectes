@@ -1,6 +1,6 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { AgendaClient } from "./agenda-client";
+import { AgendaClient } from "@/features/agenda";
 
 export default async function AgendaPage() {
   const session = await auth();

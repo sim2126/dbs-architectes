@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import OpenAI from "openai";
-import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
+import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 
 // Full language names for the model prompt
 const LANG_NAMES: Record<string, string> = {

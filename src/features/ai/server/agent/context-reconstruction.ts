@@ -15,7 +15,7 @@
 // token window.
 
 import type OpenAI from "openai";
-import { parseStoredAssistantMessage } from "@/lib/agent/artifacts";
+import { parseStoredAssistantMessage } from "@/features/ai/server/agent/artifacts";
 
 /** Keep this many of the latest assistant turns with full tool replays. */
 export const FULL_TOOL_TURNS = 5;

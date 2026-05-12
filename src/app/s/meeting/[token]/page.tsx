@@ -1,7 +1,7 @@
 import { prisma } from "@/platform/db";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
-import { SummaryRenderer } from "@/components/calls/summary-renderer";
+import { SummaryRenderer } from "@/features/calls/client/summary-renderer";
 
 export const dynamic = "force-dynamic";
 
