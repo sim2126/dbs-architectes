@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bookmark, Loader2, Pin, PinOff, Trash2, Pencil } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn } from "@/ui/utils";
 import { BlocksView } from "@/components/agent-blocks";
 import type { Block } from "@/lib/agent/blocks";
 

@@ -4,8 +4,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { ArrowUpRight, CalendarClock, Clock3, Sparkles, Star } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { PHASE_COLORS } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/ui/components/avatar";
+import { PHASE_COLORS } from "@/ui/utils";
 import { translatePhase, useT } from "@/lib/translations";
 import { formatDistanceToNow } from "date-fns";
 

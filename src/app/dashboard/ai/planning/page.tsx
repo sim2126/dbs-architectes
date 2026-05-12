@@ -15,17 +15,17 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Badge } from "@/ui/components/badge";
+import { Button } from "@/ui/components/button";
+import { Card, CardContent } from "@/ui/components/card";
+import { Input } from "@/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/ui/components/select";
 
 const ARCHETYPES = [
   {

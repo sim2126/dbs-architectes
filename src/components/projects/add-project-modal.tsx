@@ -8,19 +8,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/ui/components/dialog";
+import { Button } from "@/ui/components/button";
+import { Input } from "@/ui/components/input";
+import { Label } from "@/ui/components/label";
+import { Textarea } from "@/ui/components/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/lib/utils";
+} from "@/ui/components/select";
+import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
 
 interface User {
   id: string;

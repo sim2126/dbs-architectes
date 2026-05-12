@@ -20,8 +20,8 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@/ui/components/button";
+import { cn } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProjectThreadPanel } from "@/components/project-thread-panel";
 

@@ -8,8 +8,8 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, Check, Circle, Info, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "@/lib/utils";
-import { PHASE_COLORS } from "@/lib/utils";
+import { cn } from "@/ui/utils";
+import { PHASE_COLORS } from "@/ui/utils";
 import type {
   AgendaBlock,
   Block,

@@ -13,10 +13,10 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/ui/components/button";
+import { Card, CardContent } from "@/ui/components/card";
+import { Input } from "@/ui/components/input";
+import { Label } from "@/ui/components/label";
 
 export default function LoginPage() {
   const router = useRouter();

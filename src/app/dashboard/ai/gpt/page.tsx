@@ -24,12 +24,12 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/ui/components/avatar";
+import { Button } from "@/ui/components/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { cn } from "@/lib/utils";
-import { AriaLogo } from "@/components/aria-logo";
+import { cn } from "@/ui/utils";
+import { AriaLogo } from "@/ui/components/aria-logo";
 import {
   AiArtifact,
   generateSessionTitle,
