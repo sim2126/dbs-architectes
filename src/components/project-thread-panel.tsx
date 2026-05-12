@@ -20,8 +20,8 @@ import {
   X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
+import { cn } from "@/ui/utils";
 import { useLanguageStore } from "@/lib/language-store";
 
 // ── Types ────────────────────────────────────────────────────────────────────

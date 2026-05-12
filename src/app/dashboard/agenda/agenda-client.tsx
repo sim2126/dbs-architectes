@@ -23,26 +23,26 @@ import {
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, isToday, addMonths, subMonths } from "date-fns";
 import { enUS } from "date-fns/locale";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/ui/components/button";
+import { Badge } from "@/ui/components/badge";
+import { Card, CardContent } from "@/ui/components/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/ui/components/dialog";
+import { Input } from "@/ui/components/input";
+import { Label } from "@/ui/components/label";
+import { Textarea } from "@/ui/components/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+} from "@/ui/components/select";
+import { cn } from "@/ui/utils";
 
 interface AgendaItem {
   id: string;

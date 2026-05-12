@@ -22,10 +22,10 @@ import {
   Activity,
   Globe,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { PHASE_COLORS } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/components/card";
+import { Avatar, AvatarFallback } from "@/ui/components/avatar";
+import { PHASE_COLORS } from "@/ui/utils";
+import { cn } from "@/ui/utils";
 
 interface ProjectLite {
   id: string;

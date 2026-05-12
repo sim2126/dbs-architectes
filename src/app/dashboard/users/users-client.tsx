@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Pencil, Trash2, Globe, Building2, ChevronDown, X, Check, Shield } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ROLES, EMPLOYMENT_STATUSES, COUNTRIES } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { Button } from "@/ui/components/button";
+import { Avatar, AvatarFallback } from "@/ui/components/avatar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/ui/components/dialog";
+import { Input } from "@/ui/components/input";
+import { Label } from "@/ui/components/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/components/select";
+import { ROLES, EMPLOYMENT_STATUSES, COUNTRIES } from "@/ui/utils";
+import { cn } from "@/ui/utils";
 
 // ─── Types ───────────────────────────────────────────────────
 interface RegionAccess { country: string; operatingRegion?: string | null; accessLevel: string; }

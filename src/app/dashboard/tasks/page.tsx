@@ -18,7 +18,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn } from "@/ui/utils";
 
 interface Task {
   id: string;

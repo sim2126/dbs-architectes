@@ -17,18 +17,18 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
+import { Badge } from "@/ui/components/badge";
+import { Button } from "@/ui/components/button";
+import { Input } from "@/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+} from "@/ui/components/select";
+import { cn } from "@/ui/utils";
 import { formatDistanceToNow } from "date-fns";
 
 interface ActivityItem {

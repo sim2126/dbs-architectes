@@ -8,10 +8,10 @@ import {
   Calendar, Building2, ExternalLink,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/ui/components/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
+import { Badge } from "@/ui/components/badge";
+import { cn } from "@/ui/utils";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useSession } from "next-auth/react";

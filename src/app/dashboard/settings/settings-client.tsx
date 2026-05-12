@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { showToast } from "@/components/toast";
-import { Avatar } from "@/components/friday/avatar";
-import { I } from "@/components/friday/icons";
+import { showToast } from "@/ui/components/toast";
+import { Avatar } from "@/ui/friday/avatar";
+import { I } from "@/ui/friday/icons";
 import {
   Panel,
   Field,
@@ -11,8 +11,8 @@ import {
   Select,
   ToggleRow,
   RadioGroup,
-} from "@/components/friday/forms";
-import { cn } from "@/lib/utils";
+} from "@/ui/friday/forms";
+import { cn } from "@/ui/utils";
 import { useLanguageStore, type Language } from "@/lib/language-store";
 import { ACTIONS, type Action } from "@/platform/authz/actions";
 import { authorize, type Resource, type Subject } from "@/platform/authz/authorize";

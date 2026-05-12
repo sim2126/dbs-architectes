@@ -18,8 +18,8 @@ import {
   Sparkles,
   Star,
 } from "lucide-react";
-import { cn, PHASE_COLORS } from "@/lib/utils";
-import { showToast } from "@/components/toast";
+import { cn, PHASE_COLORS } from "@/ui/utils";
+import { showToast } from "@/ui/components/toast";
 import { translatePhase, useT } from "@/lib/translations";
 
 // ── Types ─────────────────────────────────────────────────────────

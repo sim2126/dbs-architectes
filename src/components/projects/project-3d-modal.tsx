@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Building2, Copy, Check, Loader2, X, Maximize2 } from "lucide-react";
-import { showToast } from "@/components/toast";
+import { showToast } from "@/ui/components/toast";
 
 interface Project3DModalProps {
   open: boolean;

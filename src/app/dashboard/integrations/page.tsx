@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useT } from "@/lib/translations";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ExternalLink, Plug, RefreshCw, Search, X, Zap } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/ui/utils";
 
 // ── Brand SVG logos ──────────────────────────────────────────────────────────
 

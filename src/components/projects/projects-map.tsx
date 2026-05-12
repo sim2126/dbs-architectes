@@ -8,10 +8,10 @@ import {
   Compass, Sparkles, Coffee, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
-import { PHASE_COLORS } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { PHASE_COLORS } from "@/ui/utils";
+import { cn } from "@/ui/utils";
 import { Project3DModal } from "@/components/projects/project-3d-modal";
-import { showToast } from "@/components/toast";
+import { showToast } from "@/ui/components/toast";
 
 // ─── Types ────────────────────────────────────────────────────
 

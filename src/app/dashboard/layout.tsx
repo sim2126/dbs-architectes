@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/platform/auth";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Header } from "@/components/layout/header";
-import { BrowserNotificationBanner } from "@/components/browser-notification-banner";
-import { ToastHost } from "@/components/toast";
+import { Sidebar } from "@/ui/layout/sidebar";
+import { Header } from "@/ui/layout/header";
+import { BrowserNotificationBanner } from "@/ui/components/browser-notification-banner";
+import { ToastHost } from "@/ui/components/toast";
 
 export default async function DashboardLayout({
   children,
