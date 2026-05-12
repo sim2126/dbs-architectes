@@ -1,0 +1,71 @@
+{
+  "board_name": "Residential Projects",
+  "board_id": "1234567890",
+  "entity_type": "project",
+  "region_defaults": {
+    "country": "CH",
+    "operatingRegion": "Ticino",
+    "regionCode": "CH-TI"
+  },
+  "field_map": {
+    "item_name": { "target": "Project.title", "type": "string", "required": true },
+    "code_column": { "target": "Project.code", "type": "string", "required": true },
+    "status_column": {
+      "target": "Project.workStatus",
+      "type": "string",
+      "map": {
+        "Working on it": "doing",
+        "Stuck": "stuck",
+        "Done": "completed",
+        "Not started": "todo"
+      }
+    },
+    "phase_column": {
+      "target": "Project.phase",
+      "type": "string",
+      "map": {
+        "ETUDE/AP": "ETUDE/AP",
+        "MAE": "MAE",
+        "CHANTIER": "CHANTIER",
+        "EXE/DG/DV/3D": "EXE/DG/DV/3D",
+        "TERMINATO": "TERMINATO"
+      }
+    },
+    "client_column": { "target": "Project.client", "type": "string" },
+    "commune_column": { "target": "Project.commune", "type": "string" },
+    "region_column": { "target": "Project.operatingRegion", "type": "string" },
+    "country_column": {
+      "target": "Project.country",
+      "type": "string",
+      "map": {
+        "Switzerland": "CH",
+        "Italy": "IT",
+        "India": "IN"
+      }
+    },
+    "people_column": { "target": "ProjectAssignment", "type": "people[]", "assignment_role": "member" }
+  },
+  "subitems": {
+    "target": "AgendaItem",
+    "field_map": {
+      "subitem_name": { "target": "AgendaItem.title", "type": "string", "required": true },
+      "date_column": { "target": "AgendaItem.date", "type": "string" },
+      "priority_column": {
+        "target": "AgendaItem.priority",
+        "type": "string",
+        "map": {
+          "Critical": "critical",
+          "High": "high",
+          "Medium": "medium",
+          "Low": "low"
+        }
+      },
+      "owner_column": { "target": "AgendaItem.userId", "type": "string" }
+    }
+  },
+  "updates": {
+    "target": "Message",
+    "channel_strategy": "project_channel",
+    "reply_strategy": "threaded_replies"
+  }
+}

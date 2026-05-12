@@ -1,0 +1,88 @@
+# DBS Friday — Action vocabulary
+#
+# Single source of truth for the action names used by the authorization
+# layer on both sides of the stack:
+#
+#   - Frontend (TypeScript):  app/src/platform/authz/actions.ts
+#   - Backend  (FastAPI):     apps/api/app/platform/authz/actions.py
+#                             (not implemented yet; mirror from here when added)
+#
+# Convention: "resource:operation[.modifier]"
+#   - resource:  noun, lowercase singular         (project, user, agenda, chat, sheet, task, ai, billing, settings, thread)
+#   - operation: verb describing the action        (create, read, update, delete, invoke, post, react, manage, assign)
+#   - modifier:  optional narrow form              (project:update.status — change workStatus only)
+#
+# Adding an action:
+#   1. Edit this file.
+#   2. Mirror in app/src/platform/authz/actions.ts (TS const) AND
+#      add a branch in app/src/platform/authz/authorize.ts.
+#   3. If the FastAPI side is live, mirror there too.
+#
+# Verification script (planned): scripts/check-actions-sync.ts diffs
+# this YAML against the TS ACTIONS map and the Python equivalent,
+# fails CI on drift.
+
+version: 1
+
+actions:
+  # ── Projects ─────────────────────────────────────────────────────
+  project:create:         { description: "Create a new project" }
+  project:read:           { description: "View project details" }
+  project:update:         { description: "Edit project fields" }
+  project:update.status:  { description: "Change project workStatus only" }
+  project:delete:         { description: "Delete a project" }
+  project:assign:         { description: "Add or remove team members" }
+
+  # ── Project threads ──────────────────────────────────────────────
+  thread:read:            { description: "Read a project-scoped thread" }
+  thread:post:            { description: "Post in a project-scoped thread" }
+
+  # ── Users / team ─────────────────────────────────────────────────
+  user:read:              { description: "Read user records" }
+  user:invite:            { description: "Invite a new user" }
+  user:update:            { description: "Edit a user (admin)" }
+  user:role.change:       { description: "Change a user's global role" }
+  user:delete:            { description: "Deactivate or delete a user" }
+  user:regions.manage:    { description: "Edit a user's regional access" }
+
+  # ── Agenda ───────────────────────────────────────────────────────
+  agenda:create:          { description: "Create an agenda item" }
+  agenda:read:            { description: "Read agenda items" }
+  agenda:update:          { description: "Update an agenda item" }
+  agenda:delete:          { description: "Delete an agenda item" }
+
+  # ── Chat ─────────────────────────────────────────────────────────
+  chat:read:              { description: "Read messages in a channel" }
+  chat:post:              { description: "Post a message in a channel" }
+  chat:react:             { description: "React to a message" }
+  chat:message.update:    { description: "Edit own message" }
+  chat:message.delete:    { description: "Delete a message" }
+
+  # ── Sheets ───────────────────────────────────────────────────────
+  sheet:create:           { description: "Create a sheet" }
+  sheet:read:             { description: "Read a sheet" }
+  sheet:update:           { description: "Edit a sheet" }
+  sheet:delete:           { description: "Delete a sheet" }
+
+  # ── Tasks ────────────────────────────────────────────────────────
+  task:create:            { description: "Create a task" }
+  task:read:              { description: "Read tasks" }
+  task:update:            { description: "Update a task" }
+  task:delete:            { description: "Delete a task" }
+
+  # ── AI ───────────────────────────────────────────────────────────
+  ai:invoke:              { description: "Invoke an AI feature (summary, agent, etc.)" }
+  ai:saved.read:          { description: "Read saved AI responses" }
+
+  # ── Billing ──────────────────────────────────────────────────────
+  billing:read:           { description: "View billing / plan / usage" }
+  billing:manage:         { description: "Change plan or payment methods" }
+
+  # ── Settings ─────────────────────────────────────────────────────
+  settings:self.read:             { description: "Read own profile/preferences" }
+  settings:self.update:           { description: "Update own profile/preferences" }
+  settings:workspace.read:        { description: "Read workspace settings" }
+  settings:workspace.update:      { description: "Update workspace settings" }
+  settings:permissions.read:      { description: "Read the permission matrix" }
+  settings:permissions.update:    { description: "Edit the permission matrix" }
+  settings:integrations.manage:   { description: "Connect/disconnect workspace integrations" }

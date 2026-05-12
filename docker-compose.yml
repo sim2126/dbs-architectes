@@ -1,0 +1,157 @@
+version: "3.9"
+
+services:
+  # ── Databases ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: dbs_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dbs_architectes
+      POSTGRES_USER: dbs
+      POSTGRES_PASSWORD: dbs_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbs -d dbs_architectes"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: dbs_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: dbs_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: dbs_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dbs:dbs_secret@postgres:5432/dbs_architectes
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    env_file:
+      - ./apps/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    volumes:
+      - ./apps/api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Celery Worker (agent tasks) ────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: dbs_celery_worker
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 -Q default,agents,high_priority
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dbs:dbs_secret@postgres:5432/dbs_architectes
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    env_file:
+      - ./apps/api/.env
+    depends_on:
+      - redis
+      - postgres
+      - qdrant
+    volumes:
+      - ./apps/api:/app
+
+  # ── Celery Beat (scheduled tasks) ─────────────────────────────────────────
+  celery_beat:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: dbs_celery_beat
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ./apps/api/.env
+    depends_on:
+      - redis
+    volumes:
+      - ./apps/api:/app
+
+  # ── Flower (Celery monitoring UI) ──────────────────────────────────────────
+  flower:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: dbs_flower
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    env_file:
+      - ./apps/api/.env
+    depends_on:
+      - redis
+      - celery_worker
+
+  # ── Next.js Frontend ───────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: dbs_web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
+    env_file:
+      - ./app/.env
+    depends_on:
+      - api
+    profiles:
+      - full  # only starts with: docker-compose --profile full up
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+
+networks:
+  default:
+    name: dbs_network
