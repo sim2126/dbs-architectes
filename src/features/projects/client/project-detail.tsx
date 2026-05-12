@@ -21,88 +21,11 @@ import {
 import { cn, PHASE_COLORS } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
 import { translatePhase, useT } from "@/i18n/translations";
+import type { ProjectDetailData } from "../domain/types";
 
-// ── Types ─────────────────────────────────────────────────────────
-
-export type ProjectDetailData = {
-  project: {
-    id: string;
-    code: string;
-    title: string;
-    phase: string;
-    workStatus: string;
-    category: string;
-    client: string | null;
-    year: number | null;
-    commune: string | null;
-    typology: string | null;
-    terrain: string | null;
-    roof: string | null;
-    description: string | null;
-    image: string | null;
-    floors: number | null;
-    area: number | null;
-    billing: string | null;
-    country: string | null;
-    operatingRegion: string | null;
-    address: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    pageLink: string | null;
-    updatedAt: string;
-  };
-  assignments: Array<{
-    userId: string;
-    role: string | null;
-    user: {
-      id: string;
-      name: string | null;
-      email: string;
-      initials: string | null;
-      image: string | null;
-      role: string;
-    };
-  }>;
-  agenda: Array<{
-    id: string;
-    title: string;
-    date: string;
-    status: string;
-    priority: string;
-    type: string;
-  }>;
-  activities: Array<{
-    id: string;
-    type: string;
-    description: string;
-    createdAt: string;
-    user: { id: string; name: string | null; initials: string | null; image: string | null } | null;
-  }>;
-  files: Array<{
-    id: string;
-    kind: "plan" | "image";
-    title: string;
-    url: string;
-    type: string;
-    year: number | null;
-    createdAt: string;
-  }>;
-  threads: Array<{
-    id: string;
-    content: string;
-    createdAt: string;
-    user: { id: string; name: string | null; initials: string | null; image: string | null } | null;
-    replies: Array<{
-      id: string;
-      content: string;
-      createdAt: string;
-      user: { id: string; name: string | null; initials: string | null; image: string | null } | null;
-    }>;
-  }>;
-  starred: boolean;
-  currentUserId: string;
-  isAdmin: boolean;
-};
+// Re-export so consumers can keep importing from "@/features/projects"
+// without caring which file in the feature owns the type definition.
+export type { ProjectDetailData };
 
 // ── Section nav ───────────────────────────────────────────────────
 
