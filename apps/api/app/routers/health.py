@@ -2,9 +2,9 @@ from fastapi import APIRouter
 from sqlalchemy import text
 import structlog
 
-from app.core.database import AsyncSessionLocal
-from app.core.redis import get_redis
-from app.core.config import settings
+from app.platform.db.database import AsyncSessionLocal
+from app.platform.cache.redis import get_redis
+from app.platform.config.config import settings
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["health"])
@@ -42,7 +42,7 @@ async def readiness_check():
 
     # Qdrant
     try:
-        from app.agents.memory.qdrant import get_qdrant
+        from app.features.ai.server.memory.qdrant import get_qdrant
         client = get_qdrant()
         await client.get_collections()
         checks["qdrant"] = "ok"

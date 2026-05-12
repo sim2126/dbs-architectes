@@ -6,8 +6,8 @@ from pathlib import Path
 
 from celery.utils.log import get_task_logger
 
-from app.importers.monday import MondayImportService
-from app.importers.monday.mappings import load_board_mappings
+from app.platform.integrations.monday import MondayImportService
+from app.platform.integrations.monday.mappings import load_board_mappings
 from app.tasks.agent_tasks import AgentTask
 from app.tasks.celery_app import celery_app
 

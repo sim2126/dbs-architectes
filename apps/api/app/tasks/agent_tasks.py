@@ -10,7 +10,7 @@ import asyncio
 from celery import Task
 from celery.utils.log import get_task_logger
 
-from app.core.redis import publish_task_update
+from app.platform.cache.redis import publish_task_update
 from app.tasks.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -25,7 +25,7 @@ def _run_agent_task(
     project_context: dict | None = None,
     thread_id: str | None = None,
 ) -> dict:
-    from app.agents.dbs_gpt.graph import run_agent
+    from app.features.ai.server.dbs_gpt.graph import run_agent
 
     response = asyncio.run(
         run_agent(
