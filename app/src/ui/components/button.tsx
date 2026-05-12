@@ -5,7 +5,10 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/ui/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
+  // Snappier transitions (100ms vs the previous 200ms). Micro-interactions
+  // feel sluggish above ~150ms; trimming this is the single highest-impact
+  // perceived-performance fix across the whole UI.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97]",
   {
     variants: {
       variant: {

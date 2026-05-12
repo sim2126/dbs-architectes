@@ -16,7 +16,13 @@ interface PanelProps {
   children?: React.ReactNode;
   footer?: React.ReactNode;
   dirty?: boolean;
-  onSave?: () => void;
+  /**
+   * Save handler. If it returns a Promise, Panel tracks pending state
+   * internally — button shows "Saving…", disables to block double-
+   * clicks, and re-enables on resolve/reject. No callers need to
+   * manually wire `saving` state for that case.
+   */
+  onSave?: () => void | Promise<unknown>;
   onCancel?: () => void;
   className?: string;
 }
@@ -32,6 +38,23 @@ export function Panel({
   className,
 }: PanelProps) {
   const showFooter = footer || onSave;
+  const [saving, setSaving] = React.useState(false);
+
+  const handleSave = React.useCallback(async () => {
+    if (!onSave || saving) return;
+    const result = onSave();
+    if (result && typeof (result as Promise<unknown>).then === "function") {
+      setSaving(true);
+      try {
+        await result;
+      } finally {
+        setSaving(false);
+      }
+    }
+  }, [onSave, saving]);
+
+  const buttonLabel = saving ? "Saving…" : dirty ? "Save changes" : "Saved";
+  const buttonDisabled = !dirty || saving;
 
   return (
     <section
@@ -58,7 +81,8 @@ export function Panel({
             <button
               type="button"
               onClick={onCancel}
-              className="h-[30px] px-3 bg-transparent text-friday-fg-muted border border-friday-border-soft rounded-[3px] text-[11.5px] cursor-pointer hover:text-friday-fg transition-colors"
+              disabled={saving}
+              className="h-[30px] px-3 bg-transparent text-friday-fg-muted border border-friday-border-soft rounded-[3px] text-[11.5px] cursor-pointer hover:text-friday-fg transition-colors duration-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
@@ -66,16 +90,16 @@ export function Panel({
           {onSave ? (
             <button
               type="button"
-              onClick={onSave}
-              disabled={!dirty}
+              onClick={handleSave}
+              disabled={buttonDisabled}
               className={cn(
-                "h-[30px] px-[14px] rounded-[3px] text-[11.5px] font-medium tracking-wide transition-colors",
-                dirty
-                  ? "bg-friday-accent text-white cursor-pointer hover:opacity-90"
-                  : "bg-friday-surface-2 text-friday-fg-subtle cursor-default",
+                "h-[30px] px-[14px] rounded-[3px] text-[11.5px] font-medium tracking-wide transition-colors duration-100 active:scale-[0.98]",
+                buttonDisabled
+                  ? "bg-friday-surface-2 text-friday-fg-subtle cursor-default"
+                  : "bg-friday-accent text-white cursor-pointer hover:opacity-90",
               )}
             >
-              {dirty ? "Save changes" : "Saved"}
+              {buttonLabel}
             </button>
           ) : null}
         </div>
