@@ -137,7 +137,7 @@ function splitPhase(phase: string): { short: string; qualifier: string | null } 
 
 // ── Component ─────────────────────────────────────────────────────
 
-export function ProjectDetailClient({ data }: { data: ProjectDetailData }) {
+export function ProjectDetail({ data }: { data: ProjectDetailData }) {
   const t = useT();
   const router = useRouter();
   const { project } = data;

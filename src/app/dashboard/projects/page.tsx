@@ -1,6 +1,6 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { ProjectsClient } from "./projects-client";
+import { ProjectsExplorer } from "@/features/projects";
 
 export default async function ProjectsPage() {
   const session = await auth();
@@ -34,7 +34,7 @@ export default async function ProjectsPage() {
     session?.user.role === "super_admin" || session?.user.role === "admin";
 
   return (
-    <ProjectsClient
+    <ProjectsExplorer
       initialProjects={projects.map((p) => ({
         ...p,
         workStatus: p.workStatus ?? "todo",

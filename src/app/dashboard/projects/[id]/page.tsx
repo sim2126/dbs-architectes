@@ -7,7 +7,7 @@ import {
   logAuthorizationDecision,
   type Subject,
 } from "@/platform/authz";
-import { ProjectDetailClient, type ProjectDetailData } from "./project-detail-client";
+import { ProjectDetail, type ProjectDetailData } from "@/features/projects";
 
 export default async function ProjectDetailPage({
   params,
@@ -226,5 +226,5 @@ export default async function ProjectDetailPage({
     isAdmin: session.user.role === "admin" || session.user.role === "super_admin",
   };
 
-  return <ProjectDetailClient data={data} />;
+  return <ProjectDetail data={data} />;
 }

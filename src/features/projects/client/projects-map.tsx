@@ -10,7 +10,7 @@ import {
 import Link from "next/link";
 import { PHASE_COLORS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
-import { Project3DModal } from "@/components/projects/project-3d-modal";
+import { Project3DModal } from "@/features/projects/client/project-3d-modal";
 import { showToast } from "@/ui/components/toast";
 
 // ─── Types ────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/ui/components/button";
 import { cn } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { ProjectThreadPanel } from "@/components/project-thread-panel";
+import { ProjectThreadPanel } from "@/features/projects/client/project-thread-panel";
 
 // ─── Types ─────────────────────────────────────────────────────
 
