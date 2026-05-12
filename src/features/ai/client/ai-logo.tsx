@@ -9,7 +9,7 @@ import { cn } from "@/ui/utils";
 
 type Variant = "icon" | "wordmark" | "hero";
 
-interface AriaLogoProps {
+interface AiLogoProps {
   variant?: Variant;
   size?: number;       // pixel size of the icon square (default varies by variant)
   className?: string;
@@ -25,8 +25,8 @@ interface AriaLogoProps {
 //   - Crossbar y: 35  →  x: (19, 35) … (45, 35)
 // Nodes at every structural joint (architecture + neural network reference)
 
-function AriaMark({ size = 48 }: { size?: number }) {
-  const id = `aria-${size}`;
+function AiMark({ size = 48 }: { size?: number }) {
+  const id = `dbs-ai-${size}`;
 
   return (
     <svg
@@ -35,7 +35,7 @@ function AriaMark({ size = 48 }: { size?: number }) {
       viewBox="0 0 64 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="Aria"
+      aria-label="DBS AI"
     >
       <defs>
         {/* Background: exact DBS GPT hero gradient */}
@@ -136,12 +136,12 @@ function AriaMark({ size = 48 }: { size?: number }) {
 
 // ─── Public component ──────────────────────────────────────────────────────────
 
-export function AriaLogo({ variant = "icon", size, className }: AriaLogoProps) {
+export function AiLogo({ variant = "icon", size, className }: AiLogoProps) {
   // ── Icon only ──────────────────────────────────────────────────────────────
   if (variant === "icon") {
     return (
       <div className={cn("shrink-0", className)}>
-        <AriaMark size={size ?? 40} />
+        <AiMark size={size ?? 40} />
       </div>
     );
   }
@@ -151,7 +151,7 @@ export function AriaLogo({ variant = "icon", size, className }: AriaLogoProps) {
     const iconSize = size ?? 36;
     return (
       <div className={cn("flex items-center gap-3", className)}>
-        <AriaMark size={iconSize} />
+        <AiMark size={iconSize} />
         <div className="flex flex-col justify-center leading-none">
           <span
             className="font-semibold tracking-[0.18em] text-foreground uppercase"
@@ -175,7 +175,7 @@ export function AriaLogo({ variant = "icon", size, className }: AriaLogoProps) {
     const iconSize = size ?? 64;
     return (
       <div className={cn("flex items-center gap-4", className)}>
-        <AriaMark size={iconSize} />
+        <AiMark size={iconSize} />
         <div className="flex flex-col justify-center leading-none">
           <span
             className="font-bold tracking-[0.22em] uppercase text-white"

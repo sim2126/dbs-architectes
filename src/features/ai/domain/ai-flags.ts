@@ -9,7 +9,7 @@
 // OPENAI_API_KEY has been removed from Vercel.
 
 export const AI_DISABLED_MESSAGE =
-  "Aria is taking a short planned break. She'll be back online for the DBS technical review on 27 April.";
+  "DBS AI is taking a short planned break. It will be back online for the DBS technical review on 27 April.";
 
 export const AI_DISABLED_ETA = "27 April 2026";
 

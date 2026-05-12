@@ -1,6 +1,6 @@
 "use client";
 
-// Saved DBS GPT insights — snapshots of Aria responses the user wants to
+// Saved DBS GPT insights — snapshots of DBS AI responses the user wants to
 // keep. Pinned items float to the top. Each card shows the saved blocks
 // rendered with the same components used in the live chat.
 

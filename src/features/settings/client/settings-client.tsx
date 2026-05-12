@@ -1114,7 +1114,7 @@ const INTEGRATIONS: Integration[] = [
   { k: "google", name: "Google Workspace", desc: "Calendar, Drive, and SSO via Google.", connected: true, account: "g.sovran@dbsarc.com" },
   { k: "pusher", name: "Pusher", desc: "Real-time channels for thread updates.", connected: true, account: "app · dbs-prod" },
   { k: "daily", name: "Daily.co", desc: "Embedded video meetings inside threads.", connected: true, account: "workspace · dbs" },
-  { k: "openai", name: "OpenAI", desc: "Powers Aria, summaries, and insights.", connected: false, account: null },
+  { k: "openai", name: "OpenAI", desc: "Powers DBS AI, summaries, and insights.", connected: false, account: null },
 ];
 
 function IntegrationGlyph({ k }: { k: string }) {
