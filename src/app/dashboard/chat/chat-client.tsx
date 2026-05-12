@@ -8,7 +8,7 @@ import {
   Users, X, Video, Phone,
   AtSign, Loader2, Lock, UserPlus, BookUser, Languages,
 } from "lucide-react";
-import { useLanguageStore } from "@/lib/language-store";
+import { useLanguageStore } from "@/i18n/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { Button } from "@/ui/components/button";
 import { Input } from "@/ui/components/input";
@@ -17,7 +17,7 @@ import { Badge } from "@/ui/components/badge";
 import { cn } from "@/ui/utils";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
-import { useT } from "@/lib/translations";
+import { useT } from "@/i18n/translations";
 
 // ─── Types ───────────────────────────────────────────────────
 interface User {

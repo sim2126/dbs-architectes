@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Globe, Check, Languages, ChevronDown } from "lucide-react";
-import { useLanguageStore, TRANSLATION_LANGUAGES, type Language } from "@/lib/language-store";
-import { LANGUAGE_NAMES } from "@/lib/translations";
+import { useLanguageStore, TRANSLATION_LANGUAGES, type Language } from "@/i18n/language-store";
+import { LANGUAGE_NAMES } from "@/i18n/translations";
 import { cn } from "@/ui/utils";
 
 const UI_LANGUAGES: { code: Language; flag: string }[] = [

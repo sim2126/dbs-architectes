@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn, PHASE_COLORS } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
-import { translatePhase, useT } from "@/lib/translations";
+import { translatePhase, useT } from "@/i18n/translations";
 
 // ── Types ─────────────────────────────────────────────────────────
 

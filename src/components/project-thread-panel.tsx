@@ -22,7 +22,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { cn } from "@/ui/utils";
-import { useLanguageStore } from "@/lib/language-store";
+import { useLanguageStore } from "@/i18n/language-store";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
