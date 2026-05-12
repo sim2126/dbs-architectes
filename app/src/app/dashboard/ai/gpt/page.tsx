@@ -1182,39 +1182,50 @@ export default function DBSGPTPage() {
               animate={{ opacity: 1, y: 0 }}
               className="mx-auto flex h-full max-w-2xl items-center justify-center px-6 py-10"
             >
-              <div className="rounded-[28px] border border-border bg-card p-8 text-center shadow-sm">
-                <AiLogo variant="mark" size={48} />
-                <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+              <div className="rounded-md border border-friday-border-soft bg-friday-surface p-8 text-center max-w-md">
+                <AiLogo variant="mark" size={48} className="mx-auto" />
+                <p className="mt-4 font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
                   DBS AI · scheduled break
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold leading-tight">
+                <h2 className="mt-2 font-display italic text-friday-fg text-2xl leading-tight">
                   Back online {aiStatus.eta ?? "soon"}
                 </h2>
-                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                <p className="mt-3 text-[13px] leading-7 text-friday-fg-muted">
                   {aiStatus.message ??
                     "DBS AI is taking a short planned break. It will be back online shortly."}
                 </p>
-                <p className="mt-5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground/60">
+                <p className="mt-5 font-mono text-[10px] tracking-[0.22em] uppercase text-friday-fg-subtle">
                   DBS Architectes · Friday
                 </p>
               </div>
             </motion.div>
           ) : messages.length === 0 ? (
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl px-6 py-10">
-              <div className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#155e75_100%)] px-8 py-10 text-white shadow-[0_28px_70px_rgba(15,23,42,0.18)]">
-                <AiLogo variant="hero" size={56} />
-                <h2 className="mt-6 text-3xl font-semibold tracking-tight">
-                  Ask anything about DBS projects, deadlines, team, or regulations.
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto max-w-2xl px-6 py-12"
+            >
+              {/* Quiet greeting — no gradient hero card. Wordmark sets the
+                  brand; italic Cormorant prompt invites the user; starter
+                  cards live on the cream/dark Friday surface. */}
+              <div className="text-center space-y-6">
+                <AiLogo variant="hero" size={42} className="mx-auto" />
+                <h2 className="font-display italic text-friday-fg text-3xl leading-[1.15] tracking-tight">
+                  Ask anything about DBS projects,<br />
+                  deadlines, team, or regulations.
                 </h2>
               </div>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+
+              <div className="mt-10 grid gap-2.5 sm:grid-cols-2">
                 {STARTER_PROMPTS.map((prompt) => (
-                  <button key={prompt} onClick={() => sendMessage(prompt)}
-                    className="group rounded-[20px] border border-border bg-card px-4 py-4 text-left transition-colors hover:bg-accent"
+                  <button
+                    key={prompt}
+                    onClick={() => sendMessage(prompt)}
+                    className="group rounded-md border border-friday-border-soft bg-friday-surface px-4 py-3 text-left hover:border-friday-fg/30 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium leading-6">{prompt}</p>
-                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                      <p className="text-[13px] text-friday-fg leading-snug">{prompt}</p>
+                      <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-friday-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" />
                     </div>
                   </button>
                 ))}
