@@ -22,7 +22,7 @@ import { showToast } from "@/ui/components/toast";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
 import { formatDistanceToNow } from "date-fns";
-import { useT, translatePhase } from "@/lib/translations";
+import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/lib/user-prefs-store";
 
 // ─── Types ────────────────────────────────────────────────────

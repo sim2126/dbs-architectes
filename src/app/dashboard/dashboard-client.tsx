@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, CalendarClock, Clock3, Sparkles, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { PHASE_COLORS } from "@/ui/utils";
-import { translatePhase, useT } from "@/lib/translations";
+import { translatePhase, useT } from "@/i18n/translations";
 import { formatDistanceToNow } from "date-fns";
 
 // ── Types ─────────────────────────────────────────────────────

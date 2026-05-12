@@ -8,7 +8,7 @@ import {
   Video, BookUser, Activity, Sparkles, Image, FileSearch, Users,
   Building2, Search, X, ArrowRight, Command,
 } from "lucide-react";
-import { useT } from "@/lib/translations";
+import { useT } from "@/i18n/translations";
 
 interface Project { id: string; code: string; title: string; phase: string }
 

@@ -13,7 +13,7 @@ import {
   RadioGroup,
 } from "@/ui/friday/forms";
 import { cn } from "@/ui/utils";
-import { useLanguageStore, type Language } from "@/lib/language-store";
+import { useLanguageStore, type Language } from "@/i18n/language-store";
 import { ACTIONS, type Action } from "@/platform/authz/actions";
 import { authorize, type Resource, type Subject } from "@/platform/authz/authorize";
 

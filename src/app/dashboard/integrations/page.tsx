@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useT } from "@/lib/translations";
+import { useT } from "@/i18n/translations";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ExternalLink, Plug, RefreshCw, Search, X, Zap } from "lucide-react";
 import { cn } from "@/ui/utils";
