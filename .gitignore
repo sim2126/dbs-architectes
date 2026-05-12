@@ -1,0 +1,55 @@
+# Node
+node_modules/
+.next/
+dist/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+# uv.lock is intentionally committed (reproducible builds)
+# but the venv it creates is local only
+.uv/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# DB
+*.db
+*.sqlite
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.claude/
+
+# Per-developer working-agreement notes loaded by Claude at the
+# workspace level. Each engineer keeps a local copy.
+CLAUDE.md
+AGENTS.md
+MEMORY.md
+
+# Logs
+*.log
+celerybeat-schedule
+celerybeat.pid
