@@ -6,28 +6,29 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { updateProject } from "@/features/projects/server/update-project";
+import { deleteProject } from "@/features/projects/server/delete-project";
 
+// GET stays inline — it returns the raw Prisma shape callers already
+// rely on (different from the page server component's ProjectDetailData).
+// If/when the wire shape converges with the page payload, switch this
+// to loadProjectDetail().
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
-  let subjectUserId: string;
   try {
-    const { subject, resource } = await requirePermission(request, "project:read", {
+    const { resource } = await requirePermission(request, "project:read", {
       loadResource: (s) => loadProjectForAuth(id, s.userId),
       context: { route: `GET /api/projects/${id}` },
     });
-    // null resource means the project doesn't exist — surface a clean 404
-    // rather than the 403 authorize() returns for a missing project.
     if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
-    subjectUserId = subject.userId;
   } catch (e) {
     if (e instanceof PermissionError) return permissionResponse(e);
     throw e;
   }
-  void subjectUserId;
 
   const project = await prisma.project.findUnique({
     where: { id },
@@ -53,9 +54,8 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  // Narrow vs broad update: assignees can change workStatus only;
-  // everything else requires "project:update" which goes through the
-  // assignment-role / region-access checks in authorize().
+  // Narrow vs broad: assignees can change workStatus only; anything
+  // wider requires "project:update".
   const workStatusOnly =
     Object.keys(body).length === 1 && body.workStatus !== undefined;
   const action = workStatusOnly ? "project:update.status" : "project:update";
@@ -73,38 +73,11 @@ export async function PATCH(
     throw e;
   }
 
-  const project = await prisma.project.update({
-    where: { id },
-    data: {
-      ...(body.title && { title: body.title }),
-      ...(body.phase && { phase: body.phase }),
-      ...(body.category && { category: body.category }),
-      ...(body.client !== undefined && { client: body.client }),
-      ...(body.year !== undefined && { year: body.year }),
-      ...(body.commune !== undefined && { commune: body.commune }),
-      ...(body.typology !== undefined && { typology: body.typology }),
-      ...(body.terrain !== undefined && { terrain: body.terrain }),
-      ...(body.roof !== undefined && { roof: body.roof }),
-      ...(body.description !== undefined && { description: body.description }),
-      ...(body.notes !== undefined && { notes: body.notes }),
-      ...(body.billing !== undefined && { billing: body.billing }),
-      ...(body.image !== undefined && { image: body.image }),
-      ...(body.workStatus !== undefined && { workStatus: body.workStatus }),
-      ...(body.address   !== undefined && { address: body.address }),
-      ...(body.latitude  !== undefined && { latitude: body.latitude != null ? parseFloat(body.latitude) : null }),
-      ...(body.longitude !== undefined && { longitude: body.longitude != null ? parseFloat(body.longitude) : null }),
-    },
+  const project = await updateProject({
+    projectId: id,
+    actorUserId: subjectUserId,
+    data: body,
   });
-
-  await prisma.activity.create({
-    data: {
-      type: "updated",
-      description: `Progetto "${project.title}" aggiornato`,
-      projectId: project.id,
-      userId: subjectUserId,
-    },
-  });
-
   return Response.json(project);
 }
 
@@ -125,6 +98,6 @@ export async function DELETE(
     throw e;
   }
 
-  await prisma.project.delete({ where: { id } });
+  await deleteProject(id);
   return Response.json({ success: true });
 }

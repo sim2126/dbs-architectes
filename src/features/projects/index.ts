@@ -13,6 +13,23 @@
  * the folder already implies that role.
  */
 
-export { ProjectDetail, type ProjectDetailData } from "./client/project-detail";
+// Client components and the public types that flow between them
+export { ProjectDetail } from "./client/project-detail";
 export { ProjectsExplorer } from "./client/projects-explorer";
 export { ProjectThreadPanel } from "./client/project-thread-panel";
+
+// Domain — pure types, safe to import from either side
+export type {
+  ProjectDetailData,
+  ProjectSummary,
+  ProjectAssignmentRow,
+  ProjectAgendaRow,
+  ProjectActivityRow,
+  ProjectFileRow,
+  ProjectThreadRow,
+} from "./domain/types";
+
+// Server functions are intentionally NOT re-exported here. Route
+// handlers reach for them via deep imports
+//   import { loadProjectDetail } from "@/features/projects/server/load-project-detail"
+// to keep server-only code (prisma, etc.) out of client bundles.
