@@ -284,3 +284,27 @@ body {
   background-size: 200% 100%;
   animation: fr-shimmer 1.6s ease-in-out infinite;
 }
+
+/* DBS AI logo blending.
+ *
+ * The PNG assets ship with the off-white "paper" background visible.
+ * Rather than asking the designer to manually cut transparent
+ * versions, we let CSS blend them into the page surface in both
+ * themes:
+ *
+ *   - Light mode: `multiply` blends the near-white background into the
+ *     cream Friday surface; black ink stays black.
+ *   - Dark  mode: invert flips the image (white ink on black bg) and
+ *     `screen` drops the (now-black) background into the dark surface.
+ *
+ * Living in a real CSS class instead of Tailwind arbitrary-property
+ * classes — `dark:` variants with bracket-syntax mix-blend-mode don't
+ * always compile in Tailwind v4. This rule is unambiguous.
+ */
+.dbs-ai-logo-img {
+  mix-blend-mode: multiply;
+}
+.dark .dbs-ai-logo-img {
+  filter: invert(1) brightness(0.95);
+  mix-blend-mode: screen;
+}
