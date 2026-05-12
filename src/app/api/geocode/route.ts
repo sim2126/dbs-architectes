@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth } from "@/platform/auth";
 
 const cache = new Map<string, { lat: number; lng: number; formatted: string }>();
 const MAX_CACHE_ENTRIES = 500;

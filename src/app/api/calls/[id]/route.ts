@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { deleteDailyRoom, createMeetingToken } from "@/lib/daily";
-import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/lib/pusher";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { deleteDailyRoom, createMeetingToken } from "@/platform/integrations/daily";
+import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();

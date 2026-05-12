@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // GET /api/ai-chats — list NON-EMPTY sessions for the current user.
 // Sessions with zero messages are skipped so abandoned "New chat" rows

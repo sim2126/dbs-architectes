@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { pusherServer, PUSHER_EVENTS, channelName } from "@/lib/pusher";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { pusherServer, PUSHER_EVENTS, channelName } from "@/platform/integrations/pusher";
 
 export async function POST(
   request: NextRequest,

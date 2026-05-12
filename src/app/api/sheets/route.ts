@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // GET /api/sheets — list all custom sheets for the current user
 export async function GET() {

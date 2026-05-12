@@ -10,7 +10,7 @@ import {
   Film,
   Sparkles,
 } from "lucide-react";
-import type { AnySummary, DetailedSummary, SimpleSummary } from "@/lib/meeting-summarizer";
+import type { AnySummary, DetailedSummary, SimpleSummary } from "@/platform/integrations/meeting-summarizer";
 
 function Section({
   icon: Icon,

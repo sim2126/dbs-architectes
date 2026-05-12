@@ -14,7 +14,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { cn } from "@/shared/lib/utils";
 import { SummaryModal } from "@/features/calls/components/summary-modal";
 import { getPusherClient } from "@/shared/lib/pusher-client";
-import { PUSHER_EVENTS } from "@/server/services/pusher";
+import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useSession } from "next-auth/react";
 
 interface Participant {

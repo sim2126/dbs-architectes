@@ -1,8 +1,8 @@
 /**
  * Barrel for the auth/authorization layer. New code should import from
- * "@/lib/auth" rather than from the individual files.
+ * "@/platform/auth" rather than from the individual files.
  *
- * The legacy "@/lib/permissions" module re-exports the convenience
+ * The legacy "@/platform/authz/permissions" module re-exports the convenience
  * predicates (isAdmin, canCreateProject, etc.) — those are kept for
  * backwards compatibility and are now thin wrappers over authorize().
  */

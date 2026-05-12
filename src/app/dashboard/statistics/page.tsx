@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 import { StatisticsClient } from "./statistics-client";
 
 export default async function StatisticsPage() {

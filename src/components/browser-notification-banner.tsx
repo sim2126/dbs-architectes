@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getPusherClient } from "@/lib/pusher-client";
+import { getPusherClient } from "@/platform/integrations/pusher-client";
 
 const PREF_KEY = "dbs-notif-pref"; // "granted" | "denied" | "deferred"
 

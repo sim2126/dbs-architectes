@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { SummaryRenderer } from "@/components/calls/summary-renderer";

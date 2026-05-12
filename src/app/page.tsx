@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@/platform/auth";
 import { LandingPage } from "@/components/marketing/landing-page";
 
 export default async function RootPage() {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // POST /api/sheets/sync-projects
 // Body: { updates: { id: string; phase?: string; workStatus?: string; billing?: string; notes?: string }[] }

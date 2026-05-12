@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 export async function GET() {
   const session = await auth();

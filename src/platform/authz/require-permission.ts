@@ -21,8 +21,8 @@
  */
 
 import type { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import type { Action } from "./actions";
 import {
   authorize,

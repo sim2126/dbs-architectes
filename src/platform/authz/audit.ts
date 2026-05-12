@@ -11,7 +11,7 @@
  * after-the-fact record.
  */
 
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 import type { Action } from "./actions";
 import type { Decision, Resource, Subject } from "./authorize";
 

@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth";
-import { getAuthUrl } from "@/lib/google-calendar";
+import { auth } from "@/platform/auth";
+import { getAuthUrl } from "@/platform/integrations/google-calendar";
 
 export async function GET() {
   const session = await auth();

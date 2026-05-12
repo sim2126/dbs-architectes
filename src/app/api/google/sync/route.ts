@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { createGoogleEvent, deleteGoogleEvent } from "@/lib/google-calendar";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { createGoogleEvent, deleteGoogleEvent } from "@/platform/integrations/google-calendar";
 
 export async function POST(request: NextRequest) {
   const session = await auth();

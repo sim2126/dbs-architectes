@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { isAdmin, isManagerOrAbove } from "@/lib/permissions";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { isAdmin, isManagerOrAbove } from "@/platform/authz/permissions";
 
 export async function GET() {
   const session = await auth();

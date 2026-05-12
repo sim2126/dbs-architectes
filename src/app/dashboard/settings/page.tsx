@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { isAdmin } from "@/lib/permissions";
+import { auth } from "@/platform/auth";
+import { isAdmin } from "@/platform/authz/permissions";
 import { SettingsClient } from "./settings-client";
 
 export default async function SettingsPage() {

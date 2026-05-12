@@ -1,12 +1,12 @@
 import { redirect, notFound } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import {
   authorize,
   loadProjectForAuth,
   logAuthorizationDecision,
   type Subject,
-} from "@/lib/authz";
+} from "@/platform/authz";
 import { ProjectDetailClient, type ProjectDetailData } from "./project-detail-client";
 
 export default async function ProjectDetailPage({

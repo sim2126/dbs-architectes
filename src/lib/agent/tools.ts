@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 
 // ─── OpenAI Tool Definitions ──────────────────────────────────
 

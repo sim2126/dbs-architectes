@@ -2,7 +2,7 @@
  * Friday.com — Role & Permission Model (legacy convenience predicates).
  *
  * Every function in this file is now a thin wrapper over the single
- * authorize() decision function in @/lib/auth. The convenience names
+ * authorize() decision function in @/platform/authz. The convenience names
  * stay so the ~139 existing callers don't need touching; new code
  * should prefer authorize() / requirePermission() directly.
  *
@@ -15,10 +15,10 @@
  *   viewer / collaborator → treated as employee
  */
 
-import { authorize, type RegionAccess as AuthRegionAccess, type Subject } from "@/lib/authz/authorize";
+import { authorize, type RegionAccess as AuthRegionAccess, type Subject } from "@/platform/authz/authorize";
 
 // Re-export the canonical RegionAccess type so legacy callers continue
-// to import it from "@/lib/permissions".
+// to import it from "@/platform/authz/permissions".
 export type RegionAccess = AuthRegionAccess;
 
 // ─── Subject builder (private — predicates need a Subject) ─────

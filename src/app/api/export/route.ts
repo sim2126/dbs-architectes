@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import * as XLSX from "xlsx";
 
 export async function GET() {

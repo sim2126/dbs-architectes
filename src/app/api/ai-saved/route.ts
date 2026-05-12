@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import type { Block } from "@/lib/agent/blocks";
 import type { Prisma } from "@prisma/client";
 

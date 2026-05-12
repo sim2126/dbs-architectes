@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // PATCH /api/tasks/[id] — update fields, including drag-reorder via position
 export async function PATCH(
