@@ -1123,8 +1123,8 @@ export default function DBSGPTPage() {
     <div className="flex h-[calc(100vh-64px)] bg-friday-bg">
       {/* History sidebar */}
       <div className="w-64 shrink-0 border-r border-friday-border-soft bg-friday-bg flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-friday-border-soft shrink-0">
-          <AiLogo variant="wordmark" size={22} />
+        <div className="px-4 py-4 border-b border-friday-border-soft shrink-0">
+          <AiLogo variant="wordmark" size={36} />
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatHistorySidebar
@@ -1209,7 +1209,7 @@ export default function DBSGPTPage() {
                   brand; italic Cormorant prompt invites the user; starter
                   cards live on the cream/dark Friday surface. */}
               <div className="text-center space-y-6">
-                <AiLogo variant="hero" size={42} className="mx-auto" />
+                <AiLogo variant="hero" size={68} className="mx-auto" />
                 <h2 className="font-display italic text-friday-fg text-3xl leading-[1.15] tracking-tight">
                   Ask anything about DBS projects,<br />
                   deadlines, team, or regulations.
