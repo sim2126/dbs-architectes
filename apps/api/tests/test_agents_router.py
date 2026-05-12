@@ -66,7 +66,7 @@ async def test_chat_sync_runs_agent_inline(app_client, monkeypatch):
             },
         )
 
-    import app.agents.dbs_gpt.graph as graph_module
+    import app.features.ai.server.dbs_gpt.graph as graph_module
     monkeypatch.setattr(graph_module, "run_agent_with_trace", _fake_run_agent_with_trace)
 
     resp = await app_client.post(
@@ -85,7 +85,7 @@ async def test_chat_sync_runs_agent_inline(app_client, monkeypatch):
 
 async def test_chat_sync_rate_limited_after_threshold(app_client, patched_redis, monkeypatch):
     """Hitting the rate limit should return 429."""
-    from app.core import config
+    from app.platform.config import config
 
     # Lower the limit to make the test fast
     monkeypatch.setattr(config.settings, "AGENT_RATE_LIMIT_PER_MINUTE", 2)
@@ -93,7 +93,7 @@ async def test_chat_sync_rate_limited_after_threshold(app_client, patched_redis,
     # Stub the agent so we don't care about its output
     async def _noop(**_):
         return ("ok", {"visited_nodes": [], "tool_calls": [], "iteration_count": 0})
-    import app.agents.dbs_gpt.graph as graph_module
+    import app.features.ai.server.dbs_gpt.graph as graph_module
     monkeypatch.setattr(graph_module, "run_agent_with_trace", _noop)
 
     # Two requests succeed, third should hit 429

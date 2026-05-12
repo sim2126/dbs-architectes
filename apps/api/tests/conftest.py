@@ -127,7 +127,7 @@ async def patched_redis(monkeypatch, fake_redis: FakeRedis):
     module-global `_redis_client`, pre-seeding that global with our fake
     ensures no real Redis connection is ever attempted.
     """
-    from app.core import redis as redis_module
+    from app.platform.cache import redis as redis_module
 
     monkeypatch.setattr(redis_module, "_redis_client", fake_redis)
     yield fake_redis
@@ -142,7 +142,7 @@ async def app_client(patched_redis) -> AsyncIterator[AsyncClient]:
     The `get_current_user` dep is overridden to return a fixed test user, so
     tests never need to mint JWTs.
     """
-    from app.core.auth import TokenData, get_current_user
+    from app.platform.auth.auth import TokenData, get_current_user
     from app.main import app
 
     async def _test_user() -> TokenData:
@@ -222,7 +222,7 @@ def mock_db_session(monkeypatch):
     def _fake_session_local() -> _FakeSessionContext:
         return _FakeSessionContext()
 
-    from app.core import database
+    from app.platform.db import database
     monkeypatch.setattr(database, "AsyncSessionLocal", _fake_session_local)
     return controller
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.dbs_gpt.tools import VALID_PHASES, _normalize_phase
+from app.features.ai.server.dbs_gpt.tools import VALID_PHASES, _normalize_phase
 
 
 class TestNormalizePhase:

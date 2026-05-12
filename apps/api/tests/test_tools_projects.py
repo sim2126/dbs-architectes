@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.dbs_gpt.tools import (
+from app.features.ai.server.dbs_gpt.tools import (
     get_project_team,
     get_projects,
     update_project_phase,

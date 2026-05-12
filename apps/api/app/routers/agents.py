@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.core.auth import TokenData, get_current_user
-from app.core.config import settings
-from app.core.redis import check_rate_limit as redis_rate_limit
-from app.core.redis import get_redis
+from app.platform.auth.auth import TokenData, get_current_user
+from app.platform.config.config import settings
+from app.platform.cache.redis import check_rate_limit as redis_rate_limit
+from app.platform.cache.redis import get_redis
 from app.tasks.agent_tasks import run_dbs_gpt_task
 
 logger = structlog.get_logger(__name__)
@@ -111,7 +111,7 @@ async def submit_chat_sync(
     """
     import time
 
-    from app.agents.dbs_gpt.graph import run_agent_with_trace
+    from app.features.ai.server.dbs_gpt.graph import run_agent_with_trace
 
     allowed = await redis_rate_limit(
         user_id=current_user.user_id,

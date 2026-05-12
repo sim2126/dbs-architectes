@@ -11,9 +11,9 @@ from fastapi.exceptions import RequestValidationError
 import structlog
 import time
 
-from app.core.config import settings
-from app.core.redis import get_redis, close_redis
-from app.agents.memory.qdrant import ensure_collections
+from app.platform.config.config import settings
+from app.platform.cache.redis import get_redis, close_redis
+from app.features.ai.server.memory.qdrant import ensure_collections
 from app.routers import health, agents
 
 logger = structlog.get_logger(__name__)
