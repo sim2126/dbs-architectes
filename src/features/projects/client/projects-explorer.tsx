@@ -10,13 +10,13 @@ import {
   Circle, Loader2, MessageSquare, MoreHorizontal, Trash2,
   Globe, Navigation,
 } from "lucide-react";
-import { ProjectsMapView } from "@/components/projects/projects-map";
+import { ProjectsMapView } from "@/features/projects/client/projects-map";
 import Link from "next/link";
 import { Button } from "@/ui/components/button";
 import { Input } from "@/ui/components/input";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Badge } from "@/ui/components/badge";
-import { AddProjectModal } from "@/components/projects/add-project-modal";
+import { AddProjectModal } from "@/features/projects/client/add-project-modal";
 import { FavoriteStar } from "@/ui/components/favorite-star";
 import { showToast } from "@/ui/components/toast";
 import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
@@ -96,7 +96,7 @@ const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
 const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
 
 // ─── Main Component ───────────────────────────────────────────
-export function ProjectsClient({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
+export function ProjectsExplorer({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
   const t = useT();
   const [projects, setProjects] = useState(initialProjects);
   const { projectsView: view, setProjectsView: setView } = useUserPrefs();
