@@ -3,7 +3,7 @@
 
 # DBS Architectes Friday — Working Agreement
 
-This document governs how Claude collaborates on this codebase. The product context lives in `MEMORY.md`; the engineering rules live here.
+This document governs how Claude collaborates on this codebase. The product context lives in `MEMORY.md`; the engineering rules live here. The **root `CLAUDE.md`** (one directory up) has the monorepo-wide working agreement — most rules live there, including the full code-organization spec (root §11). This file is the Next.js-app-specific addendum.
 
 > **Tradeoff note.** These guidelines bias toward caution and clarity over raw speed. For trivial tasks (renames, typo fixes, one-line changes), use judgment and skip the heavier ceremony.
 
@@ -103,3 +103,84 @@ Three escape hatches, in order of preference:
 1. **Ask a focused question.** One sentence beats five paragraphs of speculation.
 2. **State your default and proceed.** "I'm going with X because Y; flag if you'd prefer Z."
 3. **Stop and surface.** If the cost of being wrong is high (data loss, deploy break, sent message), do not proceed silently.
+
+## 8. Code Organization
+
+The `src/` tree is **feature-per-folder with explicit visibility**. There is one place for each concern. Layout:
+
+```
+app/src/
+  app/                    # Next.js routes — THIN. Pages + API handlers only.
+                          # No business logic; delegate to features/.
+  features/               # One folder per business feature.
+    <feature>/
+      server/             # Server-only: Prisma, mutations, external APIs.
+      client/             # React components, hooks, browser state.
+      domain/             # Pure types + helpers; safe on either side.
+      index.ts            # Public barrel — the only legal import target.
+  platform/               # Cross-cutting infrastructure.
+    auth/                 # NextAuth (AuthN).
+    authz/                # authorize() + requirePermission() (AuthZ).
+    db/                   # Prisma client.
+    integrations/         # google-calendar, pusher, daily, openai.
+  ui/                     # Pure presentation; no business logic.
+    components/           # shadcn primitives + cross-cutting widgets.
+    friday/               # Friday-branded primitives.
+    layout/               # Header, sidebar.
+    stores/               # Zustand UI stores.
+    marketing/            # Landing page and similar.
+    tokens.ts             # Friday design tokens helper.
+    utils.ts              # cn() and UI utilities.
+  i18n/                   # translations + language store + switcher.
+  middleware.ts
+```
+
+### 8.1 Visibility rules (review-enforced, ESLint follow-up planned)
+
+- `app/` ⇒ `features/`, `platform/`, `ui/`, `i18n/`.
+- `features/<X>/` ↛ `features/<Y>/` directly. Compose across features **only via the public barrel** `@/features/<Y>`. If two features need the same thing, lift to `platform/` or `ui/`.
+- `features/<X>/client/` ↛ `features/<X>/server/`. Server-only stays out of client bundles by construction.
+- `platform/` ↛ `features/`. Infra cannot know about business.
+- `ui/` ↛ anywhere except other `ui/`. Pure presentation.
+- `i18n/` ↛ `features/`.
+
+If you're tempted to break a rule, the thing you're reaching for belongs in a different package.
+
+### 8.2 Feature shape
+
+Each feature has up to three subdirs (only what it needs) and one barrel:
+
+- **`server/`** — Prisma queries, mutations, external calls. Verb-first filenames: `load-project.ts`, `update-project.ts`, `list-projects.ts`.
+- **`client/`** — React. Noun-first filenames: `project-detail.tsx`. The `-client` suffix is **dropped** here because the folder already implies the role.
+- **`domain/`** — Pure code, safe on either side. `types.ts`, `phase-helpers.ts`.
+- **`index.ts`** — barrel; re-exports the public surface. **Server code is NOT re-exported** — it's deep-imported by route handlers (`@/features/ai/server/agent/runner`), keeping it out of client bundles.
+
+### 8.3 Naming
+
+| What | Convention | Example |
+|---|---|---|
+| Files (TS/TSX) | kebab-case matching the primary export | `ProjectDetail` → `project-detail.tsx` |
+| Files (Python, apps/api/) | snake_case per PEP 8 | `load_project()` → `load_project.py` |
+| Server functions | verb-first | `load-project.ts`, `list-projects.ts` |
+| Components | noun-first | `project-detail.tsx`, `agenda-calendar.tsx` |
+| Pure helpers | `<noun>-helpers.ts` | `phase-helpers.ts` |
+| Types-only files | `types.ts` inside `domain/` | `features/projects/domain/types.ts` |
+| React component name | PascalCase matching kebab-case file | `project-detail.tsx` → `ProjectDetail` |
+| Constants | `UPPER_SNAKE_CASE` | `PHASE_COLORS`, `ACTIONS` |
+| Action vocabulary | `resource:operation[.modifier]` | `project:update.status`, `user:role.change` |
+| Barrel | `index.ts` only | one per package |
+
+**Drop redundant prefixes.** A file inside `features/projects/client/` doesn't need `project-` unless it distinguishes from sibling files. `client/detail.tsx` is fine if it's the only "detail" file; keep `project-detail.tsx` when surrounded by other project-prefixed siblings.
+
+### 8.4 Backend (apps/api/) parallel
+
+The same shape applies, with Python idioms — `snake_case` files, `__init__.py` barrels. The action vocabulary lives in `packages/shared/auth/actions.yaml` (planned) so both languages load from one source.
+
+### 8.5 Adding a new feature
+
+1. Create `src/features/<feature>/{server,client,domain}/` as needed.
+2. Add `src/features/<feature>/index.ts` exporting the public surface.
+3. Add the Next.js route in `src/app/<route>/page.tsx` — thin: auth, fetch, render.
+4. DB access outside a route handler → `server/`. **Never** import `prisma` from `client/`.
+5. Auth gates → add the action to `platform/authz/actions.ts` and a branch in `authorize.ts`. Don't sprinkle `if (isAdmin)` in routes.
+6. Shared primitive → `ui/components/` only if multiple features will use it; otherwise keep it inside the feature.
