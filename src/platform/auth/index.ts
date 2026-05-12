@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { prisma } from "@/server/db";
+import { prisma } from "@/platform/db";
 import bcrypt from "bcryptjs";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -23,6 +23,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (!user || !user.password) return null;
+
+        // Reject deactivated accounts before even comparing the password
         if (!user.isActive) return null;
 
         const isValid = await bcrypt.compare(
@@ -90,3 +92,4 @@ declare module "next-auth" {
     };
   }
 }
+

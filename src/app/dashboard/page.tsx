@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "./dashboard-client";
 
 function roleTier(role?: string | null): RoleTier {

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { pusherServer } from "@/lib/pusher";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { pusherServer } from "@/platform/integrations/pusher";
 
 // Channels open to all authenticated users:
 const OPEN_PRIVATE_CHANNELS = new Set(["private-global-notifications"]);

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // Self-service endpoint: the signed-in user can read and update a tight
 // allowlist of their own profile fields. Anything that touches identity

@@ -15,8 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { getPusherClient } from "@/lib/pusher-client";
-import { PUSHER_EVENTS } from "@/lib/pusher";
+import { getPusherClient } from "@/platform/integrations/pusher-client";
+import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useT } from "@/lib/translations";
 
 // ─── Types ───────────────────────────────────────────────────

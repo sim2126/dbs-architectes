@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 
 // Polymorphic favourites — any project, sheet, agenda item, AI chat
 // session, or team member can be starred per-user.

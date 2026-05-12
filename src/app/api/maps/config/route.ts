@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@/platform/auth";
 
 // Returns the Google Maps API key from server env so the browser client
 // does not depend on NEXT_PUBLIC_* being inlined at build time.

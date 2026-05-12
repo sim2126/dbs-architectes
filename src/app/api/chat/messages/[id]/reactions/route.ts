@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { pusherServer, channelName, PUSHER_EVENTS } from "@/lib/pusher";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();

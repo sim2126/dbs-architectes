@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import {
   generateSummary,
   loadCallContext,
@@ -8,13 +8,13 @@ import {
   updateProjectMemory,
   type SummaryMode,
   type DetailedSummary,
-} from "@/lib/meeting-summarizer";
+} from "@/platform/integrations/meeting-summarizer";
 import {
   getRoomTranscripts,
   fetchTranscriptText,
   getRoomRecordings,
   getRecordingAccessLink,
-} from "@/lib/daily";
+} from "@/platform/integrations/daily";
 import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
 
 export const maxDuration = 120;

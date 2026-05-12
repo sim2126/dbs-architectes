@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { PermissionError, permissionResponse, requirePermission } from "@/lib/authz";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { PermissionError, permissionResponse, requirePermission } from "@/platform/authz";
 
 function boundedLimit(value: string | null, fallback = 100, max = 500) {
   const parsed = Number(value);

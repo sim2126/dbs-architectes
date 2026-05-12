@@ -14,8 +14,8 @@ import {
 } from "@/components/friday/forms";
 import { cn } from "@/lib/utils";
 import { useLanguageStore, type Language } from "@/lib/language-store";
-import { ACTIONS, type Action } from "@/lib/authz/actions";
-import { authorize, type Resource, type Subject } from "@/lib/authz/authorize";
+import { ACTIONS, type Action } from "@/platform/authz/actions";
+import { authorize, type Resource, type Subject } from "@/platform/authz/authorize";
 
 // ─── Sub-nav data ─────────────────────────────────────────────────
 const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: boolean }[] }[] = [

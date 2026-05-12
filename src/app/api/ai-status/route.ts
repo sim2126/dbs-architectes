@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@/platform/auth";
 import { AI_DISABLED_ETA, AI_DISABLED_MESSAGE, isAiDisabled } from "@/lib/ai-flags";
 
 // Public-to-signed-in-users endpoint reporting whether the AI surfaces

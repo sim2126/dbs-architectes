@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth } from "@/platform/auth";
 import OpenAI from "openai";
 import { aiDisabledResponse, isAiDisabled } from "@/lib/ai-flags";
 

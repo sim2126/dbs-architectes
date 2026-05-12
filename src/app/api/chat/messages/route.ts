@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { pusherServer, channelName, PUSHER_EVENTS } from "@/lib/pusher";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);

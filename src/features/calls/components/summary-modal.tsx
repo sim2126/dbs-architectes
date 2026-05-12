@@ -6,7 +6,7 @@ import { X, Sparkles, Loader2, Copy, Send, Check, ExternalLink, FileText } from 
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/lib/utils";
 import { SummaryRenderer } from "@/components/calls/summary-renderer";
-import type { AnySummary } from "@/lib/meeting-summarizer";
+import type { AnySummary } from "@/platform/integrations/meeting-summarizer";
 
 interface CallLite {
   id: string;

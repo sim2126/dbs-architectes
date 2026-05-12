@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { isAdmin, defaultPermissionsForRole } from "@/lib/permissions";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
+import { isAdmin, defaultPermissionsForRole } from "@/platform/authz/permissions";
 import bcrypt from "bcryptjs";
 
 export async function GET() {

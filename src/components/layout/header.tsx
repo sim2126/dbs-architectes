@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useT } from "@/lib/translations";
-import { getPusherClient } from "@/lib/pusher-client";
+import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 

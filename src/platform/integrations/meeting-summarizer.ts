@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 import { randomBytes } from "crypto";
 
 // ── Shapes ─────────────────────────────────────────────────

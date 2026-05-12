@@ -1,11 +1,11 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma } from "@/platform/db";
 import {
   loadProjectForAuth,
   PermissionError,
   permissionResponse,
   requirePermission,
-} from "@/lib/authz";
+} from "@/platform/authz";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { auth } from "@/platform/auth";
+import { prisma } from "@/platform/db";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/lib/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/lib/agent/tools";
 import { buildArtifactsFromToolResult } from "@/lib/agent/artifacts";
