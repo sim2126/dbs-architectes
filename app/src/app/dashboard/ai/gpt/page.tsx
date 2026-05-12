@@ -128,11 +128,19 @@ function formatArgs(args: Record<string, unknown>): string | null {
 }
 
 // ─── Thinking panel ───────────────────────────────────────────
+// Minimal: a single "THOUGHT FOR Xs" header with a numbered step
+// transcript underneath. Auto-collapses once the agent is done so the
+// reading focus is the response, not the trace.
 
-function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?: boolean }) {
-  // Claude-style behaviour: panel stays open while the agent is thinking
-  // (so users see progress in real time), then auto-collapses on completion
-  // for a clean transcript. Users can click to re-expand any time.
+function ThinkingPanel({
+  steps,
+  isStreaming,
+  durationMs,
+}: {
+  steps: ToolStep[];
+  isStreaming?: boolean;
+  durationMs?: number;
+}) {
   const [open, setOpen] = useState(true);
   const [autoCollapsed, setAutoCollapsed] = useState(false);
   const doneCount = steps.filter((s) => s.status === "done").length;
@@ -147,81 +155,68 @@ function ThinkingPanel({ steps, isStreaming }: { steps: ToolStep[]; isStreaming?
 
   if (steps.length === 0 && !isStreaming) return null;
 
+  const seconds = durationMs ? (durationMs / 1000).toFixed(1) : null;
+
+  let headerLabel: string;
+  if (isStreaming && steps.length === 0) {
+    headerLabel = "Thinking…";
+  } else if (allDone) {
+    headerLabel = seconds ? `Thought for ${seconds}s` : `Thought for ${steps.length} step${steps.length === 1 ? "" : "s"}`;
+  } else {
+    headerLabel = `Thinking · ${doneCount} / ${steps.length}`;
+  }
+
   return (
-    <div className="rounded-2xl border border-border bg-muted/40 overflow-hidden text-sm mb-2">
-      {/* Header */}
+    <div className="rounded-lg border border-friday-border-soft bg-friday-surface overflow-hidden mb-2">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-muted/60 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-friday-surface-2 transition-colors text-left"
       >
-        {isStreaming && steps.length === 0 ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
-        ) : allDone ? (
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-        ) : (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
-        )}
-
-        <span className="flex-1 text-xs font-medium text-muted-foreground">
-          {isStreaming && steps.length === 0
-            ? "DBS AI is thinking…"
-            : allDone
-            ? `Used ${steps.length} tool${steps.length !== 1 ? "s" : ""}`
-            : `Running ${steps.length - doneCount} of ${steps.length} tools…`}
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-friday-fg-subtle">
+          {headerLabel}
         </span>
-
-        {steps.length > 0 && (
-          open ? (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="flex-1" />
+        {steps.length > 0 &&
+          (open ? (
+            <ChevronDown className="h-3 w-3 text-friday-fg-subtle shrink-0" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          )
-        )}
+            <ChevronRight className="h-3 w-3 text-friday-fg-subtle shrink-0" />
+          ))}
       </button>
 
-      {/* Steps list */}
       <AnimatePresence>
         {open && steps.length > 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden border-t border-border"
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden border-t border-friday-border-soft"
           >
-            <div className="px-3 py-2 space-y-2">
+            <ol className="px-3 py-2">
               {steps.map((step, idx) => {
                 const argsStr = formatArgs(step.args);
+                const num = String(idx + 1).padStart(2, "0");
                 return (
-                  <div key={idx} className="flex items-start gap-2">
-                    {/* Status icon */}
-                    <div className="mt-0.5 shrink-0">
-                      {step.status === "done" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                      ) : (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                      )}
-                    </div>
-
-                    {/* Step detail */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs">{TOOL_ICONS[step.name] ?? "🔧"}</span>
-                        <span className="text-xs font-medium">{step.label}</span>
-                        {step.status === "done" && (
-                          <span className="text-[10px] text-emerald-600 font-medium">done</span>
-                        )}
-                      </div>
+                  <li
+                    key={idx}
+                    className="flex items-baseline gap-3 py-1 text-[12.5px] text-friday-fg"
+                  >
+                    <span className="font-mono text-[10px] text-friday-fg-subtle tabular-nums shrink-0">
+                      {num}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span>{step.label}</span>
                       {argsStr && (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground truncate">
+                        <span className="block font-mono text-[10.5px] text-friday-fg-subtle truncate mt-0.5">
                           {argsStr}
-                        </p>
+                        </span>
                       )}
-                    </div>
-                  </div>
+                    </span>
+                  </li>
                 );
               })}
-            </div>
+            </ol>
           </motion.div>
         )}
       </AnimatePresence>
@@ -392,35 +387,30 @@ function MessageBubble({
   if (message.role === "user") {
     return (
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex gap-3 justify-end"
+        className="flex justify-end"
       >
-        <div className="max-w-[80%] rounded-[26px] px-4 py-3.5 bg-foreground text-background">
-          <p className="text-sm leading-7">{message.content}</p>
+        <div className="max-w-[75%] rounded-full px-4 py-2 bg-friday-fg text-friday-bg">
+          <p className="text-[13.5px] leading-snug">{message.content}</p>
         </div>
-        <Avatar className="h-9 w-9 shrink-0">
-          <AvatarFallback className="bg-muted text-xs">
-            <User className="h-4 w-4" />
-          </AvatarFallback>
-        </Avatar>
       </motion.div>
     );
   }
 
-  // Assistant message
+  // Assistant message — quiet card with avatar + thought + response
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className="flex gap-3 justify-start"
     >
-      <div className="shrink-0 mt-1">
-        <AiLogo variant="icon" size={36} />
+      <div className="shrink-0">
+        <AiLogo variant="mark" size={32} />
       </div>
 
-      <div className="flex-1 min-w-0 max-w-[90%] space-y-1">
-        {/* Thinking / tool steps panel */}
+      <div className="flex-1 min-w-0 max-w-[92%] space-y-1.5">
+        {/* Thinking / tool steps */}
         {((message.steps && message.steps.length > 0) || message.isStreaming) && (
           <ThinkingPanel steps={message.steps ?? []} isStreaming={message.isStreaming} />
         )}
@@ -438,15 +428,14 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Response — prefer structured Gen-UI blocks when available,
-            fall back to legacy Markdown content (errors, old history). */}
+        {/* Response — Gen-UI blocks preferred; Markdown fallback for errors / old history. */}
         {message.blocks && message.blocks.length > 0 ? (
-          <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
+          <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
             <BlocksView blocks={message.blocks} />
           </div>
         ) : message.content ? (
-          <div className="rounded-[26px] border border-border bg-card px-4 py-4 shadow-sm">
-            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-7 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wide">
+          <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
+            <div className="prose prose-sm dark:prose-invert max-w-none text-[13.5px] leading-7 [&_table]:w-full [&_table]:border-collapse [&_td]:border-b [&_td]:border-friday-border-soft [&_td]:px-3 [&_td]:py-2 [&_th]:border-b [&_th]:border-friday-border [&_th]:bg-transparent [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-[10px] [&_th]:font-mono [&_th]:uppercase [&_th]:tracking-[0.18em] [&_th]:text-friday-fg-subtle">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             </div>
           </div>
@@ -454,10 +443,10 @@ function MessageBubble({
 
         {/* Actions */}
         {!message.isStreaming && (message.content || (message.blocks && message.blocks.length > 0)) && (
-          <div className="flex items-center gap-1 px-1 pt-0.5">
+          <div className="flex items-center gap-3 pt-1">
             <button
               onClick={copy}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] text-friday-fg-subtle hover:text-friday-fg transition-colors"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
@@ -466,10 +455,10 @@ function MessageBubble({
               onClick={save}
               disabled={saving}
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors",
+                "inline-flex items-center gap-1 text-[11px] transition-colors",
                 saved
-                  ? "text-amber-600"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  ? "text-friday-accent"
+                  : "text-friday-fg-subtle hover:text-friday-fg",
                 saving && "opacity-50",
               )}
             >
@@ -479,7 +468,7 @@ function MessageBubble({
             {onRetry && (
               <button
                 onClick={onRetry}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                className="inline-flex items-center gap-1 text-[11px] text-friday-fg-subtle hover:text-friday-fg transition-colors"
               >
                 <RotateCcw className="h-3 w-3" />
                 Retry
@@ -543,31 +532,36 @@ function ChatHistorySidebar({
       <div className="px-3 py-3 shrink-0">
         <button
           onClick={onNew}
-          className="flex items-center gap-2 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
+          className="flex items-center justify-center gap-1.5 w-full rounded-md border border-friday-border-soft bg-friday-surface px-3 py-2 text-[12.5px] text-friday-fg hover:border-friday-fg/40 transition-colors"
         >
-          <MessageSquarePlus className="h-4 w-4" />
+          <MessageSquarePlus className="h-3.5 w-3.5" />
           New chat
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-4">
+      <div className="flex-1 overflow-y-auto px-1.5 pb-3 space-y-3">
         {Object.entries(grouped).map(([label, items]) => {
           if (items.length === 0) return null;
           return (
             <div key={label}>
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <p className="px-3 pt-2 pb-1 font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
                 {label}
               </p>
-              <div className="space-y-0.5">
+              <div>
                 {items.map((s) => (
                   <div
                     key={s.id}
                     className={cn(
-                      "group relative flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer transition-colors",
-                      activeId === s.id ? "bg-accent" : "hover:bg-accent/50"
+                      "group relative flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors text-[12.5px]",
+                      activeId === s.id
+                        ? "text-friday-fg font-medium"
+                        : "text-friday-fg-muted hover:text-friday-fg",
                     )}
                     onClick={() => onSelect(s.id)}
                   >
+                    {activeId === s.id && (
+                      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-sm bg-friday-accent" />
+                    )}
                     {editingId === s.id ? (
                       <input
                         autoFocus
@@ -582,35 +576,35 @@ function ChatHistorySidebar({
                           if (e.key === "Escape") setEditingId(null);
                         }}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1 bg-transparent text-sm outline-none border-b border-foreground"
+                        className="flex-1 bg-transparent text-[12.5px] outline-none border-b border-friday-fg"
                       />
                     ) : (
-                      <span className="flex-1 truncate text-sm">{s.title}</span>
+                      <span className="flex-1 truncate">{s.title}</span>
                     )}
 
                     <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity relative">
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuId(menuId === s.id ? null : s.id); }}
-                        className="p-1 rounded-lg hover:bg-background transition-colors"
+                        className="p-1 rounded-sm hover:bg-friday-surface-2 transition-colors"
                       >
-                        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                        <MoreHorizontal className="h-3 w-3 text-friday-fg-subtle" />
                       </button>
                       {menuId === s.id && (
                         <div
-                          className="absolute right-0 top-6 z-50 min-w-[130px] rounded-xl border border-border bg-card shadow-lg py-1"
+                          className="absolute right-0 top-6 z-50 min-w-[120px] rounded-md border border-friday-border bg-friday-surface shadow-md py-1"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
                             onClick={() => { setEditValue(s.title); setEditingId(s.id); setMenuId(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] hover:bg-friday-surface-2 transition-colors"
                           >
-                            <Pencil className="h-3.5 w-3.5" /> Rename
+                            <Pencil className="h-3 w-3" /> Rename
                           </button>
                           <button
                             onClick={() => { onDelete(s.id); setMenuId(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] text-red-600 hover:bg-friday-surface-2 transition-colors"
                           >
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
+                            <Trash2 className="h-3 w-3" /> Delete
                           </button>
                         </div>
                       )}
@@ -623,7 +617,7 @@ function ChatHistorySidebar({
         })}
 
         {sessions.length === 0 && (
-          <p className="px-3 pt-4 text-xs text-muted-foreground text-center">No conversations yet</p>
+          <p className="px-3 pt-4 text-[11px] text-friday-fg-subtle text-center italic">No conversations yet</p>
         )}
       </div>
     </div>
@@ -1109,17 +1103,28 @@ export default function DBSGPTPage() {
 
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
 
+  const activeSession = activeSessionId
+    ? sessions.find((s) => s.id === activeSessionId)
+    : null;
+  const activeTimeAgo = activeSession
+    ? (() => {
+        const ms = Date.now() - new Date(activeSession.updatedAt).getTime();
+        const minutes = Math.floor(ms / 60_000);
+        if (minutes < 1) return "just now";
+        if (minutes < 60) return `${minutes} min ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days} d ago`;
+      })()
+    : null;
+
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-background">
+    <div className="flex h-[calc(100vh-64px)] bg-friday-bg">
       {/* History sidebar */}
-      <div className="w-64 shrink-0 border-r border-border bg-card/50 flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background">
-              <Sparkles className="h-3.5 w-3.5" />
-            </div>
-            <span className="text-sm font-semibold">DBS GPT</span>
-          </div>
+      <div className="w-64 shrink-0 border-r border-friday-border-soft bg-friday-bg flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-friday-border-soft shrink-0">
+          <AiLogo variant="wordmark" size={22} />
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatHistorySidebar
@@ -1133,13 +1138,34 @@ export default function DBSGPTPage() {
       {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="shrink-0 border-b border-border bg-card/80 px-6 py-3 backdrop-blur-sm flex items-center justify-between">
-          <span className="text-sm font-medium truncate max-w-xs">
-            {activeSessionId ? sessions.find((s) => s.id === activeSessionId)?.title ?? "Chat" : "DBS AI"}
-          </span>
-          <div className="flex items-center gap-2">
+        <div className="shrink-0 border-b border-friday-border-soft bg-friday-bg/95 backdrop-blur-sm px-6 py-3 flex items-center justify-between gap-4">
+          <div className="min-w-0 flex items-baseline gap-2.5">
+            {activeSession ? (
+              <>
+                <span className="font-display italic text-[15px] text-friday-fg truncate">
+                  {activeSession.title}
+                </span>
+                <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em] shrink-0">
+                  DBS AI · {activeTimeAgo}
+                </span>
+              </>
+            ) : (
+              <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.22em]">
+                New conversation
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="hidden sm:flex items-center gap-1 text-[10.5px] text-friday-fg-subtle">
+              <kbd className="px-1.5 py-0.5 font-mono text-[10px] border border-friday-border-soft rounded bg-friday-surface">⌘K</kbd>
+            </span>
             {messages.length > 0 && (
-              <Button variant="outline" size="sm" className="text-xs h-7" onClick={handleNew}>New chat</Button>
+              <button
+                onClick={handleNew}
+                className="inline-flex items-center gap-1 text-[12px] text-friday-fg-muted hover:text-friday-fg transition-colors"
+              >
+                + New chat
+              </button>
             )}
           </div>
         </div>
@@ -1157,7 +1183,7 @@ export default function DBSGPTPage() {
               className="mx-auto flex h-full max-w-2xl items-center justify-center px-6 py-10"
             >
               <div className="rounded-[28px] border border-border bg-card p-8 text-center shadow-sm">
-                <AiLogo variant="icon" size={48} />
+                <AiLogo variant="mark" size={48} />
                 <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
                   DBS AI · scheduled break
                 </p>

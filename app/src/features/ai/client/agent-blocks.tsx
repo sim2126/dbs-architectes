@@ -32,13 +32,17 @@ function ProseBlockView({ block }: { block: ProseBlock }) {
 }
 
 // ── Stat cards ────────────────────────────────────────────────────────────
+// Minimal architectural cards: tiny uppercase mono label, large Cormorant
+// italic value, small mono sub-label. Tone only colours the value text,
+// never the card surface — keeps the grid quiet, lets the one urgent
+// number (e.g. AT RISK) pull the eye on its own.
 
-const TONE_STYLES: Record<string, string> = {
-  default: "bg-card border-border",
-  positive: "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-900",
-  warning: "bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-900",
-  danger: "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-900",
-  info: "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-900",
+const TONE_VALUE: Record<string, string> = {
+  default:  "text-friday-fg",
+  positive: "text-emerald-700 dark:text-emerald-400",
+  warning:  "text-amber-700 dark:text-amber-300",
+  danger:   "text-red-700 dark:text-red-400",
+  info:     "text-friday-accent",
 };
 
 function StatCardsBlockView({ block }: { block: StatCardsBlock }) {
@@ -46,30 +50,43 @@ function StatCardsBlockView({ block }: { block: StatCardsBlock }) {
   return (
     <div
       className={cn(
-        "grid gap-3",
+        "grid gap-0 border border-friday-border-soft rounded-md overflow-hidden",
         cols === 1 && "grid-cols-1",
         cols === 2 && "grid-cols-2",
         cols === 3 && "grid-cols-3",
         cols >= 4 && "grid-cols-2 sm:grid-cols-4",
       )}
     >
-      {block.stats.map((stat, i) => (
-        <div
-          key={i}
-          className={cn(
-            "rounded-2xl border px-4 py-3",
-            TONE_STYLES[stat.tone ?? "default"] ?? TONE_STYLES.default,
-          )}
-        >
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {stat.label}
-          </p>
-          <p className="mt-1 text-2xl font-bold tabular-nums">{stat.value}</p>
-          {stat.sublabel && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{stat.sublabel}</p>
-          )}
-        </div>
-      ))}
+      {block.stats.map((stat, i) => {
+        const valueTone = TONE_VALUE[stat.tone ?? "default"] ?? TONE_VALUE.default;
+        return (
+          <div
+            key={i}
+            className={cn(
+              "px-4 py-3 border-friday-border-soft",
+              i > 0 && cols !== 1 && "border-l",
+            )}
+          >
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
+              {stat.label}
+            </p>
+            <p
+              className={cn(
+                "font-display italic leading-none tabular-nums mt-2",
+                valueTone,
+              )}
+              style={{ fontSize: "28px", fontWeight: 500 }}
+            >
+              {stat.value}
+            </p>
+            {stat.sublabel && (
+              <p className="mt-1.5 font-mono text-[10.5px] text-friday-fg-subtle truncate">
+                {stat.sublabel}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -233,14 +250,14 @@ function AgendaBlockView({ block }: { block: AgendaBlock }) {
 
 function TableBlockView({ block }: { block: TableBlock }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-      <table className="w-full border-collapse text-xs">
-        <thead className="bg-muted/70">
+    <div className="overflow-x-auto rounded-md border border-friday-border-soft">
+      <table className="w-full border-collapse text-[12.5px]">
+        <thead>
           <tr>
             {block.columns.map((col) => (
               <th
                 key={col}
-                className="border-b border-border px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                className="border-b border-friday-border-soft px-3 py-2 text-left font-mono text-[9.5px] uppercase tracking-[0.2em] text-friday-fg-subtle font-normal"
               >
                 {col}
               </th>
@@ -249,9 +266,12 @@ function TableBlockView({ block }: { block: TableBlock }) {
         </thead>
         <tbody>
           {block.rows.map((row, ri) => (
-            <tr key={ri} className="border-b border-border/50 last:border-0">
+            <tr
+              key={ri}
+              className="border-b border-friday-border-soft/60 last:border-0"
+            >
               {row.map((cell, ci) => (
-                <td key={ci} className="px-3 py-2 align-top">
+                <td key={ci} className="px-3 py-2 align-top text-friday-fg">
                   {cell}
                 </td>
               ))}
@@ -260,7 +280,7 @@ function TableBlockView({ block }: { block: TableBlock }) {
         </tbody>
       </table>
       {block.caption && (
-        <p className="border-t border-border bg-muted/40 px-3 py-1.5 text-[10px] text-muted-foreground">
+        <p className="border-t border-friday-border-soft px-3 py-1.5 font-mono text-[10.5px] text-friday-fg-subtle">
           {block.caption}
         </p>
       )}
