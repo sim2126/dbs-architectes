@@ -49,7 +49,7 @@
     "lucide-react": "^1.7.0",
     "next": "16.2.1",
     "next-auth": "^5.0.0-beta.30",
-    "nodemailer": "^8.0.7",
+    "nodemailer": "^7.0.13",
     "openai": "^6.34.0",
     "prisma": "^7.5.0",
     "pusher": "^5.3.3",
