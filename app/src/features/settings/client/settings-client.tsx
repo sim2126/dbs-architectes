@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { showToast } from "@/ui/components/toast";
 import { Avatar } from "@/ui/friday/avatar";
 import { I } from "@/ui/friday/icons";
@@ -456,6 +456,200 @@ function joinedShort(iso: string): string {
   return d.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 }
 
+// ─── Invitations subsection ───────────────────────────────────────
+// Lives inside the Members panel, above the active-member list.
+// Lists pending invitations + recent terminal ones (last 30 days).
+// Listens for a window "invitations:refresh" event so the
+// InviteDrawer can trigger a reload after a successful send.
+
+type Invitation = {
+  id: string;
+  email: string;
+  role: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expiresAt: string;
+  acceptedAt: string | null;
+  createdAt: string;
+  inviter: { name: string | null; initials: string | null } | null;
+};
+
+function relativeWhen(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${Math.max(1, mins)} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ago`;
+}
+
+function InvitationsSection() {
+  const [items, setItems] = useState<Invitation[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallbackLocal(async () => {
+    try {
+      const res = await fetch("/api/invitations");
+      if (!res.ok) {
+        setItems([]);
+        return;
+      }
+      const data = (await res.json()) as Invitation[];
+      setItems(data);
+    } catch {
+      setItems([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const handler = () => void load();
+    window.addEventListener("invitations:refresh", handler);
+    return () => window.removeEventListener("invitations:refresh", handler);
+  }, [load]);
+
+  const resend = async (id: string) => {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/invitations/${id}`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Couldn't resend invitation", "danger");
+        return;
+      }
+      const body = (await res.json()) as { inviteUrl: string | null };
+      if (body.inviteUrl) {
+        void navigator.clipboard?.writeText(body.inviteUrl).catch(() => {});
+        showToast("Invite link copied (SMTP not configured)", "info");
+      } else {
+        showToast("Invitation re-sent");
+      }
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const revoke = async (id: string) => {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/invitations/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Couldn't revoke invitation", "danger");
+        return;
+      }
+      showToast("Invitation revoked");
+      await load();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pending = (items ?? []).filter((i) => i.status === "pending");
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="mb-5">
+      <div className="flex items-baseline justify-between mb-2 px-1">
+        <h3 className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-muted m-0">
+          {pending.length > 0
+            ? `${pending.length} pending invitation${pending.length === 1 ? "" : "s"}`
+            : "Recent invitations"}
+        </h3>
+      </div>
+      <div className="border border-friday-border-soft rounded overflow-hidden">
+        {items.map((inv, i) => {
+          const status = inv.status;
+          const isPending = status === "pending";
+          const expired =
+            isPending && new Date(inv.expiresAt).getTime() < Date.now();
+          const statusLabel = expired ? "expired" : status;
+          const isLast = i === items.length - 1;
+          return (
+            <div
+              key={inv.id}
+              className={cn(
+                "grid items-center px-3.5 py-2.5 gap-3 text-[12px]",
+                !isLast && "border-b border-friday-border-soft",
+                !isPending && "opacity-70",
+              )}
+              style={{ gridTemplateColumns: "2fr 1.1fr 1.4fr 1fr 1.2fr" }}
+            >
+              <span className="font-mono text-[11.5px] text-friday-fg truncate">
+                {inv.email}
+              </span>
+              <span className="text-friday-fg-muted">
+                {ROLE_LABEL[inv.role] ?? inv.role}
+              </span>
+              <span className="text-[11px] text-friday-fg-subtle">
+                Invited {relativeWhen(inv.createdAt)}
+                {inv.inviter?.name ? ` · by ${inv.inviter.name}` : ""}
+              </span>
+              <span>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10px] font-medium tracking-wide",
+                  )}
+                  style={
+                    isPending && !expired
+                      ? { background: "rgba(30, 58, 138, 0.10)", color: "var(--friday-accent)" }
+                      : status === "accepted"
+                        ? { background: "#e8efe6", color: "#3f6534" }
+                        : { background: "var(--friday-surface-2)", color: "var(--friday-fg-subtle)" }
+                  }
+                >
+                  {statusLabel}
+                </span>
+              </span>
+              <span className="text-right space-x-2">
+                {isPending && !expired && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => resend(inv.id)}
+                      disabled={busyId === inv.id}
+                      className="text-[11px] text-friday-fg-muted hover:text-friday-fg transition-colors disabled:opacity-60"
+                    >
+                      Resend
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => revoke(inv.id)}
+                      disabled={busyId === inv.id}
+                      className="text-[11px] text-red-600 hover:text-red-700 transition-colors disabled:opacity-60"
+                    >
+                      Revoke
+                    </button>
+                  </>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Stable callback helper to avoid pulling useCallback into the InvitationsSection's
+// import chain — the file already imports useState/useEffect/useRef. Tiny shim
+// to keep the diff focused.
+function useCallbackLocal<T extends (...args: never[]) => unknown>(
+  fn: T,
+  deps: ReadonlyArray<unknown>,
+): T {
+  const ref = useRef(fn);
+  useEffect(() => {
+    ref.current = fn;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useRef(((...args: never[]) => ref.current(...args)) as T).current;
+}
+
 function MembersPanel({
   onInvite,
   currentUserId,
@@ -572,6 +766,8 @@ function MembersPanel({
         </button>
       }
     >
+      <InvitationsSection />
+
       <div className="border border-friday-border-soft rounded overflow-hidden">
         <div
           className="grid px-3.5 py-2.5 bg-friday-surface-2 border-b border-friday-border-soft text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-muted font-semibold gap-3"
@@ -1214,15 +1410,18 @@ function IntegrationsPanel() {
 function InviteDrawer({
   open,
   onClose,
-  onSend,
+  onSent,
 }: {
   open: boolean;
   onClose: () => void;
-  onSend: (email: string, role: string) => void;
+  /** Called after a successful invite. The inviteUrl is passed when
+   *  SMTP isn't configured and the admin needs to copy/paste it. */
+  onSent: (info: { email: string; inviteUrl: string | null }) => void;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("Editor");
-  const [msg, setMsg] = useState("");
+  const [role, setRole] = useState<PickableRole>("employee");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1233,12 +1432,45 @@ function InviteDrawer({
     return () => window.removeEventListener("keydown", k);
   }, [open, onClose]);
 
+  // Reset form when drawer opens fresh.
+  useEffect(() => {
+    if (open) {
+      setEmail("");
+      setRole("employee");
+      setError(null);
+    }
+  }, [open]);
+
+  const submit = async () => {
+    if (!email || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), role }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "Couldn't send invitation.");
+        return;
+      }
+      const body = (await res.json()) as { inviteUrl: string | null };
+      onSent({ email: email.trim().toLowerCase(), inviteUrl: body.inviteUrl });
+    } catch {
+      setError("Network error. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <>
       <div
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-50 transition-opacity duration-200",
+          "fixed inset-0 z-50 transition-opacity duration-100",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         style={{ background: "rgba(20,18,12,0.32)" }}
@@ -1260,7 +1492,7 @@ function InviteDrawer({
               Invite member
             </h2>
             <p className="text-[11.5px] text-friday-fg-muted mt-1 m-0">
-              They&apos;ll get an email with a link to join.
+              They&apos;ll get an email with a link to set their password and join. Link expires in 7 days.
             </p>
           </div>
           <button
@@ -1277,57 +1509,51 @@ function InviteDrawer({
             <TextInput
               value={email}
               onChange={setEmail}
-              placeholder="alice@example.com"
+              placeholder="alice@dbsarc.com"
               mono
             />
           </Field>
           <Field
             label="Role"
-            hint="Editors can edit projects and threads. Viewers can only read."
+            hint="Admins manage users and workspace settings. Directors and managers can run projects firm-wide. Members and interns are project-scoped."
           >
             <Select
               value={role}
-              onChange={setRole}
+              onChange={(v) => setRole(v as PickableRole)}
               options={[
-                { v: "Admin", l: "Admin" },
-                { v: "Editor", l: "Editor" },
-                { v: "Viewer", l: "Viewer" },
+                { v: "admin",    l: "Admin" },
+                { v: "director", l: "Director" },
+                { v: "manager",  l: "Manager" },
+                { v: "employee", l: "Member" },
+                { v: "intern",   l: "Intern" },
               ]}
             />
           </Field>
-          <Field label="Personal message" hint="Optional.">
-            <textarea
-              value={msg}
-              onChange={(e) => setMsg(e.target.value)}
-              placeholder="Welcome to DBS — looking forward to working with you."
-              className="w-full min-h-20 px-3 py-2.5 bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] text-[12px] leading-relaxed resize-y outline-none focus:border-friday-accent"
-            />
-          </Field>
+          {error && (
+            <p className="text-[12px] text-red-700 dark:text-red-400 leading-snug">{error}</p>
+          )}
         </div>
         <div className="px-[22px] py-3.5 border-t border-friday-border-soft bg-friday-surface flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[12px] text-friday-fg-muted cursor-pointer"
+            disabled={submitting}
+            className="h-8 px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[12px] text-friday-fg-muted cursor-pointer disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (email) {
-                onSend(email, role);
-                setEmail("");
-                setMsg("");
-              }
-            }}
-            disabled={!email}
+            onClick={submit}
+            disabled={!email || submitting}
             className={cn(
-              "h-8 px-3.5 border-0 rounded-[3px] text-[12px] font-medium tracking-wide",
-              email ? "bg-friday-accent text-white cursor-pointer" : "bg-friday-surface-2 text-friday-fg-subtle cursor-default",
+              "h-8 px-3.5 border-0 rounded-[3px] text-[12px] font-medium tracking-wide transition-colors duration-100 active:scale-[0.98]",
+              email && !submitting
+                ? "bg-friday-accent text-white cursor-pointer hover:opacity-90"
+                : "bg-friday-surface-2 text-friday-fg-subtle cursor-default",
             )}
           >
-            Send invite →
+            {submitting ? "Sending…" : "Send invite →"}
           </button>
         </div>
       </div>
@@ -1410,9 +1636,21 @@ export function SettingsClient({
       <InviteDrawer
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onSend={(email) => {
+        onSent={({ email, inviteUrl }) => {
           setInviteOpen(false);
-          showToast(`Invite sent to ${email}`);
+          if (inviteUrl) {
+            // No SMTP configured — surface the link so the admin can
+            // hand-deliver it via Slack/WhatsApp.
+            void navigator.clipboard?.writeText(inviteUrl).catch(() => {});
+            showToast(
+              `Invite link for ${email} copied to clipboard (SMTP not configured)`,
+              "info",
+            );
+          } else {
+            showToast(`Invite sent to ${email}`);
+          }
+          // Tell any mounted InvitationsSection to refresh.
+          window.dispatchEvent(new CustomEvent("invitations:refresh"));
         }}
       />
     </div>
