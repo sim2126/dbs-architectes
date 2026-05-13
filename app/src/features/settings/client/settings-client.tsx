@@ -34,6 +34,7 @@ const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: b
       { id: "branding", label: "Branding", admin: true },
       { id: "members", label: "Members", admin: true },
       { id: "permissions", label: "Permissions", admin: true },
+      { id: "audit", label: "Audit log", admin: true },
     ],
   },
   {
@@ -1081,6 +1082,172 @@ function PermissionsPanel() {
   );
 }
 
+// ─── Workspace > Audit log ────────────────────────────────────────
+// Read-only view of AuthorizationLog. Every decision the gate makes
+// is here — both allows and denies, with the deny reason where
+// applicable. Filters (action / decision) live in the URL of the
+// admin's session via component state only; no URL-syncing yet
+// because the audit panel is a forensics tool, not a sharable page.
+
+type AuditRow = {
+  id: string;
+  createdAt: string;
+  subject: {
+    id: string;
+    role: string;
+    name: string | null;
+    email: string | null;
+    initials: string | null;
+  };
+  action: string;
+  resource: { kind: string; id: string | null } | null;
+  decision: "allow" | "deny";
+  reason: string | null;
+};
+
+function AuditPanel() {
+  const [rows, setRows] = useState<AuditRow[] | null>(null);
+  const [actionFilter, setActionFilter] = useState<string>("");
+  const [decisionFilter, setDecisionFilter] = useState<"" | "allow" | "deny">("");
+
+  const load = useCallbackLocal(async () => {
+    setRows(null);
+    const params = new URLSearchParams();
+    if (actionFilter) params.set("action", actionFilter);
+    if (decisionFilter) params.set("decision", decisionFilter);
+    params.set("limit", "200");
+    try {
+      const res = await fetch(`/api/audit-log?${params.toString()}`);
+      if (!res.ok) {
+        setRows([]);
+        return;
+      }
+      const body = (await res.json()) as { rows: AuditRow[] };
+      setRows(body.rows);
+    } catch {
+      setRows([]);
+    }
+  }, [actionFilter, decisionFilter]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <Panel
+      title="Audit log"
+      description="Every authorization decision is recorded here. Read-only, last 200 entries by the current filter."
+    >
+      {/* Filter row */}
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div className="flex-1 min-w-[180px]">
+          <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-friday-fg-subtle mb-1.5">
+            Action
+          </p>
+          <select
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            className="w-full h-9 px-2 bg-friday-bg text-friday-fg border border-friday-border-soft rounded text-[12px] cursor-pointer focus:outline-none focus:border-friday-accent"
+          >
+            <option value="">All actions</option>
+            {(Object.keys(ACTIONS) as Action[]).sort().map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[140px]">
+          <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-friday-fg-subtle mb-1.5">
+            Decision
+          </p>
+          <select
+            value={decisionFilter}
+            onChange={(e) => setDecisionFilter(e.target.value as "" | "allow" | "deny")}
+            className="w-full h-9 px-2 bg-friday-bg text-friday-fg border border-friday-border-soft rounded text-[12px] cursor-pointer focus:outline-none focus:border-friday-accent"
+          >
+            <option value="">All</option>
+            <option value="allow">Allow only</option>
+            <option value="deny">Deny only</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Rows */}
+      <div className="border border-friday-border-soft rounded overflow-hidden">
+        <div
+          className="grid px-3 py-2 bg-friday-surface-2 border-b border-friday-border-soft font-mono text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-muted font-semibold gap-3"
+          style={{ gridTemplateColumns: "150px 1fr 1.4fr 90px 1.5fr" }}
+        >
+          <span>When</span>
+          <span>Subject</span>
+          <span>Action / resource</span>
+          <span>Decision</span>
+          <span>Reason</span>
+        </div>
+        {rows === null ? (
+          <div className="px-3 py-6 text-[12px] text-friday-fg-muted italic">
+            Loading audit log…
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-3 py-6 text-[12px] text-friday-fg-muted italic">
+            No entries match these filters.
+          </div>
+        ) : (
+          rows.map((r, i) => (
+            <div
+              key={r.id}
+              className={cn(
+                "grid items-center px-3 py-2 gap-3 text-[12px]",
+                i < rows.length - 1 && "border-b border-friday-border-soft",
+              )}
+              style={{ gridTemplateColumns: "150px 1fr 1.4fr 90px 1.5fr" }}
+            >
+              <span className="font-mono text-[10.5px] text-friday-fg-subtle">
+                {new Date(r.createdAt).toLocaleString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </span>
+              <span className="text-friday-fg truncate" title={r.subject.email ?? r.subject.id}>
+                {r.subject.name ?? r.subject.email ?? r.subject.id}
+                <span className="ml-1 text-friday-fg-subtle text-[10.5px]">
+                  · {r.subject.role}
+                </span>
+              </span>
+              <span className="font-mono text-[10.5px] text-friday-fg truncate">
+                {r.action}
+                {r.resource && (
+                  <span className="text-friday-fg-subtle ml-1">
+                    → {r.resource.kind}
+                    {r.resource.id ? ` #${r.resource.id.slice(0, 8)}` : ""}
+                  </span>
+                )}
+              </span>
+              <span>
+                <span
+                  className="inline-flex items-center px-1.5 py-px rounded-full font-mono text-[10px] tracking-wider uppercase"
+                  style={
+                    r.decision === "allow"
+                      ? { background: "#e8efe6", color: "#3f6534" }
+                      : { background: "rgba(220, 38, 38, 0.10)", color: "#b91c1c" }
+                  }
+                >
+                  {r.decision}
+                </span>
+              </span>
+              <span className="text-[11.5px] text-friday-fg-subtle truncate" title={r.reason ?? ""}>
+                {r.reason ?? "—"}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 // ─── Billing > Plan ───────────────────────────────────────────────
 function UsageBar({
   label,
@@ -1606,6 +1773,8 @@ export function SettingsClient({
         );
       case "permissions":
         return <PermissionsPanel />;
+      case "audit":
+        return <AuditPanel />;
       case "plan":
         return <PlanPanel />;
       case "invoices":
