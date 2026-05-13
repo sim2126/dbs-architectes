@@ -53,13 +53,35 @@ export function permissionResponse(err: PermissionError): Response {
 async function loadSubject(): Promise<Subject | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
+
+  // Confirm the account is still active on every gated request. The
+  // JWT cookie can live for hours after an admin flips isActive →
+  // false; without this check the deactivated user keeps working
+  // until the cookie expires. Cost: one indexed PK lookup per
+  // gated request — measured under 2ms locally, acceptable for the
+  // security guarantee. Reads the lifecycle fields only.
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { isActive: true, employmentStatus: true, role: true },
+  });
+  if (
+    !user ||
+    !user.isActive ||
+    user.employmentStatus === "suspended" ||
+    user.employmentStatus === "terminated"
+  ) {
+    return null;
+  }
+
   const regions = await prisma.userRegionAccess.findMany({
     where: { userId: session.user.id },
     select: { country: true, operatingRegion: true, accessLevel: true },
   });
   return {
     userId: session.user.id,
-    role: session.user.role ?? "viewer",
+    // Source role from DB, not the JWT — the JWT can be stale after a
+    // role change, and authorize() must always see the truth.
+    role: user.role ?? session.user.role ?? "viewer",
     regions: regions.map((r) => ({
       country: r.country,
       operatingRegion: r.operatingRegion,
