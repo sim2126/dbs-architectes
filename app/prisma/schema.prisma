@@ -55,6 +55,8 @@ model User {
   favorites        Favorite[]
   savedAi          SavedAiResponse[]
   tasks            Task[]
+  invitationsIssued Invitation[]      @relation("InvitationInviter")
+  passwordResets    PasswordReset[]
 }
 
 model Account {
@@ -636,4 +638,59 @@ model Task {
   @@index([userId, status, position])
   @@index([userId, dueDate])
   @@index([projectId])
+}
+
+// ─── INVITATION ────────────────────────────────────────────
+// Admin-issued workspace invites. The invitee opens /invite/[token],
+// sets their password, and the User row is created on accept.
+//
+// Token is stored hashed (sha256). We never store the raw token —
+// only the URL-bearer sees it. Status flips terminal at accept /
+// revoke / expiry; expired rows are pruned by a periodic job (not
+// yet implemented — out of scope this phase).
+//
+// One pending invite per email at a time. Reissuing an invite for an
+// already-pending email replaces the prior row (uniqueness enforced
+// by application logic, not a DB constraint, so we can keep history
+// rows after revoke without conflicts).
+
+model Invitation {
+  id           String    @id @default(cuid())
+  email        String
+  role         String    // role to assign on accept (admin | director | manager | employee | intern)
+  tokenHash    String    @unique
+  invitedBy    String    // userId of the admin who issued
+  expiresAt    DateTime
+  status       String    @default("pending") // pending | accepted | revoked | expired
+  acceptedAt   DateTime?
+  acceptedUserId String? // populated when accepted; points at the resulting User
+  createdAt    DateTime  @default(now())
+
+  inviter User @relation("InvitationInviter", fields: [invitedBy], references: [id])
+  // acceptedUser left unrelated — the User row is created on accept and
+  // the link is informational only.
+
+  @@index([email, status])
+  @@index([status, expiresAt])
+}
+
+// ─── PASSWORD RESET ────────────────────────────────────────
+// Single-use, expiring tokens for forgot-password flow.
+//
+// Same hashing pattern as Invitation: only tokenHash is stored. A
+// successful reset marks the row used and invalidates other active
+// sessions of the user (handled in the route, not the schema).
+
+model PasswordReset {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
 }
