@@ -1,6 +1,8 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
+import { loadProjectsNeedingAttention } from "@/features/dashboard/server/load-projects-needing-attention";
+import { loadTeamWorkload } from "@/features/team-workload/server/load-team-workload";
 
 function roleTier(role?: string | null): RoleTier {
   if (role === "super_admin" || role === "admin") return "admin";
@@ -187,5 +189,49 @@ async function buildDashboardData(args: {
     country: p.country,
   }));
 
-  return { kpis, todayFocus, whatChanged, starred };
+  // ── Manager-only: projects needing attention + compact team load ─
+  // 'admin' tier sees the whole studio. 'lead' (manager / project_manager
+  // / director) is scoped to their own assignments — the dashboard
+  // mirrors the existing tier semantics; the full firm-wide view lives
+  // on /dashboard/team-workload.
+  let needsAttention: DashboardData["needsAttention"];
+  let teamLoad: DashboardData["teamLoad"];
+
+  if (tier === "admin" || tier === "lead") {
+    const attentionRows = await loadProjectsNeedingAttention({
+      scopedProjectIds: tier === "admin" ? null : myProjectIds,
+      limit: 6,
+    });
+    needsAttention = attentionRows.map((r) => ({
+      projectId: r.projectId,
+      code: r.code,
+      title: r.title,
+      phase: r.phase,
+      workStatus: r.workStatus,
+      severity: r.severity,
+      daysSinceStatus: r.daysSinceStatus,
+      lastAuthor: r.lastAuthor,
+      lastSummary: r.lastSummary,
+    }));
+
+    // Compact team-load: top 5 by score from the full snapshot.
+    // We call the same server function the /team-workload page does so
+    // there's only one definition of "score" in the codebase.
+    const workload = await loadTeamWorkload();
+    teamLoad = workload.members.slice(0, 5).map((m) => ({
+      userId: m.user.id,
+      name: m.user.name,
+      email: m.user.email,
+      initials: m.user.initials,
+      role: m.user.role,
+      projectsActive: m.projects.length,
+      tasksOpen: m.tasks.open,
+      tasksOverdue: m.tasks.overdue,
+      agendaOverdue: m.agenda.overdue,
+      load: m.load,
+      score: m.score,
+    }));
+  }
+
+  return { kpis, todayFocus, whatChanged, starred, needsAttention, teamLoad };
 }
