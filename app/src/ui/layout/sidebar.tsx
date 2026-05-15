@@ -22,6 +22,7 @@ import {
   Table2,
   Bookmark,
   Target,
+  Gauge,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/ui/utils";
@@ -43,6 +44,7 @@ const collaborationItems = [
   { labelKey: "nav.chat", href: "/dashboard/chat", icon: MessageSquare },
   { labelKey: "nav.activity", href: "/dashboard/activity", icon: Activity },
   { labelKey: "nav.users", href: "/dashboard/users", icon: Users, adminOnly: true },
+  { labelKey: "nav.team_workload", href: "/dashboard/team-workload", icon: Gauge, managerOnly: true },
   { labelKey: "nav.sheets", href: "/dashboard/sheets", icon: Table2 },
   { labelKey: "nav.integrations", href: "/dashboard/integrations", icon: Plug },
 ];
@@ -69,6 +71,11 @@ export function Sidebar({ user }: SidebarProps) {
   const t = useT();
 
   const isAdmin = user?.role === "super_admin" || user?.role === "admin";
+  const isManager =
+    isAdmin ||
+    user?.role === "director" ||
+    user?.role === "manager" ||
+    user?.role === "project_manager";
   const initials = user?.name
     ?.split(" ")
     .map((n) => n[0])
@@ -199,6 +206,7 @@ export function Sidebar({ user }: SidebarProps) {
               <div className="space-y-0.5">
                 {collaborationItems.map((item) => {
                   if ("adminOnly" in item && item.adminOnly && !isAdmin) return null;
+                  if ("managerOnly" in item && item.managerOnly && !isManager) return null;
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                   return (
                     <Link
