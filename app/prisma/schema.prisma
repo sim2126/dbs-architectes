@@ -66,6 +66,7 @@ model User {
   invitationsIssued Invitation[]      @relation("InvitationInviter")
   passwordResets    PasswordReset[]
   userSessions      UserSession[]
+  statusUpdates     ProjectStatusUpdate[]
 }
 
 model Account {
@@ -146,11 +147,38 @@ model Project {
   importedAssets ImportedAsset[]
   meetingMemory  ProjectMeetingMemory?
   tasks          Task[]
+  statusUpdates  ProjectStatusUpdate[]
 
   @@index([status, updatedAt])
   @@index([phase])
   @@index([country, operatingRegion])
   @@index([commune])
+}
+
+// Structured status check-ins authored by project leads/managers.
+// Distinct from Channel/Message threads — those are casual chat;
+// status updates are the recurring "how is this project doing" pulse
+// that surfaces in the PM dashboard and project-health rollups.
+model ProjectStatusUpdate {
+  id        String   @id @default(cuid())
+  projectId String
+  authorId  String
+  // "on_track" | "at_risk" | "off_track" — kept as a string to mirror
+  // the convention used by phase/workStatus rather than a Prisma enum.
+  health    String
+  summary   String
+  // Optional rolling slots so a lead can post a snapshot without
+  // adopting a heavyweight template.
+  next      String?
+  blockers  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([authorId])
 }
 
 model ProjectAssignment {

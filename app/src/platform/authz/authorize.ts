@@ -215,6 +215,31 @@ export function authorize(
       return deny("Only directors or project leads can assign team members.");
     }
 
+    case "project:status.post": {
+      // Posting a structured PM check-in. Same audience as "update.status":
+      // any assignee on the project, plus managers/directors firm-wide.
+      // Region access is also required — a Swiss-only manager cannot
+      // post on an Indian project they have no visibility into.
+      if (resource?.kind !== "project") return deny("Resource must be a project.");
+      if (!canRegionAccess(subject, resource.country))
+        return deny("You don't have access to projects in this country.");
+      if (isManager(subject.role)) return ALLOW;
+      if (isAssigned(assignmentTier(resource.assignmentRole))) return ALLOW;
+      return deny("Only assignees or managers can post status updates.");
+    }
+
+    case "project:status.delete": {
+      // Tighter than post — only managers/directors and the original
+      // author should remove a status entry. Author scoping is enforced
+      // by the route (not the policy) because we don't carry the
+      // status row's authorId in Resource here. The route compares
+      // subject.userId to the row's authorId before allowing.
+      if (resource?.kind !== "project") return deny("Resource must be a project.");
+      if (isManager(subject.role)) return ALLOW;
+      if (assignmentTier(resource.assignmentRole) === "lead") return ALLOW;
+      return deny("Only project leads or managers can delete status updates.");
+    }
+
     // ── Threads (per-project) ─────────────────────────────────
     case "thread:read": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");

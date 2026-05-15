@@ -22,6 +22,8 @@ export const ACTIONS = {
   "project:update.status":  "Change project workStatus only",
   "project:delete":         "Delete a project",
   "project:assign":         "Add or remove team members",
+  "project:status.post":    "Post a structured status update",
+  "project:status.delete":  "Delete a status update",
 
   // ── Project threads ───────────────────────────────────────
   "thread:read":            "Read a project-scoped thread",
