@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { ArrowUpRight, CalendarClock, Clock3, Sparkles, Star } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, Clock3, Gauge, Sparkles, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { PHASE_COLORS } from "@/ui/utils";
 import { translatePhase, useT } from "@/i18n/translations";
@@ -19,6 +19,36 @@ export interface KpiCard {
   sub: string;
   href: string;
   tone: "default" | "warn";
+}
+
+export type AttentionSeverity = "off_track" | "at_risk" | "stale" | "silent";
+
+export interface AttentionItem {
+  projectId: string;
+  code: string;
+  title: string;
+  phase: string;
+  workStatus: string;
+  severity: AttentionSeverity;
+  daysSinceStatus: number | null;
+  lastAuthor: { name: string | null; initials: string | null } | null;
+  lastSummary: string | null;
+}
+
+export type WorkloadLoad = "light" | "balanced" | "heavy" | "overloaded";
+
+export interface TeamLoadItem {
+  userId: string;
+  name: string | null;
+  email: string;
+  initials: string | null;
+  role: string;
+  projectsActive: number;
+  tasksOpen: number;
+  tasksOverdue: number;
+  agendaOverdue: number;
+  load: WorkloadLoad;
+  score: number;
 }
 
 export interface DashboardData {
@@ -48,6 +78,10 @@ export interface DashboardData {
     commune?: string | null;
     country?: string | null;
   }>;
+  /** Manager-only — undefined for the employee tier. */
+  needsAttention?: AttentionItem[];
+  /** Manager-only — top N most-loaded teammates, undefined otherwise. */
+  teamLoad?: TeamLoadItem[];
 }
 
 interface DashboardClientProps {
@@ -260,6 +294,18 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
           </motion.section>
         </div>
 
+        {/* ── Manager-only: Needs attention + Team load ─── */}
+        {(data.needsAttention && data.needsAttention.length > 0) || (data.teamLoad && data.teamLoad.length > 0) ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {data.needsAttention && data.needsAttention.length > 0 && (
+              <NeedsAttentionSection items={data.needsAttention} />
+            )}
+            {data.teamLoad && data.teamLoad.length > 0 && (
+              <TeamLoadSection items={data.teamLoad} />
+            )}
+          </div>
+        ) : null}
+
         {/* ── Starred projects (grayscale scroller) ───────── */}
         {data.starred.length > 0 && (
           <motion.section {...fade(0.18)} className="space-y-4">
@@ -369,5 +415,179 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
 
       </div>
     </div>
+  );
+}
+
+// ── Needs attention ──────────────────────────────────────────────────
+// PM-dashboard widget. Surfaces projects whose latest status update is
+// off_track / at_risk, or whose status is stale or silent. Severity sets
+// the dot colour; the row links straight into the project detail.
+
+const SEVERITY_META: Record<
+  AttentionSeverity,
+  { label: string; tone: "rose" | "amber" | "slate"; dot: string }
+> = {
+  off_track: { label: "Off track", tone: "rose",  dot: "#e2445c" },
+  at_risk:   { label: "At risk",   tone: "amber", dot: "#c4994a" },
+  stale:     { label: "Stale",     tone: "slate", dot: "#a8a59d" },
+  silent:    { label: "No status", tone: "slate", dot: "#a8a59d" },
+};
+
+const SEVERITY_PILL_CLASS: Record<"rose" | "amber" | "slate", string> = {
+  rose:  "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+  amber: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  slate: "bg-muted text-muted-foreground",
+};
+
+function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
+  return (
+    <motion.section {...fade(0.18)} className="rounded-2xl border border-border bg-card">
+      <header className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            Pulse
+          </p>
+          <h2 className="font-display italic text-foreground text-xl leading-tight mt-0.5">
+            Needs attention
+          </h2>
+        </div>
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="w-3 h-3" />
+          {items.length}
+        </span>
+      </header>
+      <ul className="divide-y divide-border/60">
+        {items.map((item) => {
+          const meta = SEVERITY_META[item.severity];
+          return (
+            <li key={item.projectId} className="px-5 py-3">
+              <Link
+                href={`/dashboard/projects/${item.projectId}#status`}
+                className="group flex items-start gap-3"
+              >
+                <span
+                  className="w-2 h-2 rounded-full mt-2 shrink-0"
+                  style={{ background: meta.dot }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium tracking-wide ${SEVERITY_PILL_CLASS[meta.tone]}`}
+                    >
+                      {meta.label}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground/70">
+                      {item.code}
+                    </span>
+                    <span className="text-sm text-foreground truncate group-hover:underline underline-offset-2 min-w-0">
+                      {item.title}
+                    </span>
+                  </div>
+                  {item.lastSummary ? (
+                    <p className="text-xs text-muted-foreground mt-1 leading-snug line-clamp-2">
+                      {item.lastSummary}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic mt-1">
+                      No status update yet — chase the project lead for a pulse.
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 mt-1.5 text-[10.5px] text-muted-foreground/80">
+                    {item.daysSinceStatus === null ? (
+                      <span>Silent — never posted</span>
+                    ) : item.daysSinceStatus === 0 ? (
+                      <span>Updated today</span>
+                    ) : (
+                      <span>
+                        Updated {item.daysSinceStatus} day{item.daysSinceStatus === 1 ? "" : "s"} ago
+                      </span>
+                    )}
+                    {item.lastAuthor?.name && (
+                      <span className="text-muted-foreground/70">
+                        · by {item.lastAuthor.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </motion.section>
+  );
+}
+
+// ── Compact team load ────────────────────────────────────────────────
+// Pairs with /dashboard/team-workload. Shows the top 5 most-loaded
+// teammates with their open task / overdue counts and a load pill.
+
+const LOAD_PILL_CLASS: Record<WorkloadLoad, string> = {
+  light:      "bg-muted text-muted-foreground",
+  balanced:   "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  heavy:      "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  overloaded: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+};
+
+const LOAD_LABEL: Record<WorkloadLoad, string> = {
+  light: "Light",
+  balanced: "Balanced",
+  heavy: "Heavy",
+  overloaded: "Overloaded",
+};
+
+function TeamLoadSection({ items }: { items: TeamLoadItem[] }) {
+  return (
+    <motion.section {...fade(0.18)} className="rounded-2xl border border-border bg-card">
+      <header className="flex items-center justify-between px-5 py-4 border-b border-border/60">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            Capacity
+          </p>
+          <h2 className="font-display italic text-foreground text-xl leading-tight mt-0.5">
+            Team load
+          </h2>
+        </div>
+        <Link
+          href="/dashboard/team-workload"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Gauge className="w-3 h-3" />
+          Full view
+        </Link>
+      </header>
+      <ul className="divide-y divide-border/60">
+        {items.map((m) => {
+          const initials = m.initials ?? m.name?.slice(0, 2)?.toUpperCase() ?? "·";
+          const displayName = m.name ?? m.email;
+          return (
+            <li key={m.userId} className="px-5 py-3 flex items-center gap-3">
+              <Avatar className="h-7 w-7 shrink-0">
+                <AvatarFallback className="text-[10px] font-semibold bg-muted text-foreground">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-foreground truncate">{displayName}</p>
+                <p className="text-[10.5px] text-muted-foreground mt-0.5">
+                  {m.projectsActive} project{m.projectsActive === 1 ? "" : "s"} ·{" "}
+                  {m.tasksOpen} task{m.tasksOpen === 1 ? "" : "s"}
+                  {m.tasksOverdue + m.agendaOverdue > 0 && (
+                    <span className="text-rose-600 dark:text-rose-400">
+                      {" "}· {m.tasksOverdue + m.agendaOverdue} overdue
+                    </span>
+                  )}
+                </p>
+              </div>
+              <span
+                className={`inline-flex items-center px-2 py-px rounded-full text-[10px] font-medium tracking-wide shrink-0 ${LOAD_PILL_CLASS[m.load]}`}
+              >
+                {LOAD_LABEL[m.load]}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </motion.section>
   );
 }
