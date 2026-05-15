@@ -25,6 +25,7 @@ export async function GET() {
       initials: true,
       defaultCountry: true,
       defaultRegion: true,
+      mfaEnabledAt: true,
     },
   });
   if (!user) return Response.json({ error: "Not found" }, { status: 404 });

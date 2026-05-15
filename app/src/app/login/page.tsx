@@ -25,27 +25,71 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stage, setStage] = useState<"credentials" | "mfa">("credentials");
+  const [mfaCode, setMfaCode] = useState("");
+
+  async function attemptSignIn(code?: string) {
+    return signIn("credentials", {
+      email,
+      password,
+      mfaCode: code ?? "",
+      redirect: false,
+    });
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError("");
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
+    const result = await attemptSignIn();
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid credentials. Please verify the demo account and try again.");
+      // NextAuth wraps thrown errors in a generic "CredentialsSignin" code,
+      // but the underlying message is surfaced on result.code in v5.
+      const code = (result as { code?: string }).code ?? result.error;
+      if (code.includes("MFA_REQUIRED")) {
+        setStage("mfa");
+        return;
+      }
+      setError("Invalid credentials. Please verify your account and try again.");
       return;
     }
 
     router.push("/dashboard");
     router.refresh();
+  }
+
+  async function handleMfaSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+
+    const result = await attemptSignIn(mfaCode.replace(/\s/g, ""));
+    setLoading(false);
+
+    if (result?.error) {
+      const code = (result as { code?: string }).code ?? result.error;
+      if (code.includes("MFA_INVALID")) {
+        setError("That code didn't verify. Check the clock on your authenticator and try again.");
+        setMfaCode("");
+        return;
+      }
+      setError("Sign-in failed. Please start over.");
+      setStage("credentials");
+      setMfaCode("");
+      return;
+    }
+
+    router.push("/dashboard");
+    router.refresh();
+  }
+
+  function backToCredentials() {
+    setStage("credentials");
+    setMfaCode("");
+    setError("");
   }
 
   return (
@@ -111,87 +155,149 @@ export default function LoginPage() {
           <Card className="w-full max-w-lg rounded-[32px] border-white/80 bg-white/88 shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
             <CardContent className="p-8 sm:p-10">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Workspace sign in</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight">Access the Friday.com platform</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {stage === "credentials" ? "Workspace sign in" : "Two-factor verification"}
+                </p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+                  {stage === "credentials" ? "Access the Friday.com platform" : "One more step"}
+                </h2>
                 <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                  Use the demo credentials below to enter the dashboard and present the product.
+                  {stage === "credentials"
+                    ? "Use the demo credentials below to enter the dashboard and present the product."
+                    : `Signed in as ${email}.`}
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@friday.com"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    required
-                    autoComplete="email"
-                    className="h-12 rounded-2xl"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <Label htmlFor="password">Password</Label>
-                    <a
-                      href="/forgot-password"
-                      className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 hover:no-underline transition-colors"
-                    >
-                      Forgot password?
-                    </a>
-                  </div>
-                  <div className="relative">
+              {stage === "credentials" ? (
+                <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
                     <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      id="email"
+                      type="email"
+                      placeholder="you@friday.com"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
                       required
-                      autoComplete="current-password"
-                      className="h-12 rounded-2xl pr-12"
+                      autoComplete="email"
+                      className="h-12 rounded-2xl"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
-                </div>
 
-                {error && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20">
-                    {error}
+                  <div className="space-y-2">
+                    <div className="flex items-baseline justify-between">
+                      <Label htmlFor="password">Password</Label>
+                      <a
+                        href="/forgot-password"
+                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 hover:no-underline transition-colors"
+                      >
+                        Forgot password?
+                      </a>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        required
+                        autoComplete="current-password"
+                        className="h-12 rounded-2xl pr-12"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                <Button type="submit" size="xl" className="w-full rounded-2xl" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Signing in
-                    </>
-                  ) : (
-                    <>
-                      Enter workspace
-                      <ArrowRight className="h-4 w-4" />
-                    </>
+                  {error && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20">
+                      {error}
+                    </div>
                   )}
-                </Button>
-              </form>
 
-              <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
-                <p className="text-xs font-semibold text-blue-700 mb-1.5">Demo credentials</p>
-                <div className="space-y-0.5 font-mono text-xs text-blue-800">
-                  <p>Email: <span className="font-semibold">admin@dbsarc.com</span></p>
-                  <p>Password: <span className="font-semibold">admin123</span></p>
+                  <Button type="submit" size="xl" className="w-full rounded-2xl" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Signing in
+                      </>
+                    ) : (
+                      <>
+                        Enter workspace
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleMfaSubmit} className="mt-8 space-y-5">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-blue-900">
+                    Two-factor authentication is enabled on this account. Enter the
+                    6-digit code from your authenticator app to continue.
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mfa-code">Authentication code</Label>
+                    <Input
+                      id="mfa-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123 456"
+                      value={mfaCode}
+                      onChange={(event) => setMfaCode(event.target.value)}
+                      required
+                      maxLength={10}
+                      className="h-12 rounded-2xl tracking-[0.4em] text-center text-lg font-semibold"
+                      autoFocus
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/20">
+                      {error}
+                    </div>
+                  )}
+
+                  <Button type="submit" size="xl" className="w-full rounded-2xl" disabled={loading || mfaCode.length < 6}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Verifying
+                      </>
+                    ) : (
+                      <>
+                        Verify and enter
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+
+                  <button
+                    type="button"
+                    onClick={backToCredentials}
+                    className="block w-full text-center text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground hover:no-underline transition-colors"
+                  >
+                    Use a different account
+                  </button>
+                </form>
+              )}
+
+              {stage === "credentials" && (
+                <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+                  <p className="text-xs font-semibold text-blue-700 mb-1.5">Demo credentials</p>
+                  <div className="space-y-0.5 font-mono text-xs text-blue-800">
+                    <p>Email: <span className="font-semibold">admin@dbsarc.com</span></p>
+                    <p>Password: <span className="font-semibold">admin123</span></p>
+                  </div>
                 </div>
-              </div>
+              )}
 
             </CardContent>
           </Card>
