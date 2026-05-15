@@ -25,12 +25,13 @@ export type LoadProjectDetailInput = {
   projectId: string;
   currentUserId: string;
   isAdmin: boolean;
+  canAssignMembers: boolean;
 };
 
 export async function loadProjectDetail(
   input: LoadProjectDetailInput,
 ): Promise<ProjectDetailData | null> {
-  const { projectId, currentUserId, isAdmin } = input;
+  const { projectId, currentUserId, isAdmin, canAssignMembers } = input;
 
   const [project, floorPlans, galleryImages, threadChannel, favorite] =
     await Promise.all([
@@ -222,5 +223,6 @@ export async function loadProjectDetail(
     starred: favorite !== null,
     currentUserId,
     isAdmin,
+    canAssignMembers,
   };
 }

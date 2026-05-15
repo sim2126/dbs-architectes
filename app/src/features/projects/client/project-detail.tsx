@@ -17,6 +17,8 @@ import {
   Send,
   Sparkles,
   Star,
+  UserPlus,
+  X,
 } from "lucide-react";
 import { cn, PHASE_COLORS } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
@@ -386,39 +388,12 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
               id="team"
               title="Team"
               setRef={(el) => (sectionRefs.current.team = el)}
-              right={
-                <span className="text-[11px] text-friday-fg-subtle font-mono">
-                  {data.assignments.length} {data.assignments.length === 1 ? "person" : "people"}
-                </span>
-              }
             >
-              <div className="flex flex-wrap gap-2">
-                {data.assignments.length === 0 && (
-                  <span className="font-display italic text-friday-fg-muted">
-                    No one assigned yet.
-                  </span>
-                )}
-                {data.assignments.map((a) => (
-                  <div
-                    key={a.userId}
-                    className="inline-flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full border border-friday-border-soft bg-friday-surface"
-                  >
-                    <InitialsAvatar initials={a.user.initials ?? a.user.name?.slice(0, 2)?.toUpperCase() ?? "·"} />
-                    <div className="leading-tight">
-                      <p className="text-[12px] text-friday-fg">{a.user.name ?? a.user.email}</p>
-                      <p className="text-[10px] text-friday-fg-subtle capitalize">{a.role ?? a.user.role}</p>
-                    </div>
-                  </div>
-                ))}
-                {data.isAdmin && (
-                  <Link
-                    href={`/dashboard/users?project=${encodeURIComponent(project.id)}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-dashed border-friday-border text-friday-fg-muted hover:border-friday-fg hover:text-friday-fg text-[11.5px] transition-colors"
-                  >
-                    + Assign
-                  </Link>
-                )}
-              </div>
+              <TeamSection
+                projectId={project.id}
+                initialAssignments={data.assignments}
+                canAssignMembers={data.canAssignMembers}
+              />
             </Section>
 
             <Section
@@ -785,6 +760,484 @@ function InitialsAvatar({ initials, size = 26 }: { initials: string; size?: numb
     >
       {initials}
     </span>
+  );
+}
+
+// ─── Team section ────────────────────────────────────────────────────
+// Per-project membership: each row is an assignment with avatar, name,
+// role picker (lead / editor / reviewer / viewer), and a remove button.
+// All controls are hidden when the caller can't assign — the section
+// degrades to a read-only roster.
+//
+// Mutations go through the gated APIs at /api/projects/[id]/members[/userId].
+// We update local state optimistically and surface API errors via toast.
+
+const ASSIGNMENT_ROLES = ["lead", "editor", "reviewer", "viewer"] as const;
+type AssignmentRole = (typeof ASSIGNMENT_ROLES)[number];
+
+const ASSIGNMENT_ROLE_LABEL: Record<string, string> = {
+  lead: "Lead",
+  editor: "Editor",
+  reviewer: "Reviewer",
+  viewer: "Viewer",
+  // Legacy values from earlier seed data — show their canonical label
+  // until they're migrated. The picker reads "" for these so the user
+  // can pick a new role explicitly.
+  director: "Lead",
+  architect: "Editor",
+  member: "Editor",
+  owner: "Lead",
+};
+
+function normalizeRole(role: string | null): AssignmentRole | "" {
+  if (role && (ASSIGNMENT_ROLES as readonly string[]).includes(role)) {
+    return role as AssignmentRole;
+  }
+  return "";
+}
+
+type DirectoryUser = {
+  id: string;
+  name: string | null;
+  email: string;
+  initials: string | null;
+  role: string;
+  image: string | null;
+  isActive: boolean;
+};
+
+function TeamSection({
+  projectId,
+  initialAssignments,
+  canAssignMembers,
+}: {
+  projectId: string;
+  initialAssignments: ProjectDetailData["assignments"];
+  canAssignMembers: boolean;
+}) {
+  const [members, setMembers] = useState(initialAssignments);
+  const [addOpen, setAddOpen] = useState(false);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+
+  const updateRole = async (userId: string, nextRole: AssignmentRole) => {
+    if (busyUserId) return;
+    setBusyUserId(userId);
+    const prev = members;
+    setMembers((rows) =>
+      rows.map((r) => (r.userId === userId ? { ...r, role: nextRole } : r)),
+    );
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Couldn't change role", "danger");
+        setMembers(prev);
+        return;
+      }
+      showToast(`Role updated to ${ASSIGNMENT_ROLE_LABEL[nextRole]}`);
+    } catch {
+      showToast("Network error", "danger");
+      setMembers(prev);
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  const remove = async (userId: string, name: string) => {
+    if (busyUserId) return;
+    if (!confirm(`Remove ${name} from this project?`)) return;
+    setBusyUserId(userId);
+    const prev = members;
+    setMembers((rows) => rows.filter((r) => r.userId !== userId));
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members/${userId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Couldn't remove member", "danger");
+        setMembers(prev);
+        return;
+      }
+      showToast(`${name} removed from project`);
+    } catch {
+      showToast("Network error", "danger");
+      setMembers(prev);
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  const addMember = (user: DirectoryUser, role: AssignmentRole) => {
+    const row: ProjectDetailData["assignments"][number] = {
+      userId: user.id,
+      role,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        initials: user.initials,
+        image: user.image,
+        role: user.role,
+      },
+    };
+    setMembers((rows) => {
+      // If they already exist (re-add via dialog), update the role in place.
+      if (rows.some((r) => r.userId === user.id)) {
+        return rows.map((r) => (r.userId === user.id ? row : r));
+      }
+      return [...rows, row];
+    });
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-friday-fg-subtle font-mono">
+          {members.length} {members.length === 1 ? "person" : "people"}
+        </span>
+        {canAssignMembers && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 h-[28px] px-3 rounded-[3px] bg-friday-accent text-white text-[11.5px] font-medium tracking-wide hover:opacity-90 transition-opacity"
+          >
+            <UserPlus className="w-3 h-3" />
+            Add member
+          </button>
+        )}
+      </div>
+
+      {members.length === 0 ? (
+        <p className="font-display italic text-friday-fg-muted text-[13px] m-0">
+          No one assigned yet.
+        </p>
+      ) : (
+        <div className="border border-friday-border-soft rounded overflow-hidden">
+          {members.map((a, i) => {
+            const initials =
+              a.user.initials ?? a.user.name?.slice(0, 2)?.toUpperCase() ?? "·";
+            const displayName = a.user.name ?? a.user.email;
+            const currentRole = normalizeRole(a.role);
+            const isBusy = busyUserId === a.userId;
+            const isLast = i === members.length - 1;
+            return (
+              <div
+                key={a.userId}
+                className={cn(
+                  "grid items-center px-3.5 py-2.5 gap-3 text-[12px]",
+                  !isLast && "border-b border-friday-border-soft",
+                  isBusy && "opacity-60",
+                )}
+                style={{
+                  gridTemplateColumns: canAssignMembers
+                    ? "minmax(0,2fr) minmax(0,1.6fr) 140px 28px"
+                    : "minmax(0,2fr) minmax(0,1.6fr) 140px",
+                }}
+              >
+                <span className="inline-flex items-center gap-2.5 min-w-0">
+                  <InitialsAvatar initials={initials} />
+                  <span className="text-friday-fg truncate">{displayName}</span>
+                </span>
+                <span className="font-mono text-[11px] text-friday-fg-muted truncate">
+                  {a.user.email}
+                </span>
+                {canAssignMembers ? (
+                  <select
+                    value={currentRole}
+                    onChange={(e) =>
+                      updateRole(a.userId, e.target.value as AssignmentRole)
+                    }
+                    disabled={isBusy}
+                    title={
+                      currentRole === ""
+                        ? `Current: ${ASSIGNMENT_ROLE_LABEL[a.role ?? ""] ?? a.role ?? "—"} — pick a new role`
+                        : undefined
+                    }
+                    className={cn(
+                      "h-[26px] pl-2 pr-6 bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] text-[11px] appearance-none",
+                      isBusy ? "opacity-60 cursor-default" : "cursor-pointer",
+                    )}
+                  >
+                    {currentRole === "" && (
+                      <option value="" disabled>
+                        {ASSIGNMENT_ROLE_LABEL[a.role ?? ""] ?? a.role ?? "—"}
+                      </option>
+                    )}
+                    {ASSIGNMENT_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {ASSIGNMENT_ROLE_LABEL[r]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[11px] text-friday-fg-muted capitalize">
+                    {ASSIGNMENT_ROLE_LABEL[a.role ?? ""] ?? a.role ?? a.user.role}
+                  </span>
+                )}
+                {canAssignMembers ? (
+                  <button
+                    type="button"
+                    onClick={() => remove(a.userId, displayName)}
+                    disabled={isBusy}
+                    aria-label={`Remove ${displayName}`}
+                    title="Remove from project"
+                    className="w-7 h-7 rounded text-friday-fg-subtle hover:text-red-600 hover:bg-friday-surface-2 transition-colors flex items-center justify-center disabled:opacity-60"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {addOpen && (
+        <AddMemberDialog
+          projectId={projectId}
+          existingMemberIds={new Set(members.map((m) => m.userId))}
+          onClose={() => setAddOpen(false)}
+          onAdded={(user, role) => {
+            addMember(user, role);
+            setAddOpen(false);
+            showToast(`${user.name ?? user.email} added as ${ASSIGNMENT_ROLE_LABEL[role]}`);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function AddMemberDialog({
+  projectId,
+  existingMemberIds,
+  onClose,
+  onAdded,
+}: {
+  projectId: string;
+  existingMemberIds: Set<string>;
+  onClose: () => void;
+  onAdded: (user: DirectoryUser, role: AssignmentRole) => void;
+}) {
+  const [directory, setDirectory] = useState<DirectoryUser[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [role, setRole] = useState<AssignmentRole>("editor");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/users");
+        if (!res.ok) {
+          if (!cancelled) setDirectory([]);
+          return;
+        }
+        const raw = (await res.json()) as DirectoryUser[];
+        if (cancelled) return;
+        setDirectory(raw.filter((u) => u.isActive));
+      } catch {
+        if (!cancelled) setDirectory([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, submitting]);
+
+  const candidates = useMemo(() => {
+    if (!directory) return [];
+    const q = query.trim().toLowerCase();
+    return directory
+      .filter((u) => !existingMemberIds.has(u.id))
+      .filter((u) => {
+        if (!q) return true;
+        return (
+          (u.name ?? "").toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 80);
+  }, [directory, query, existingMemberIds]);
+
+  const selected = useMemo(
+    () => candidates.find((u) => u.id === selectedUserId) ?? null,
+    [candidates, selectedUserId],
+  );
+
+  const submit = async () => {
+    if (!selected || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selected.id, role }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Couldn't add member", "danger");
+        return;
+      }
+      onAdded(selected, role);
+    } catch {
+      showToast("Network error", "danger");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={() => !submitting && onClose()}
+      className="fixed inset-0 z-[60] flex items-center justify-center"
+      style={{ background: "rgba(20,18,12,0.32)" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[480px] max-w-[92vw] bg-friday-bg border border-friday-border rounded-md flex flex-col overflow-hidden"
+        style={{ boxShadow: "0 24px 60px rgba(20,18,12,0.18)", maxHeight: "80vh" }}
+      >
+        <div className="px-5 pt-4 pb-3 border-b border-friday-border-soft flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-display italic font-medium text-[20px] text-friday-fg m-0 tracking-tight">
+              Add to project
+            </h3>
+            <p className="text-[11.5px] text-friday-fg-muted mt-0.5 m-0">
+              Pick a teammate and the role they should hold on this project.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="bg-transparent border-0 p-1.5 cursor-pointer text-friday-fg-muted leading-none"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-3 border-b border-friday-border-soft">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or email…"
+            autoFocus
+            className="w-full h-9 px-3 bg-friday-bg text-friday-fg border border-friday-border-soft rounded text-[12.5px] focus:outline-none focus:border-friday-accent"
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2 py-2 min-h-[180px]">
+          {directory === null ? (
+            <p className="px-3 py-4 text-[12px] text-friday-fg-muted italic m-0">
+              Loading directory…
+            </p>
+          ) : candidates.length === 0 ? (
+            <p className="px-3 py-4 text-[12px] text-friday-fg-muted italic m-0">
+              {query
+                ? "No matches. Try a different name or email."
+                : "Everyone is already on this project."}
+            </p>
+          ) : (
+            candidates.map((u) => {
+              const initials =
+                u.initials ?? u.name?.slice(0, 2)?.toUpperCase() ?? "·";
+              const isSelected = selectedUserId === u.id;
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => setSelectedUserId(u.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-[3px] text-left transition-colors cursor-pointer",
+                    isSelected
+                      ? "bg-friday-accent text-white"
+                      : "hover:bg-friday-surface-2 text-friday-fg",
+                  )}
+                >
+                  <InitialsAvatar initials={initials} />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[12.5px] truncate">
+                      {u.name ?? u.email}
+                    </span>
+                    <span
+                      className={cn(
+                        "block font-mono text-[10.5px] truncate",
+                        isSelected ? "text-white/75" : "text-friday-fg-subtle",
+                      )}
+                    >
+                      {u.email}
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] uppercase tracking-wider font-mono",
+                      isSelected ? "text-white/75" : "text-friday-fg-subtle",
+                    )}
+                  >
+                    {u.role}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-friday-border-soft bg-friday-surface flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[11.5px] text-friday-fg-muted">
+            <span>Role:</span>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as AssignmentRole)}
+              className="h-[28px] pl-2 pr-6 bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] text-[11.5px] cursor-pointer appearance-none"
+            >
+              {ASSIGNMENT_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ASSIGNMENT_ROLE_LABEL[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="h-[28px] px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[11.5px] text-friday-fg-muted cursor-pointer disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!selected || submitting}
+            className={cn(
+              "h-[28px] px-3.5 rounded-[3px] text-[11.5px] font-medium tracking-wide",
+              selected && !submitting
+                ? "bg-friday-accent text-white cursor-pointer hover:opacity-90"
+                : "bg-friday-surface-2 text-friday-fg-subtle cursor-default",
+            )}
+          >
+            {submitting ? "Adding…" : "Add to project"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
