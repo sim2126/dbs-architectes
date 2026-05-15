@@ -105,4 +105,11 @@ export type ProjectDetailData = {
   starred: boolean;
   currentUserId: string;
   isAdmin: boolean;
+  /**
+   * Derived server-side from authorize(subject, "project:assign", resource).
+   * True when the caller can add/remove/relabel members on this project —
+   * directors/admins and the project's own leads. Drives the "Add member"
+   * and per-row controls in the Team section.
+   */
+  canAssignMembers: boolean;
 };
