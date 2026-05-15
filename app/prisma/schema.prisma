@@ -29,6 +29,14 @@ model User {
   defaultCountry   String?   // CH | IT | IN
   defaultRegion    String?
   deactivatedAt    DateTime?
+  // Multi-factor authentication. mfaSecret is the TOTP shared secret
+  // (base32). mfaEnabledAt is the timestamp when the user completed
+  // enrolment — null means MFA is OFF for this user. We store the
+  // raw secret because the DB itself is the trust boundary; if it
+  // leaks, every MFA factor is compromised anyway, and additional
+  // encryption-at-rest is an infra concern (KMS for the volume).
+  mfaSecret        String?
+  mfaEnabledAt     DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -57,6 +65,7 @@ model User {
   tasks            Task[]
   invitationsIssued Invitation[]      @relation("InvitationInviter")
   passwordResets    PasswordReset[]
+  userSessions      UserSession[]
 }
 
 model Account {
@@ -693,4 +702,31 @@ model PasswordReset {
 
   @@index([userId, usedAt])
   @@index([expiresAt])
+}
+
+// ─── USER SESSION ──────────────────────────────────────────
+// Per-issued-JWT row. NextAuth uses JWT strategy (stateless cookie),
+// so to support "active sessions / revoke per device" we record one
+// row per sign-in. The JWT carries the row id; on every gated
+// request loadSubject() looks the row up, refuses if revokedAt is
+// set, and updates lastSeenAt (throttled to ~once per 5 min to
+// avoid hammering the DB).
+//
+// ip + userAgent are captured at sign-in for the "active sessions"
+// list display. They're informational — we don't pin sessions to
+// these values (legit users move networks).
+
+model UserSession {
+  id         String    @id @default(cuid())
+  userId     String
+  ip         String?
+  userAgent  String?
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([userId, lastSeenAt])
 }

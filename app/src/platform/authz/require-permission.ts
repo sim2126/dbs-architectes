@@ -73,10 +73,39 @@ async function loadSubject(): Promise<Subject | null> {
     return null;
   }
 
-  const regions = await prisma.userRegionAccess.findMany({
+  // Per-session revoke. The JWT carries a UserSession row id; if the
+  // row has been revoked (admin or self via Active Sessions UI), we
+  // refuse the request and the next page navigation lands on /login.
+  //
+  // Throttled lastSeenAt update: only write when the previous touch
+  // is older than 5 minutes. Keeps "last seen" useful for the UI
+  // without writing on every page load.
+  const sessionId = session.user.sessionId;
+  if (sessionId) {
+    const row = await prisma.userSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, revokedAt: true, lastSeenAt: true },
+    });
+    if (!row || row.revokedAt) return null;
+    const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+    if (row.lastSeenAt.getTime() < fiveMinAgo) {
+      // Fire-and-forget; do not block the request on this write.
+      prisma.userSession
+        .update({ where: { id: row.id }, data: { lastSeenAt: new Date() } })
+        .catch((err: unknown) => console.warn("[authz] lastSeenAt update failed", err));
+    }
+  }
+
+  type RegionRow = {
+    country: string;
+    operatingRegion: string | null;
+    accessLevel: string;
+  };
+
+  const regions = (await prisma.userRegionAccess.findMany({
     where: { userId: session.user.id },
     select: { country: true, operatingRegion: true, accessLevel: true },
-  });
+  })) as RegionRow[];
   return {
     userId: session.user.id,
     // Source role from DB, not the JWT — the JWT can be stale after a

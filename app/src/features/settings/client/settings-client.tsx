@@ -23,6 +23,7 @@ const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: b
     label: "Profile",
     items: [
       { id: "profile", label: "Profile" },
+      { id: "security", label: "Security" },
       { id: "notifications", label: "Notifications" },
       { id: "language", label: "Language" },
     ],
@@ -310,6 +311,458 @@ function LanguagePanel() {
         }}
       />
     </Panel>
+  );
+}
+
+// ─── Security ─────────────────────────────────────────────────────
+// Combines MFA enrollment / disable and the active-session list.
+// Sessions are server-tracked rows (see `UserSession` in the schema);
+// the current session row is flagged so the user can't accidentally
+// revoke the device they're sitting at without seeing what happens.
+
+type SessionRow = {
+  id: string;
+  ip: string | null;
+  userAgent: string | null;
+  lastSeenAt: string;
+  createdAt: string;
+  current: boolean;
+};
+
+function describeDevice(ua: string | null): string {
+  if (!ua) return "Unknown device";
+  // Keep it cheap — a small heuristic beats pulling a UA parser into the
+  // client bundle. Order matters (Edge UA contains "Chrome").
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/OPR\/|Opera/i.test(ua)) return "Opera";
+  if (/Firefox/i.test(ua)) return "Firefox";
+  if (/Chrome/i.test(ua)) return "Chrome";
+  if (/Safari/i.test(ua)) return "Safari";
+  return "Browser";
+}
+
+function describeOs(ua: string | null): string {
+  if (!ua) return "";
+  if (/Windows NT 10/i.test(ua)) return "Windows";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Mac OS X|Macintosh/i.test(ua)) return "macOS";
+  if (/Android/i.test(ua)) return "Android";
+  if (/iPhone|iPad|iOS/i.test(ua)) return "iOS";
+  if (/Linux/i.test(ua)) return "Linux";
+  return "";
+}
+
+function relativeShort(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} d ago`;
+  const months = Math.floor(days / 30);
+  return `${months} mo ago`;
+}
+
+function SecurityPanel() {
+  // MFA state derived from /api/users/me.
+  const [mfaEnabled, setMfaEnabled] = useState<boolean | null>(null);
+
+  // Enrollment flow state.
+  const [qr, setQr] = useState<{ qrDataUrl: string; secret: string } | null>(null);
+  const [enrollCode, setEnrollCode] = useState("");
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+
+  // Disable flow state.
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [disablePassword, setDisablePassword] = useState("");
+  const [disableBusy, setDisableBusy] = useState(false);
+  const [disableError, setDisableError] = useState("");
+
+  // Active sessions.
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const loadMe = useCallbackLocal(async () => {
+    try {
+      const res = await fetch("/api/users/me");
+      if (!res.ok) return;
+      const me = (await res.json()) as { mfaEnabledAt: string | null };
+      setMfaEnabled(Boolean(me.mfaEnabledAt));
+    } catch {
+      /* leave null — UI shows loading */
+    }
+  }, []);
+
+  const loadSessions = useCallbackLocal(async () => {
+    try {
+      const res = await fetch("/api/auth/sessions");
+      if (!res.ok) {
+        setSessions([]);
+        return;
+      }
+      const data = (await res.json()) as SessionRow[];
+      setSessions(data);
+    } catch {
+      setSessions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadMe();
+    void loadSessions();
+  }, [loadMe, loadSessions]);
+
+  const startEnroll = async () => {
+    if (enrollBusy) return;
+    setEnrollBusy(true);
+    setEnrollError("");
+    try {
+      const res = await fetch("/api/auth/mfa/setup", { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setEnrollError(body.error ?? "Couldn't start enrollment.");
+        return;
+      }
+      const body = (await res.json()) as { qrDataUrl: string; secret: string };
+      setQr(body);
+    } catch {
+      setEnrollError("Network error. Try again.");
+    } finally {
+      setEnrollBusy(false);
+    }
+  };
+
+  const confirmEnroll = async () => {
+    if (enrollBusy || enrollCode.length < 6) return;
+    setEnrollBusy(true);
+    setEnrollError("");
+    try {
+      const res = await fetch("/api/auth/mfa/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: enrollCode.replace(/\s/g, "") }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setEnrollError(body.error ?? "Couldn't verify code.");
+        setEnrollCode("");
+        return;
+      }
+      setQr(null);
+      setEnrollCode("");
+      setMfaEnabled(true);
+      showToast("Two-factor authentication enabled");
+    } catch {
+      setEnrollError("Network error. Try again.");
+    } finally {
+      setEnrollBusy(false);
+    }
+  };
+
+  const cancelEnroll = () => {
+    setQr(null);
+    setEnrollCode("");
+    setEnrollError("");
+  };
+
+  const submitDisable = async () => {
+    if (disableBusy || !disablePassword) return;
+    setDisableBusy(true);
+    setDisableError("");
+    try {
+      const res = await fetch("/api/auth/mfa/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: disablePassword }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setDisableError(body.error ?? "Couldn't disable two-factor.");
+        return;
+      }
+      setDisableOpen(false);
+      setDisablePassword("");
+      setMfaEnabled(false);
+      showToast("Two-factor authentication disabled");
+    } catch {
+      setDisableError("Network error. Try again.");
+    } finally {
+      setDisableBusy(false);
+    }
+  };
+
+  const revokeSession = async (id: string) => {
+    if (revokingId) return;
+    setRevokingId(id);
+    try {
+      const res = await fetch(`/api/auth/sessions/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("Couldn't sign out that device", "danger");
+        return;
+      }
+      setSessions((rows) => rows?.filter((r) => r.id !== id) ?? null);
+      showToast("Device signed out");
+    } catch {
+      showToast("Network error", "danger");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  return (
+    <>
+      <Panel
+        title="Two-factor authentication"
+        description="A second factor on top of your password. Required for admin accounts after launch."
+      >
+        {mfaEnabled === null ? (
+          <div className="text-[12px] text-friday-fg-muted italic">Loading…</div>
+        ) : qr ? (
+          <div className="grid gap-4" style={{ gridTemplateColumns: "220px 1fr" }}>
+            <div className="bg-white rounded border border-friday-border-soft p-2 flex items-center justify-center">
+              {/* QR data URL from the server; harmless to render directly. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr.qrDataUrl} alt="MFA QR code" width={200} height={200} />
+            </div>
+            <div className="flex flex-col gap-3">
+              <p className="text-[12.5px] text-friday-fg leading-relaxed m-0">
+                Scan the code with Google Authenticator, 1Password, Authy, or any
+                TOTP app. If you can&apos;t scan, enter the secret manually:
+              </p>
+              <code className="font-mono text-[11px] text-friday-fg bg-friday-surface-2 border border-friday-border-soft rounded px-2 py-1.5 select-all break-all">
+                {qr.secret}
+              </code>
+              <Field label="Enter the 6-digit code">
+                <TextInput
+                  value={enrollCode}
+                  onChange={setEnrollCode}
+                  placeholder="123456"
+                  mono
+                />
+              </Field>
+              {enrollError && (
+                <p className="text-[12px] text-red-700 dark:text-red-400 m-0">
+                  {enrollError}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={confirmEnroll}
+                  disabled={enrollBusy || enrollCode.length < 6}
+                  className={cn(
+                    "h-[30px] px-3.5 rounded-[3px] text-[11.5px] font-medium tracking-wide",
+                    enrollBusy || enrollCode.length < 6
+                      ? "bg-friday-surface-2 text-friday-fg-subtle cursor-default"
+                      : "bg-friday-accent text-white cursor-pointer hover:opacity-90",
+                  )}
+                >
+                  {enrollBusy ? "Verifying…" : "Verify and enable"}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEnroll}
+                  disabled={enrollBusy}
+                  className="h-[30px] px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[11.5px] text-friday-fg-muted cursor-pointer disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : mfaEnabled ? (
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10.5px] font-medium tracking-wide"
+                  style={{ background: "#e8efe6", color: "#3f6534" }}
+                >
+                  <span
+                    className="w-[5px] h-[5px] rounded-full"
+                    style={{ background: "#3f6534" }}
+                  />
+                  Enabled
+                </span>
+              </div>
+              <p className="text-[12.5px] text-friday-fg-muted m-0 leading-relaxed">
+                Your authenticator app is the second factor. Disabling MFA requires
+                your password — losing access to your authenticator app does not
+                lock you out.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDisableOpen(true)}
+              className="h-[30px] px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[11.5px] text-friday-fg-muted cursor-pointer hover:text-friday-fg shrink-0"
+            >
+              Disable
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10.5px] font-medium tracking-wide"
+                  style={{ background: "var(--friday-surface-2)", color: "var(--friday-fg-subtle)" }}
+                >
+                  <span
+                    className="w-[5px] h-[5px] rounded-full"
+                    style={{ background: "var(--friday-fg-subtle)" }}
+                  />
+                  Not enabled
+                </span>
+              </div>
+              <p className="text-[12.5px] text-friday-fg-muted m-0 leading-relaxed">
+                Add a time-based one-time-password (TOTP) factor with Google
+                Authenticator, 1Password, or any compatible app.
+              </p>
+              {enrollError && (
+                <p className="text-[12px] text-red-700 dark:text-red-400 mt-2 m-0">
+                  {enrollError}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={startEnroll}
+              disabled={enrollBusy}
+              className="h-[30px] px-3.5 bg-friday-accent text-white border-0 rounded-[3px] text-[11.5px] font-medium cursor-pointer hover:opacity-90 disabled:opacity-60 shrink-0"
+            >
+              {enrollBusy ? "Loading…" : "Set up two-factor"}
+            </button>
+          </div>
+        )}
+      </Panel>
+
+      <div className="mt-5" />
+
+      <Panel
+        title="Active sessions"
+        description="Devices currently signed in to your account. Sign out anything you don't recognise."
+      >
+        {sessions === null ? (
+          <div className="text-[12px] text-friday-fg-muted italic">Loading sessions…</div>
+        ) : sessions.length === 0 ? (
+          <div className="text-[12px] text-friday-fg-muted italic">No active sessions.</div>
+        ) : (
+          <div className="border border-friday-border-soft rounded overflow-hidden">
+            {sessions.map((s, i) => {
+              const browser = describeDevice(s.userAgent);
+              const os = describeOs(s.userAgent);
+              const isLast = i === sessions.length - 1;
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "grid items-center px-3.5 py-3 gap-3 text-[12px]",
+                    !isLast && "border-b border-friday-border-soft",
+                  )}
+                  style={{ gridTemplateColumns: "1.6fr 1.2fr 1fr 1fr 90px" }}
+                >
+                  <span className="text-friday-fg">
+                    {browser}
+                    {os ? <span className="text-friday-fg-muted"> · {os}</span> : null}
+                    {s.current ? (
+                      <span className="ml-2 text-[9.5px] uppercase tracking-[0.18em] text-friday-accent font-semibold">
+                        this device
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="font-mono text-[11px] text-friday-fg-muted truncate">
+                    {s.ip ?? "—"}
+                  </span>
+                  <span className="text-[11px] text-friday-fg-muted">
+                    Started {relativeShort(s.createdAt)}
+                  </span>
+                  <span className="text-[11px] text-friday-fg-muted">
+                    Active {relativeShort(s.lastSeenAt)}
+                  </span>
+                  <span className="text-right">
+                    {s.current ? (
+                      <span className="text-[11px] text-friday-fg-subtle italic">current</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => revokeSession(s.id)}
+                        disabled={revokingId === s.id}
+                        className="text-[11px] text-red-600 hover:text-red-700 transition-colors disabled:opacity-60"
+                      >
+                        Sign out
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+
+      {disableOpen ? (
+        <div
+          onClick={() => !disableBusy && setDisableOpen(false)}
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          style={{ background: "rgba(20,18,12,0.32)" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-[380px] px-[22px] py-5 bg-friday-bg border border-friday-border rounded-md"
+            style={{ boxShadow: "0 24px 60px rgba(20,18,12,0.18)" }}
+          >
+            <h3 className="font-display italic font-medium text-[18px] text-friday-fg m-0 mb-1.5 tracking-tight">
+              Disable two-factor?
+            </h3>
+            <p className="text-[12px] text-friday-fg-muted m-0 mb-3 leading-relaxed">
+              Enter your password to turn off MFA. Your account will rely on the
+              password alone until you re-enroll.
+            </p>
+            <Field label="Password">
+              <input
+                type="password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                placeholder="Your account password"
+                autoComplete="current-password"
+                className="w-full h-8 px-[11px] bg-friday-bg text-friday-fg border border-friday-border-soft rounded-[3px] outline-none focus:border-friday-accent focus:ring-2 focus:ring-friday-accent-ring focus:ring-offset-2 focus:ring-offset-friday-bg transition-[border-color,box-shadow] duration-150 text-[12px]"
+              />
+            </Field>
+            {disableError && (
+              <p className="text-[12px] text-red-700 dark:text-red-400 mt-2 m-0">
+                {disableError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setDisableOpen(false)}
+                disabled={disableBusy}
+                className="h-[30px] px-3 bg-transparent border border-friday-border-soft rounded-[3px] text-[11.5px] text-friday-fg-muted cursor-pointer disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitDisable}
+                disabled={disableBusy || !disablePassword}
+                className={cn(
+                  "h-[30px] px-3.5 rounded-[3px] text-[11.5px] font-medium tracking-wide",
+                  disableBusy || !disablePassword
+                    ? "bg-friday-surface-2 text-friday-fg-subtle cursor-default"
+                    : "bg-red-600 text-white cursor-pointer hover:opacity-90",
+                )}
+              >
+                {disableBusy ? "Disabling…" : "Disable two-factor"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -1756,6 +2209,8 @@ export function SettingsClient({
     switch (active) {
       case "profile":
         return <ProfilePanel />;
+      case "security":
+        return <SecurityPanel />;
       case "notifications":
         return <NotificationsPanel />;
       case "language":
