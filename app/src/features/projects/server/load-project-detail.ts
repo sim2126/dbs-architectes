@@ -26,14 +26,15 @@ export type LoadProjectDetailInput = {
   currentUserId: string;
   isAdmin: boolean;
   canAssignMembers: boolean;
+  canPostStatus: boolean;
 };
 
 export async function loadProjectDetail(
   input: LoadProjectDetailInput,
 ): Promise<ProjectDetailData | null> {
-  const { projectId, currentUserId, isAdmin, canAssignMembers } = input;
+  const { projectId, currentUserId, isAdmin, canAssignMembers, canPostStatus } = input;
 
-  const [project, floorPlans, galleryImages, threadChannel, favorite] =
+  const [project, floorPlans, galleryImages, threadChannel, favorite, statusUpdates] =
     await Promise.all([
       prisma.project.findUnique({
         where: { id: projectId },
@@ -108,6 +109,29 @@ export async function loadProjectDetail(
           },
         },
         select: { id: true },
+      }),
+      prisma.projectStatusUpdate.findMany({
+        where: { projectId },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          health: true,
+          summary: true,
+          next: true,
+          blockers: true,
+          createdAt: true,
+          authorId: true,
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              initials: true,
+              image: true,
+            },
+          },
+        },
       }),
     ]);
 
@@ -220,9 +244,26 @@ export async function loadProjectDetail(
           : null,
       })),
     })),
+    statusUpdates: statusUpdates.map((s) => ({
+      id: s.id,
+      health: s.health as "on_track" | "at_risk" | "off_track",
+      summary: s.summary,
+      next: s.next,
+      blockers: s.blockers,
+      createdAt: s.createdAt.toISOString(),
+      authorId: s.authorId,
+      author: {
+        id: s.author.id,
+        name: s.author.name,
+        email: s.author.email,
+        initials: s.author.initials,
+        image: s.author.image,
+      },
+    })),
     starred: favorite !== null,
     currentUserId,
     isAdmin,
     canAssignMembers,
+    canPostStatus,
   };
 }

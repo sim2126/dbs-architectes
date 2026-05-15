@@ -57,6 +57,7 @@ export default async function ProjectDetailPage({
   // here so the server payload tells the client exactly what to render
   // instead of letting the client guess from `isAdmin`.
   const assignDecision = authorize(subject, "project:assign", resource);
+  const statusPostDecision = authorize(subject, "project:status.post", resource);
 
   // Load the full detail payload via the feature's server function.
   const data = await loadProjectDetail({
@@ -64,6 +65,7 @@ export default async function ProjectDetailPage({
     currentUserId: session.user.id,
     isAdmin: isAdmin(session.user.role),
     canAssignMembers: assignDecision.allow,
+    canPostStatus: statusPostDecision.allow,
   });
   if (!data) notFound();
 

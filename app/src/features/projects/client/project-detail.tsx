@@ -35,10 +35,11 @@ const SECTIONS = [
   { id: "glance",  num: "01", label: "At a glance" },
   { id: "about",   num: "02", label: "About" },
   { id: "team",    num: "03", label: "Team" },
-  { id: "updates", num: "04", label: "Updates" },
-  { id: "files",   num: "05", label: "Files" },
-  { id: "agenda",  num: "06", label: "Agenda" },
-  { id: "activity",num: "07", label: "Activity" },
+  { id: "status",  num: "04", label: "Status" },
+  { id: "updates", num: "05", label: "Updates" },
+  { id: "files",   num: "06", label: "Files" },
+  { id: "agenda",  num: "07", label: "Agenda" },
+  { id: "activity",num: "08", label: "Activity" },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
@@ -73,7 +74,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
   // Scroll-spy: track which section is currently visible
   const [active, setActive] = useState<SectionId>("glance");
   const sectionRefs = useRef<Record<SectionId, HTMLElement | null>>({
-    glance: null, about: null, team: null, updates: null,
+    glance: null, about: null, team: null, status: null, updates: null,
     files: null, agenda: null, activity: null,
   });
 
@@ -398,6 +399,21 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
 
             <Section
               num="04"
+              id="status"
+              title="Status"
+              setRef={(el) => (sectionRefs.current.status = el)}
+            >
+              <StatusSection
+                projectId={project.id}
+                initialUpdates={data.statusUpdates}
+                currentUserId={data.currentUserId}
+                canPost={data.canPostStatus}
+                isAdmin={data.isAdmin}
+              />
+            </Section>
+
+            <Section
+              num="05"
               id="updates"
               title="Updates"
               setRef={(el) => (sectionRefs.current.updates = el)}
@@ -463,7 +479,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
             </Section>
 
             <Section
-              num="05"
+              num="06"
               id="files"
               title="Files"
               setRef={(el) => (sectionRefs.current.files = el)}
@@ -490,7 +506,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
             </Section>
 
             <Section
-              num="06"
+              num="07"
               id="agenda"
               title="Agenda"
               setRef={(el) => (sectionRefs.current.agenda = el)}
@@ -524,7 +540,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
             </Section>
 
             <Section
-              num="07"
+              num="08"
               id="activity"
               title="Activity"
               setRef={(el) => (sectionRefs.current.activity = el)}
@@ -1237,6 +1253,343 @@ function AddMemberDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Status section ──────────────────────────────────────────────────
+// Structured PM check-ins. Authors are project assignees, managers, or
+// directors; everyone else sees a read-only timeline. The newest entry
+// is featured at the top with a health pill; older entries collapse.
+
+type StatusUpdateRow = ProjectDetailData["statusUpdates"][number];
+
+const HEALTH_META: Record<
+  StatusUpdateRow["health"],
+  { label: string; dotColor: string; bg: string; fg: string }
+> = {
+  on_track:  { label: "On track",  dotColor: "#22a06b", bg: "#e8efe6", fg: "#3f6534" },
+  at_risk:   { label: "At risk",   dotColor: "#c4994a", bg: "#f5ecd9", fg: "#7a5a14" },
+  off_track: { label: "Off track", dotColor: "#e2445c", bg: "rgba(226, 68, 92, 0.10)", fg: "#a82038" },
+};
+
+function StatusSection({
+  projectId,
+  initialUpdates,
+  currentUserId,
+  canPost,
+  isAdmin,
+}: {
+  projectId: string;
+  initialUpdates: StatusUpdateRow[];
+  currentUserId: string;
+  canPost: boolean;
+  isAdmin: boolean;
+}) {
+  const [updates, setUpdates] = useState<StatusUpdateRow[]>(initialUpdates);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [health, setHealth] = useState<StatusUpdateRow["health"]>("on_track");
+  const [summary, setSummary] = useState("");
+  const [next, setNext] = useState("");
+  const [blockers, setBlockers] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setHealth("on_track");
+    setSummary("");
+    setNext("");
+    setBlockers("");
+  };
+
+  const submit = async () => {
+    const body = summary.trim();
+    if (!body || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/status-updates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          health,
+          summary: body,
+          next: next.trim() || null,
+          blockers: blockers.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(err.error ?? "Couldn't post status", "danger");
+        return;
+      }
+      const row = (await res.json()) as StatusUpdateRow;
+      setUpdates((rows) => [row, ...rows]);
+      resetForm();
+      setComposerOpen(false);
+      showToast("Status posted");
+    } catch {
+      showToast("Network error", "danger");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (deletingId) return;
+    if (!confirm("Delete this status update?")) return;
+    setDeletingId(id);
+    const prev = updates;
+    setUpdates((rows) => rows.filter((r) => r.id !== id));
+    try {
+      const res = await fetch(`/api/projects/${projectId}/status-updates/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(err.error ?? "Couldn't delete", "danger");
+        setUpdates(prev);
+        return;
+      }
+      showToast("Status update removed");
+    } catch {
+      showToast("Network error", "danger");
+      setUpdates(prev);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const [latest, ...older] = updates;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Composer */}
+      {canPost && (
+        <div className="border border-friday-border-soft rounded bg-friday-surface overflow-hidden">
+          {!composerOpen ? (
+            <button
+              type="button"
+              onClick={() => setComposerOpen(true)}
+              className="w-full text-left px-4 py-3 text-[12.5px] text-friday-fg-muted hover:text-friday-fg hover:bg-friday-surface-2 transition-colors flex items-center justify-between"
+            >
+              <span className="font-display italic">Post a status update…</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-friday-fg-subtle">
+                quick · structured
+              </span>
+            </button>
+          ) : (
+            <div className="p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-subtle font-semibold mr-1">
+                  Health
+                </span>
+                {(Object.keys(HEALTH_META) as StatusUpdateRow["health"][]).map((h) => {
+                  const meta = HEALTH_META[h];
+                  const active = health === h;
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setHealth(h)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium tracking-wide border transition-colors",
+                        active
+                          ? "border-friday-fg"
+                          : "border-friday-border-soft text-friday-fg-muted hover:text-friday-fg",
+                      )}
+                      style={
+                        active
+                          ? { background: meta.bg, color: meta.fg }
+                          : undefined
+                      }
+                    >
+                      <span
+                        className="w-[6px] h-[6px] rounded-full"
+                        style={{ background: meta.dotColor }}
+                      />
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <textarea
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="What happened this week? Decisions, milestones, anything the team should know."
+                rows={3}
+                className="w-full px-3 py-2 text-[12.5px] bg-friday-bg text-friday-fg border border-friday-border-soft rounded resize-y focus:outline-none focus:border-friday-accent"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <textarea
+                  value={next}
+                  onChange={(e) => setNext(e.target.value)}
+                  placeholder="What's next… (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 text-[12.5px] bg-friday-bg text-friday-fg border border-friday-border-soft rounded resize-y focus:outline-none focus:border-friday-accent"
+                />
+                <textarea
+                  value={blockers}
+                  onChange={(e) => setBlockers(e.target.value)}
+                  placeholder="Blockers / risks… (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 text-[12.5px] bg-friday-bg text-friday-fg border border-friday-border-soft rounded resize-y focus:outline-none focus:border-friday-accent"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm();
+                    setComposerOpen(false);
+                  }}
+                  disabled={submitting}
+                  className="h-[30px] px-3 bg-transparent border border-friday-border-soft rounded text-[11.5px] text-friday-fg-muted cursor-pointer disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={submitting || !summary.trim()}
+                  className={cn(
+                    "h-[30px] px-3.5 rounded text-[11.5px] font-medium tracking-wide",
+                    submitting || !summary.trim()
+                      ? "bg-friday-surface-2 text-friday-fg-subtle cursor-default"
+                      : "bg-friday-accent text-white cursor-pointer hover:opacity-90",
+                  )}
+                >
+                  {submitting ? "Posting…" : "Post status"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Timeline */}
+      {updates.length === 0 ? (
+        <p className="font-display italic text-friday-fg-muted text-[13px] m-0">
+          No status updates yet. {canPost ? "Post the first one to start the pulse." : ""}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {latest && (
+            <StatusCard
+              row={latest}
+              featured
+              canDelete={isAdmin || canPost || latest.authorId === currentUserId}
+              deleting={deletingId === latest.id}
+              onDelete={() => remove(latest.id)}
+            />
+          )}
+          {older.length > 0 && (
+            <div className="border border-friday-border-soft rounded overflow-hidden divide-y divide-friday-border-soft">
+              {older.map((u) => (
+                <StatusCard
+                  key={u.id}
+                  row={u}
+                  canDelete={isAdmin || canPost || u.authorId === currentUserId}
+                  deleting={deletingId === u.id}
+                  onDelete={() => remove(u.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusCard({
+  row,
+  featured,
+  canDelete,
+  deleting,
+  onDelete,
+}: {
+  row: StatusUpdateRow;
+  featured?: boolean;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  const meta = HEALTH_META[row.health];
+  const initials = row.author.initials ?? row.author.name?.slice(0, 2)?.toUpperCase() ?? "·";
+  const when = formatDistanceToNow(new Date(row.createdAt), { addSuffix: true });
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-2",
+        featured
+          ? "border border-friday-border rounded bg-friday-surface px-4 py-3.5"
+          : "px-4 py-3 bg-friday-bg",
+        deleting && "opacity-60",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2.5 min-w-0">
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10.5px] font-medium tracking-wide"
+            style={{ background: meta.bg, color: meta.fg }}
+          >
+            <span
+              className="w-[5px] h-[5px] rounded-full"
+              style={{ background: meta.dotColor }}
+            />
+            {meta.label}
+          </span>
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <InitialsAvatar initials={initials} size={22} />
+            <span className="text-[12.5px] text-friday-fg truncate">
+              {row.author.name ?? row.author.email}
+            </span>
+            <span className="font-mono text-[10.5px] text-friday-fg-subtle whitespace-nowrap">
+              {when}
+            </span>
+          </span>
+        </div>
+        {canDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            aria-label="Delete status update"
+            title="Delete"
+            className="text-friday-fg-subtle hover:text-red-600 transition-colors p-1 disabled:opacity-60"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <p className="text-[13px] text-friday-fg leading-relaxed whitespace-pre-wrap m-0">
+        {row.summary}
+      </p>
+      {(row.next || row.blockers) && (
+        <div className="grid sm:grid-cols-2 gap-2 mt-1">
+          {row.next && (
+            <div className="px-3 py-2 border border-friday-border-soft rounded bg-friday-bg">
+              <p className="text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-subtle font-semibold mb-1 m-0">
+                Next
+              </p>
+              <p className="text-[12px] text-friday-fg leading-snug whitespace-pre-wrap m-0">
+                {row.next}
+              </p>
+            </div>
+          )}
+          {row.blockers && (
+            <div className="px-3 py-2 border border-friday-border-soft rounded bg-friday-bg">
+              <p className="text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-subtle font-semibold mb-1 m-0">
+                Blockers
+              </p>
+              <p className="text-[12px] text-friday-fg leading-snug whitespace-pre-wrap m-0">
+                {row.blockers}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

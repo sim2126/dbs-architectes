@@ -94,6 +94,25 @@ export type ProjectThreadRow = {
   }>;
 };
 
+export type ProjectStatusHealth = "on_track" | "at_risk" | "off_track";
+
+export type ProjectStatusUpdateRow = {
+  id: string;
+  health: ProjectStatusHealth;
+  summary: string;
+  next: string | null;
+  blockers: string | null;
+  createdAt: string;
+  authorId: string;
+  author: {
+    id: string;
+    name: string | null;
+    email: string;
+    initials: string | null;
+    image: string | null;
+  };
+};
+
 /** Shape returned by loadProjectDetail(), consumed by <ProjectDetail />. */
 export type ProjectDetailData = {
   project: ProjectSummary;
@@ -102,6 +121,7 @@ export type ProjectDetailData = {
   activities: ProjectActivityRow[];
   files: ProjectFileRow[];
   threads: ProjectThreadRow[];
+  statusUpdates: ProjectStatusUpdateRow[];
   starred: boolean;
   currentUserId: string;
   isAdmin: boolean;
@@ -112,4 +132,10 @@ export type ProjectDetailData = {
    * and per-row controls in the Team section.
    */
   canAssignMembers: boolean;
+  /**
+   * Derived server-side from authorize(subject, "project:status.post", resource).
+   * Same audience as project:update.status — assignees, managers,
+   * directors. Drives the "Post status" form visibility.
+   */
+  canPostStatus: boolean;
 };
