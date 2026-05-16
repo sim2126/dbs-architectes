@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Hash, Plus, Send, Smile, Paperclip, Search, Settings,
-  MoreHorizontal, Reply, Edit2, Trash2, MessageSquare,
+  Hash, Plus, Send, Smile, Paperclip, Search,
+  MoreHorizontal, Reply, Edit2, Trash2,
   Users, X, Video, Phone,
-  AtSign, Loader2, Lock, UserPlus, BookUser, Languages,
+  AtSign, Loader2, Lock, UserPlus, Languages,
 } from "lucide-react";
 import { useLanguageStore } from "@/i18n/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
@@ -798,12 +798,19 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
     return acc;
   }, []);
 
-  // Filter channels for search
-  const filteredChannels = channels.filter((c) =>
-    c.type !== "direct" &&
-    c.name.toLowerCase().includes(search.toLowerCase())
+  // Unified search across both channels and DMs.
+  const searchQuery = search.trim().toLowerCase();
+  const filteredChannels = channels.filter(
+    (c) => c.type !== "direct" && c.name.toLowerCase().includes(searchQuery),
   );
   const dmChannels = channels.filter((c) => c.type === "direct");
+  const filteredUsers = users
+    .filter((u) => u.id !== currentUser.id)
+    .filter((u) =>
+      searchQuery.length === 0
+        ? true
+        : (u.name ?? "").toLowerCase().includes(searchQuery),
+    );
 
   const startDM = async (userId: string) => {
     const otherUser = users.find((u) => u.id === userId);
@@ -836,112 +843,151 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* ─── Left Sidebar ─── */}
-      <div className="w-64 shrink-0 border-r border-border flex flex-col bg-muted/20">
-        {/* Workspace Header */}
-        <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-bold text-sm">DBS Workspace</h2>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-xs text-muted-foreground">
-                  {users.length} members
-                </span>
-              </div>
-            </div>
-            <button className="p-1 hover:bg-muted rounded transition-colors">
-              <Settings className="w-4 h-4 text-muted-foreground" />
-            </button>
+    // h-full + min-h-0 fits exactly inside the dashboard layout's <main>
+    // (which is flex-1). Using h-screen here forces the chat taller than
+    // its parent and pushes the composer below the viewport — that was
+    // the original "you have to scroll to type" bug.
+    <div className="flex h-full min-h-0 overflow-hidden bg-background">
+      {/* ─── Directory column ─── */}
+      <div className="w-[260px] shrink-0 border-r border-border flex flex-col min-h-0 bg-muted/20">
+        {/* Workspace header — name + active-member chip. No gear; the
+            global topbar owns workspace settings. */}
+        <div className="px-4 py-3 border-b border-border shrink-0">
+          <h2 className="font-display italic text-base leading-tight tracking-tight text-foreground">
+            DBS Workspace
+          </h2>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[11px] text-muted-foreground">
+              {users.length} members
+            </span>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="px-3 py-2">
-          <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5">
-            <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        {/* Unified search — matches both channels and DMs */}
+        <div className="px-3 pt-2.5 pb-1.5 shrink-0">
+          <div className="flex items-center gap-2 bg-muted/60 border border-border/60 rounded-md px-2.5 h-8">
+            <Search className="w-3 h-3 text-muted-foreground shrink-0" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search channels..."
-              className="bg-transparent text-xs outline-none flex-1 placeholder:text-muted-foreground"
+              placeholder="Search channels &amp; people…"
+              className="bg-transparent text-[12px] outline-none flex-1 placeholder:text-muted-foreground"
             />
           </div>
         </div>
 
-        {/* Channels */}
-        <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
+        {/* Directory body — scrolls within the column; sections grouped */}
+        <div className="flex-1 overflow-y-auto px-2 py-1.5 min-h-0">
+          {/* CHANNELS */}
           <div className="flex items-center justify-between px-2 py-1.5">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.18em]">
               {t("chat.channels")}
+              <span className="ml-1.5 font-mono text-muted-foreground/70">
+                {filteredChannels.length}
+              </span>
             </span>
             <button
               onClick={() => setShowNewChannel(true)}
-              className="p-0.5 hover:bg-muted rounded transition-colors"
+              className="p-0.5 -mr-0.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
               title="New channel"
             >
-              <Plus className="w-3.5 h-3.5 text-muted-foreground" />
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {filteredChannels.map((ch) => (
-            <button
-              key={ch.id}
-              onClick={() => setActiveChannelId(ch.id)}
-              className={cn(
-                "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors text-left",
-                activeChannelId === ch.id
-                  ? "bg-foreground text-background"
-                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {ch.type === "private" ? (
-                <Lock className="w-3.5 h-3.5 shrink-0" />
-              ) : (
-                <Hash className="w-3.5 h-3.5 shrink-0" />
-              )}
-              <span className="flex-1 truncate font-medium">{ch.name}</span>
-              {(ch.unread ?? 0) > 0 && (
-                <Badge className="text-xs px-1.5 py-0 bg-red-500 text-white border-0">
-                  {ch.unread}
-                </Badge>
-              )}
-            </button>
-          ))}
+          {filteredChannels.length === 0 ? (
+            <p className="px-2 py-1.5 text-[11.5px] text-muted-foreground italic font-display">
+              No channels match.
+            </p>
+          ) : (
+            <ul className="space-y-px">
+              {filteredChannels.map((ch) => {
+                const isActive = activeChannelId === ch.id;
+                const unread = ch.unread ?? 0;
+                return (
+                  <li key={ch.id}>
+                    <button
+                      onClick={() => setActiveChannelId(ch.id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 h-[28px] px-2 rounded-md text-[12.5px] transition-colors text-left",
+                        isActive
+                          ? "bg-foreground/[0.06] text-foreground font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {ch.type === "private" ? (
+                        <Lock className="w-3 h-3 shrink-0 opacity-70" />
+                      ) : (
+                        <Hash className="w-3 h-3 shrink-0 opacity-70" />
+                      )}
+                      <span className={cn(
+                        "flex-1 truncate",
+                        unread > 0 && !isActive && "text-foreground font-medium",
+                      )}>
+                        {ch.name}
+                      </span>
+                      {unread > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[18px] h-[16px] px-1 rounded-full bg-friday-accent text-white text-[10px] font-semibold tabular-nums">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
-          {/* Direct Messages */}
-          <div className="flex items-center justify-between px-2 py-1.5 mt-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          {/* DIRECT MESSAGES */}
+          <div className="flex items-center justify-between px-2 py-1.5 mt-3">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.18em]">
               {t("chat.direct")}
+              <span className="ml-1.5 font-mono text-muted-foreground/70">
+                {filteredUsers.length}
+              </span>
             </span>
           </div>
 
-          {users
-            .filter((u) => u.id !== currentUser.id)
-            .map((u) => (
-              <button
-                key={u.id}
-                onClick={() => startDM(u.id)}
-                className={cn(
-                  "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors",
-                  dmChannels.some((c) => c.id === activeChannelId && c.members.some((m) => m.userId === u.id))
-                    ? "bg-foreground text-background"
-                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <div className="relative shrink-0">
-                  <Avatar className="w-5 h-5">
-                    <AvatarImage src={u.image ?? undefined} />
-                    <AvatarFallback className="text-[10px] font-bold bg-foreground/10">
-                      {u.initials ?? u.name?.slice(0, 2).toUpperCase() ?? "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-background" />
-                </div>
-                <span className="flex-1 truncate font-medium">{u.name}</span>
-              </button>
-            ))}
+          {filteredUsers.length === 0 ? (
+            <p className="px-2 py-1.5 text-[11.5px] text-muted-foreground italic font-display">
+              No teammates match.
+            </p>
+          ) : (
+            <ul className="space-y-px">
+              {filteredUsers.map((u) => {
+                const dmChannel = dmChannels.find((c) =>
+                  c.members.some((m) => m.userId === u.id),
+                );
+                const isActive =
+                  dmChannel != null && dmChannel.id === activeChannelId;
+                return (
+                  <li key={u.id}>
+                    <button
+                      onClick={() => startDM(u.id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 h-[30px] px-1.5 rounded-md text-[12.5px] transition-colors text-left",
+                        isActive
+                          ? "bg-foreground/[0.06] text-foreground font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <span className="relative shrink-0">
+                        <Avatar className="w-[22px] h-[22px]">
+                          <AvatarImage src={u.image ?? undefined} />
+                          <AvatarFallback className="text-[9px] font-semibold bg-muted text-foreground">
+                            {u.initials ?? u.name?.slice(0, 2).toUpperCase() ?? "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="absolute -bottom-px -right-px w-2 h-2 rounded-full bg-emerald-500 border-2 border-background" />
+                      </span>
+                      <span className="flex-1 truncate">{u.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -949,52 +995,63 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
       <div className="flex-1 flex flex-col min-w-0">
         {activeChannel ? (
           <>
-            {/* Channel Header */}
-            <div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-muted rounded-lg">
-                  {activeChannel.type === "direct" ? (
-                    <Users className="w-4 h-4" />
-                  ) : (
-                    <Hash className="w-4 h-4" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm">
-                    {getChannelDisplayName(activeChannel)}
-                  </h3>
-                  {activeChannel.description && (
-                    <p className="text-xs text-muted-foreground">{activeChannel.description}</p>
-                  )}
-                </div>
+            {/* Channel header — name + one-line purpose, member-count
+                chip and action row on the right. No giant icon block;
+                the # / @ glyph sits inline with the name. */}
+            <div className="px-5 py-2.5 border-b border-border flex items-center gap-4 shrink-0 min-h-[52px]">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {activeChannel.type === "direct" ? (
+                  <AtSign className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : activeChannel.type === "private" ? (
+                  <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+                <h3 className="text-[14px] font-semibold text-foreground truncate">
+                  {getChannelDisplayName(activeChannel)}
+                </h3>
+                {activeChannel.description && (
+                  <>
+                    <span className="text-muted-foreground/40 text-xs shrink-0">·</span>
+                    <p className="text-[12px] text-muted-foreground truncate">
+                      {activeChannel.description}
+                    </p>
+                  </>
+                )}
               </div>
-              <div className="flex items-center gap-0.5">
-                <span className="text-xs text-muted-foreground mr-2">
-                  {activeChannel.members.length} members
-                </span>
-                <button
-                  className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                  title="Contacts"
-                  onClick={() => window.open("/dashboard/contact", "_self")}
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span
+                  className="inline-flex items-center gap-1 px-2 h-[24px] rounded-full bg-muted/70 text-[11px] text-muted-foreground font-mono tabular-nums mr-1"
+                  title={`${activeChannel.members.length} ${activeChannel.members.length === 1 ? "member" : "members"}`}
                 >
-                  <BookUser className="w-4 h-4" />
-                </button>
+                  <Users className="w-3 h-3" />
+                  {activeChannel.members.length}
+                </span>
                 <a
                   href="/dashboard/calls"
-                  className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
                   title="Voice call"
                 >
-                  <Phone className="w-4 h-4" />
+                  <Phone className="w-3.5 h-3.5" />
                 </a>
                 <a
                   href="/dashboard/calls"
-                  className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
                   title="Video call"
                 >
-                  <Video className="w-4 h-4" />
+                  <Video className="w-3.5 h-3.5" />
                 </a>
-                <button className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground" title="Add member">
-                  <UserPlus className="w-4 h-4" />
+                <button
+                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                  title="Add member"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                  title="More"
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -1007,14 +1064,15 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center px-8">
-                  <div className="p-4 bg-muted rounded-2xl mb-4">
-                    <Hash className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-bold mb-1">
-                    Welcome to #{getChannelDisplayName(activeChannel)}
+                  <h3 className="font-display italic text-foreground text-2xl tracking-tight leading-tight">
+                    Quiet here.
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {activeChannel.description ?? "Start the conversation below."}
+                  <p className="text-sm text-muted-foreground mt-2 max-w-xs leading-relaxed">
+                    {activeChannel.description
+                      ? activeChannel.description
+                      : activeChannel.type === "direct"
+                        ? "Send the first message — they'll see it when they next open Friday."
+                        : `Send the first message in #${getChannelDisplayName(activeChannel)} and the team will see it.`}
                   </p>
                 </div>
               ) : (
@@ -1080,11 +1138,14 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
             />
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center px-8">
             <div className="text-center">
-              <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-bold mb-1">{t("chat.no_channel")}</h3>
-              <p className="text-sm text-muted-foreground">{t("chat.no_channel")}</p>
+              <h3 className="font-display italic text-foreground text-2xl tracking-tight leading-tight">
+                Pick a channel.
+              </h3>
+              <p className="text-sm text-muted-foreground mt-2 max-w-xs">
+                {t("chat.no_channel")}
+              </p>
             </div>
           </div>
         )}
