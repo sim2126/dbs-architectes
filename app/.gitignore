@@ -50,3 +50,6 @@ next-env.d.ts
 
 .vercel
 *.db
+
+# locally-stored chat uploads (production uses S3)
+/public/uploads
