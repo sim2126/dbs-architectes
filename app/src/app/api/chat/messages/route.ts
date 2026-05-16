@@ -141,10 +141,40 @@ export async function POST(request: NextRequest) {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
-  const { channelId, content, parentId, type = "text" } = body;
+  const {
+    channelId,
+    content,
+    parentId,
+    type: typeFromBody,
+    fileUrl,
+    fileName,
+  } = body as {
+    channelId?: string;
+    content?: string;
+    parentId?: string | null;
+    type?: string;
+    fileUrl?: string | null;
+    fileName?: string | null;
+  };
 
-  if (!channelId || !content?.trim()) {
-    return Response.json({ error: "channelId and content required" }, { status: 400 });
+  const trimmedContent = (content ?? "").trim();
+  const hasAttachment = Boolean(fileUrl && fileName);
+
+  // A message must carry SOMETHING — text, or a file, or both. An empty
+  // message with no attachment is a no-op the user didn't ask for.
+  if (!channelId || (!trimmedContent && !hasAttachment)) {
+    return Response.json(
+      { error: "channelId and either content or an attachment are required" },
+      { status: 400 },
+    );
+  }
+
+  // Derive `type` server-side from the attachment shape so the client
+  // can't lie about it. text < image < file.
+  let resolvedType: string = typeFromBody ?? "text";
+  if (hasAttachment) {
+    const isImage = /\.(png|jpe?g|gif|webp|avif|svg|heic)$/i.test(fileName!);
+    resolvedType = isImage ? "image" : "file";
   }
 
   // Enforce membership before allowing writes
@@ -155,9 +185,11 @@ export async function POST(request: NextRequest) {
     data: {
       channelId,
       userId:   session.user.id,
-      content:  content.trim(),
-      type,
+      content:  trimmedContent,
+      type:     resolvedType,
       parentId: parentId ?? null,
+      fileUrl:  hasAttachment ? fileUrl! : null,
+      fileName: hasAttachment ? fileName! : null,
     },
     include: {
       user: { select: { id: true, name: true, initials: true, image: true, role: true } },

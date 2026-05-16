@@ -7,6 +7,7 @@ import {
   MoreHorizontal, Reply, Edit2, Trash2,
   Users, X, Video, Phone,
   AtSign, Loader2, Lock, UserPlus, Languages,
+  FileText, Download, Upload,
 } from "lucide-react";
 import { useLanguageStore } from "@/i18n/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
@@ -15,9 +16,33 @@ import { Input } from "@/ui/components/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { Badge } from "@/ui/components/badge";
 import { cn } from "@/ui/utils";
+import { showToast } from "@/ui/components/toast";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useT } from "@/i18n/translations";
+import { EmojiPicker, type EmojiSelection } from "./emoji-picker";
+
+// ─── Attachment helpers ───────────────────────────────────────
+type PendingAttachment = { file: File; previewUrl: string | null };
+
+type PresignedUpload = {
+  uploadUrl: string;
+  finalUrl: string;
+  method: "PUT" | "POST";
+  headers: Record<string, string>;
+  expiresAt: string;
+  backend: "s3" | "local";
+};
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageName(name: string): boolean {
+  return /\.(png|jpe?g|gif|webp|avif|svg|heic)$/i.test(name);
+}
 
 // ─── Types ───────────────────────────────────────────────────
 interface User {
@@ -40,6 +65,8 @@ interface Message {
   userId: string;
   content: string;
   type: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
   editedAt?: string | null;
   deletedAt?: string | null;
   createdAt: string;
@@ -195,9 +222,22 @@ function MessageItem({
           <p className="text-sm text-muted-foreground italic">{t("chat.message_deleted")}</p>
         ) : (
           <>
-            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
-              {renderContent(message.content)}
-            </p>
+            {message.content && (
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                {renderContent(message.content)}
+              </p>
+            )}
+
+            {/* Attachment — image inline thumbnail or file card. The
+                Message schema carries one attachment per row; multi-
+                attachment would need a separate MessageAttachment table. */}
+            {message.fileUrl && message.fileName && (
+              <AttachmentRender
+                url={message.fileUrl}
+                name={message.fileName}
+                kind={message.type === "image" || isImageName(message.fileName) ? "image" : "file"}
+              />
+            )}
 
             {/* Inline translation block */}
             {translating && (
@@ -381,6 +421,97 @@ function DateSeparator({ date }: { date: string }) {
   );
 }
 
+// ─── Attachment renderer (image inline or file card) ───────────
+function AttachmentRender({
+  url,
+  name,
+  kind,
+}: {
+  url: string;
+  name: string;
+  kind: "image" | "file";
+}) {
+  if (kind === "image") {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block mt-2 max-w-sm rounded-lg overflow-hidden border border-border bg-muted/30 hover:border-foreground/30 transition-colors"
+        title={name}
+      >
+        {/* Using a plain <img> rather than next/image because file
+            uploads land on arbitrary URLs (S3 / local) we don't want
+            to pre-register in next.config. The thumbnail is bounded
+            by max-w-sm so it never dominates the message. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={name}
+          className="block w-full max-h-[320px] object-contain bg-background"
+        />
+      </a>
+    );
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={name}
+      className="mt-2 inline-flex items-center gap-2.5 max-w-md px-3 py-2 rounded-lg border border-border bg-muted/30 hover:border-foreground/30 hover:bg-muted/60 transition-colors"
+    >
+      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+      <span className="text-[12.5px] text-foreground font-medium truncate">{name}</span>
+      <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
+    </a>
+  );
+}
+
+// ─── Pending-attachment chip (shown above the composer) ─────────
+function PendingChip({
+  pending,
+  uploading,
+  onRemove,
+}: {
+  pending: PendingAttachment;
+  uploading: boolean;
+  onRemove: () => void;
+}) {
+  const file = pending.file;
+  return (
+    <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg border border-border bg-muted/40 max-w-sm">
+      {pending.previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={pending.previewUrl}
+          alt={file.name}
+          className="w-8 h-8 object-cover rounded shrink-0"
+        />
+      ) : (
+        <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
+          <FileText className="w-4 h-4 text-muted-foreground" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0 leading-tight">
+        <p className="text-[12px] text-foreground truncate font-medium">{file.name}</p>
+        <p className="text-[10.5px] text-muted-foreground">
+          {uploading ? "Uploading…" : formatBytes(file.size)}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={uploading}
+        aria-label="Remove attachment"
+        className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors disabled:opacity-50"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 // ─── Message Input ────────────────────────────────────────────
 function MessageInput({
   onSend,
@@ -391,8 +522,10 @@ function MessageInput({
   editMessage,
   onCancelEdit,
   users = [],
+  externalFile,
+  onExternalFileConsumed,
 }: {
-  onSend: (content: string) => void;
+  onSend: (payload: { content: string; attachment?: PendingAttachment }) => void;
   loading: boolean;
   placeholder: string;
   replyTo?: Message | null;
@@ -400,12 +533,50 @@ function MessageInput({
   editMessage?: Message | null;
   onCancelEdit?: () => void;
   users?: { id: string; name?: string | null; initials?: string | null }[];
+  /** Drag-and-drop hand-off: parent pushes a file in, we acknowledge. */
+  externalFile?: File | null;
+  onExternalFileConsumed?: () => void;
 }) {
   const t = useT();
   const [value, setValue] = useState(editMessage?.content ?? "");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [pending, setPending] = useState<PendingAttachment | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiWrapRef = useRef<HTMLDivElement>(null);
+
+  // Pick up a file the parent drag-drop handler pushed in.
+  useEffect(() => {
+    if (!externalFile) return;
+    setPending({
+      file: externalFile,
+      previewUrl: externalFile.type.startsWith("image/")
+        ? URL.createObjectURL(externalFile)
+        : null,
+    });
+    onExternalFileConsumed?.();
+  }, [externalFile, onExternalFileConsumed]);
+
+  // Release object URLs for image previews when the attachment changes
+  // or the composer unmounts. Without this every drag-drop leaks a blob.
+  useEffect(() => {
+    const url = pending?.previewUrl;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [pending]);
+
+  // Close emoji picker on Escape (the picker itself fires onClickOutside).
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEmojiOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [emojiOpen]);
 
   const mentionMatches = mentionQuery !== null
     ? users.filter((u) => u.name?.toLowerCase().includes(mentionQuery.toLowerCase()))
@@ -463,10 +634,49 @@ function MessageInput({
   };
 
   const handleSend = () => {
-    if (!value.trim() || loading) return;
-    onSend(value.trim());
+    const text = value.trim();
+    if ((!text && !pending) || loading) return;
+    onSend({ content: text, attachment: pending ?? undefined });
     setValue("");
+    setPending(null);
     setMentionQuery(null);
+    setEmojiOpen(false);
+  };
+
+  // ─── Attachment handlers ────────────────────────────────────
+  const handlePickFile = () => fileInputRef.current?.click();
+
+  const adoptFile = (file: File | null | undefined) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast("File is larger than 10 MB.", "danger");
+      return;
+    }
+    setPending({
+      file,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+    });
+  };
+
+  const removeAttachment = () => {
+    setPending(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ─── Emoji insertion ────────────────────────────────────────
+  const handleEmojiSelect = (e: EmojiSelection) => {
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const after = value.slice(cursor);
+    setValue(before + e.native + after);
+    // Restore the cursor after the inserted glyph so the user can keep
+    // typing without re-clicking the textarea. Wrapped in setTimeout
+    // so React commits the value update first.
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      const pos = before.length + e.native.length;
+      textareaRef.current?.setSelectionRange(pos, pos);
+    }, 0);
   };
 
   return (
@@ -539,6 +749,18 @@ function MessageInput({
         "bg-background border border-border rounded-xl shadow-sm overflow-hidden",
         (replyTo || editMessage) && "rounded-t-none border-t-0"
       )}>
+        {/* Pending attachment chip — appears ABOVE the textarea so the
+            user can see what they're about to send without scrolling. */}
+        {pending && (
+          <div className="px-3 pt-2.5">
+            <PendingChip
+              pending={pending}
+              uploading={loading}
+              onRemove={removeAttachment}
+            />
+          </div>
+        )}
+
         {/* Textarea */}
         <div className="flex items-end gap-2 px-3 pt-2.5">
           <textarea
@@ -558,22 +780,60 @@ function MessageInput({
           />
         </div>
 
+        {/* Hidden native file input — triggered by the Paperclip button. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            adoptFile(e.target.files?.[0]);
+            // Clear so re-picking the same file fires a fresh change event.
+            e.target.value = "";
+          }}
+        />
+
         {/* Toolbar row */}
         <div className="flex items-center justify-between px-2 pb-2 pt-1">
           <div className="flex items-center gap-0.5">
             <button
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title={t("chat.attach")}
+              type="button"
+              onClick={handlePickFile}
+              disabled={Boolean(pending) || loading}
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={pending ? "One attachment per message — remove the current one to swap" : t("chat.attach")}
             >
               <Paperclip className="w-4 h-4" />
             </button>
+
+            {/* Emoji picker — anchored above the trigger via absolute
+                positioning. emoji-mart's own onClickOutside closes it. */}
+            <div ref={emojiWrapRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setEmojiOpen((v) => !v)}
+                className={cn(
+                  "p-1.5 rounded-lg transition-colors",
+                  emojiOpen
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+                title={t("chat.emoji")}
+                aria-expanded={emojiOpen}
+              >
+                <Smile className="w-4 h-4" />
+              </button>
+              {emojiOpen && (
+                <div className="absolute bottom-full left-0 mb-2 z-40">
+                  <EmojiPicker
+                    onSelect={handleEmojiSelect}
+                    onClickOutside={() => setEmojiOpen(false)}
+                  />
+                </div>
+              )}
+            </div>
+
             <button
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-              title={t("chat.emoji")}
-            >
-              <Smile className="w-4 h-4" />
-            </button>
-            <button
+              type="button"
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
               title={t("chat.mention")}
               onClick={() => {
@@ -592,11 +852,12 @@ function MessageInput({
           </div>
 
           <button
+            type="button"
             onClick={handleSend}
-            disabled={!value.trim() || loading}
+            disabled={(!value.trim() && !pending) || loading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-              value.trim() && !loading
+              (value.trim() || pending) && !loading
                 ? "bg-foreground text-background hover:opacity-80"
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             )}
@@ -628,6 +889,12 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelDesc, setNewChannelDesc] = useState("");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  // Drag-drop handoff to MessageInput. The thread region accepts file
+  // drops anywhere; on drop we set this state and MessageInput's
+  // externalFile effect picks it up + clears it.
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeout = useRef<NodeJS.Timeout | undefined>(undefined);
 
@@ -726,17 +993,60 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
     };
   }, [activeChannelId, currentUser.id]);
 
-  // Send message
-  const sendMessage = async (content: string) => {
+  // Send message — uploads first if an attachment is present, then
+  // creates the message. Failure modes are explicit: upload errors are
+  // surfaced via toast and the message is NOT created (so the user
+  // doesn't end up with an empty / broken message they didn't intend).
+  const sendMessage = async (payload: {
+    content: string;
+    attachment?: PendingAttachment;
+  }) => {
     if (!activeChannelId) return;
     setSendingMessage(true);
 
     try {
+      let fileUrl: string | null = null;
+      let fileName: string | null = null;
+
+      if (payload.attachment) {
+        const file = payload.attachment.file;
+        // 1) Presign
+        const presignRes = await fetch("/api/uploads/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || "application/octet-stream",
+            contentLength: file.size,
+          }),
+        });
+        if (!presignRes.ok) {
+          const body = (await presignRes.json().catch(() => ({}))) as { error?: string };
+          showToast(body.error ?? "Couldn't prepare upload", "danger");
+          return;
+        }
+        const presigned = (await presignRes.json()) as PresignedUpload;
+
+        // 2) Direct upload to the backend the presigner picked.
+        const uploadRes = await fetch(presigned.uploadUrl, {
+          method: presigned.method,
+          headers: presigned.headers,
+          body: file,
+        });
+        if (!uploadRes.ok) {
+          showToast("Upload failed. Try again.", "danger");
+          return;
+        }
+        fileUrl = presigned.finalUrl;
+        fileName = file.name;
+      }
+
+      // 3) Create the message (text + optional fileUrl/fileName)
       if (editMessage) {
         await fetch(`/api/chat/messages/${editMessage.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({ content: payload.content }),
         });
         setEditMessage(null);
       } else {
@@ -745,8 +1055,10 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             channelId: activeChannelId,
-            content,
+            content: payload.content,
             parentId: replyTo?.id ?? null,
+            fileUrl,
+            fileName,
           }),
         });
         setReplyTo(null);
@@ -992,7 +1304,49 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
       </div>
 
       {/* ─── Main Chat Area ─── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div
+        className="flex-1 flex flex-col min-w-0 relative"
+        onDragEnter={(e) => {
+          // Only react to file drags, not text/in-app drags.
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          dragDepth.current += 1;
+          setDragOver(true);
+        }}
+        onDragOver={(e) => {
+          if (Array.from(e.dataTransfer.types).includes("Files")) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }
+        }}
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragOver(false);
+          const file = e.dataTransfer.files[0];
+          if (file) setDroppedFile(file);
+        }}
+      >
+        {/* Drag overlay — covers the thread when a file is being dragged
+            over it. Pointer-events-none so the underlying composer keeps
+            working; the parent's onDrop captures the file. */}
+        {dragOver && (
+          <div className="absolute inset-2 z-20 rounded-2xl border-2 border-dashed border-friday-accent bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="text-center">
+              <Upload className="w-6 h-6 text-friday-accent mx-auto mb-2" />
+              <p className="font-display italic text-foreground text-lg leading-tight">
+                Drop to attach.
+              </p>
+              <p className="text-[12px] text-muted-foreground mt-1">
+                Up to 10 MB. Images, PDFs, plans, docs.
+              </p>
+            </div>
+          </div>
+        )}
         {activeChannel ? (
           <>
             {/* Channel header — name + one-line purpose, member-count
@@ -1135,6 +1489,8 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
               editMessage={editMessage}
               onCancelEdit={() => setEditMessage(null)}
               users={users}
+              externalFile={droppedFile}
+              onExternalFileConsumed={() => setDroppedFile(null)}
             />
           </>
         ) : (
