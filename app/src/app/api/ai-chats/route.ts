@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 // GET /api/ai-chats — list NON-EMPTY sessions for the current user.
 // Sessions with zero messages are skipped so abandoned "New chat" rows
@@ -31,6 +32,13 @@ export async function POST() {
   const chatSession = await prisma.aiChatSession.create({
     data: { userId: session.user.id, title: "New chat" },
     select: { id: true, title: true, createdAt: true, updatedAt: true },
+  });
+
+  pendoTrack("ai_chat_session_created", {
+    visitorId: session.user.id,
+    properties: {
+      session_id: chatSession.id,
+    },
   });
 
   return NextResponse.json(chatSession);

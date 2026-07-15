@@ -455,10 +455,19 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
   }, [showStatusMenu]);
 
   const updateStatus = async (workStatus: WorkStatusKey) => {
+    const previousStatus = wsKey;
     setShowStatusMenu(false);
     setUpdatingStatus(true);
     onUpdate({ id: project.id, workStatus });
     await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workStatus }) });
+    if (typeof window !== "undefined" && window.pendo?.track) {
+      window.pendo.track("project_work_status_changed", {
+        project_id: project.id,
+        previous_status: previousStatus,
+        new_status: workStatus,
+        changed_from: "table_row",
+      });
+    }
     setUpdatingStatus(false);
   };
 
@@ -616,6 +625,14 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                     e.stopPropagation();
                     if (confirm(t("common.confirm_delete"))) {
                       await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+                      if (typeof window !== "undefined" && window.pendo?.track) {
+                        window.pendo.track("project_deleted", {
+                          project_id: project.id,
+                          project_code: project.code,
+                          project_phase: project.phase,
+                          project_category: project.category,
+                        });
+                      }
                       onDelete(project.id);
                     }
                   }}
@@ -669,6 +686,14 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         body: JSON.stringify({ latitude: data.lat, longitude: data.lng, address: data.formatted }),
       });
       onUpdate({ id: project.id, latitude: data.lat, longitude: data.lng, address: data.formatted });
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_location_set", {
+          project_id: project.id,
+          address: data.formatted ?? "",
+          latitude: data.lat,
+          longitude: data.lng,
+        });
+      }
       setLocationEditing(false);
     } catch {
       setGeoError("Geocoding failed. Please try again.");
@@ -692,9 +717,18 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
   const canUpdateStatus = canEdit || isAssignee;
 
   const updateStatus = async (workStatus: WorkStatusKey) => {
+    const previousStatus = wsKey;
     setUpdatingStatus(true);
     onUpdate({ id: project.id, workStatus });
     await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workStatus }) });
+    if (typeof window !== "undefined" && window.pendo?.track) {
+      window.pendo.track("project_work_status_changed", {
+        project_id: project.id,
+        previous_status: previousStatus,
+        new_status: workStatus,
+        changed_from: "drawer",
+      });
+    }
     setUpdatingStatus(false);
   };
 

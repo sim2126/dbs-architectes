@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 export async function GET() {
   const session = await auth();
@@ -62,6 +63,19 @@ export async function POST(request: NextRequest) {
     include: {
       project: { select: { id: true, title: true, code: true } },
       user: { select: { id: true, name: true, initials: true } },
+    },
+  });
+
+  pendoTrack("agenda_item_created", {
+    visitorId: session.user.id,
+    properties: {
+      item_id: item.id,
+      type: item.type,
+      priority: item.priority,
+      has_project_link: Boolean(body.projectId),
+      project_id: body.projectId ?? "",
+      all_day: item.allDay,
+      has_end_date: Boolean(body.endDate),
     },
   });
 

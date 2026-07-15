@@ -121,6 +121,12 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
           { method: "DELETE" },
         );
       }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_favorited", {
+          project_id: project.id,
+          action: next ? "starred" : "unstarred",
+        });
+      }
     } catch {
       setStarred(!next); // rollback
       showToast("Couldn't update star", "danger");
@@ -145,6 +151,13 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || "post failed");
+      }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_thread_reply_posted", {
+          project_id: project.id,
+          thread_id: threadId ?? "new",
+          content_length: body.length,
+        });
       }
       setReply("");
       router.refresh();
@@ -177,6 +190,13 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || "update failed");
+      }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_phase_changed", {
+          project_id: project.id,
+          previous_phase: project.phase,
+          new_phase: next,
+        });
       }
       setPhaseMenu(false);
       router.refresh();
@@ -854,6 +874,15 @@ function TeamSection({
         setMembers(prev);
         return;
       }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        const prevRole = prev.find((r) => r.userId === userId)?.role ?? "";
+        window.pendo.track("project_member_role_changed", {
+          project_id: projectId,
+          user_id: userId,
+          previous_role: prevRole,
+          new_role: nextRole,
+        });
+      }
       showToast(`Role updated to ${ASSIGNMENT_ROLE_LABEL[nextRole]}`);
     } catch {
       showToast("Network error", "danger");
@@ -878,6 +907,12 @@ function TeamSection({
         showToast(body.error ?? "Couldn't remove member", "danger");
         setMembers(prev);
         return;
+      }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_member_removed", {
+          project_id: projectId,
+          removed_user_id: userId,
+        });
       }
       showToast(`${name} removed from project`);
     } catch {
@@ -1109,6 +1144,13 @@ function AddMemberDialog({
         showToast(body.error ?? "Couldn't add member", "danger");
         return;
       }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_member_added", {
+          project_id: projectId,
+          added_user_id: selected.id,
+          assigned_role: role,
+        });
+      }
       onAdded(selected, role);
     } catch {
       showToast("Network error", "danger");
@@ -1324,6 +1366,15 @@ function StatusSection({
       }
       const row = (await res.json()) as StatusUpdateRow;
       setUpdates((rows) => [row, ...rows]);
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("project_status_update_posted", {
+          project_id: projectId,
+          health,
+          has_next_steps: Boolean(next.trim()),
+          has_blockers: Boolean(blockers.trim()),
+          summary_length: body.length,
+        });
+      }
       resetForm();
       setComposerOpen(false);
       showToast("Status posted");

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -201,6 +202,18 @@ export async function POST(request: NextRequest) {
   });
 
   await pusherServer.trigger(channelName(channelId), PUSHER_EVENTS.NEW_MESSAGE, message);
+
+  pendoTrack("chat_message_sent", {
+    visitorId: session.user.id,
+    properties: {
+      channel_id: channelId,
+      message_type: resolvedType,
+      has_attachment: hasAttachment,
+      is_reply: Boolean(parentId),
+      content_length: trimmedContent.length,
+      file_type: hasAttachment ? (fileName?.split(".").pop() ?? "") : "",
+    },
+  });
 
   return Response.json(message);
 }

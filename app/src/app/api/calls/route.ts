@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { createDailyRoom } from "@/platform/integrations/daily";
 import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 export async function GET() {
   const session = await auth();
@@ -59,6 +60,16 @@ export async function POST(request: NextRequest) {
 
   // Notify all workspace members via Pusher
   await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_STARTED, call);
+
+  pendoTrack("call_started", {
+    visitorId: session.user.id,
+    properties: {
+      call_id: call.id,
+      call_type: type,
+      project_id: projectId ?? "",
+      room_name: room.name,
+    },
+  });
 
   return Response.json(call);
 }

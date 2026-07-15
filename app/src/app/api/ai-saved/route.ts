@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 import type { Block } from "@/features/ai/server/agent/blocks";
 import type { Prisma } from "@prisma/client";
 
@@ -60,6 +61,16 @@ export async function POST(request: NextRequest) {
       title,
       text: body.text ?? "",
       blocks: (body.blocks ?? []) as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  pendoTrack("ai_response_saved", {
+    visitorId: session.user.id,
+    properties: {
+      session_id: body.sessionId ?? "",
+      message_id: body.messageId ?? "",
+      title_length: title.length,
+      block_count: (body.blocks ?? []).length,
     },
   });
 

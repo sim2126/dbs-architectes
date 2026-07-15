@@ -171,6 +171,15 @@ function ProfilePanel() {
         }),
       });
       if (!res.ok) throw new Error("save failed");
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        const changed: string[] = [];
+        if (orig && data.name !== orig.name) changed.push("name");
+        if (orig && data.phone !== orig.phone) changed.push("phone");
+        if (orig && data.defaultCountry !== orig.defaultCountry) changed.push("defaultCountry");
+        window.pendo.track("profile_updated", {
+          fields_changed: changed.join(","),
+        });
+      }
       setOrig(data);
       showToast("Profile saved");
     } catch {
@@ -305,8 +314,15 @@ function LanguagePanel() {
         options={LANG_OPTIONS.map((o) => ({ v: o.v, l: o.l }))}
         onChange={(v) => {
           const code = v as Language;
+          const previousLanguage = language;
           setLanguage(code);
           const label = LANG_OPTIONS.find((o) => o.v === code)?.l ?? code.toUpperCase();
+          if (typeof window !== "undefined" && window.pendo?.track) {
+            window.pendo.track("language_changed", {
+              new_language: code,
+              previous_language: previousLanguage,
+            });
+          }
           showToast(`Language: ${label}`);
         }}
       />
@@ -454,6 +470,9 @@ function SecurityPanel() {
       setQr(null);
       setEnrollCode("");
       setMfaEnabled(true);
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("mfa_enabled");
+      }
       showToast("Two-factor authentication enabled");
     } catch {
       setEnrollError("Network error. Try again.");
@@ -486,6 +505,9 @@ function SecurityPanel() {
       setDisableOpen(false);
       setDisablePassword("");
       setMfaEnabled(false);
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("mfa_disabled");
+      }
       showToast("Two-factor authentication disabled");
     } catch {
       setDisableError("Network error. Try again.");
@@ -502,6 +524,11 @@ function SecurityPanel() {
       if (!res.ok) {
         showToast("Couldn't sign out that device", "danger");
         return;
+      }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("session_revoked", {
+          revoked_session_id: id,
+        });
       }
       setSessions((rows) => rows?.filter((r) => r.id !== id) ?? null);
       showToast("Device signed out");
@@ -979,6 +1006,11 @@ function InvitationsSection() {
       } else {
         showToast("Invitation re-sent");
       }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("invitation_resent", {
+          invitation_id: id,
+        });
+      }
       await load();
     } finally {
       setBusyId(null);
@@ -994,6 +1026,11 @@ function InvitationsSection() {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         showToast(body.error ?? "Couldn't revoke invitation", "danger");
         return;
+      }
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("invitation_revoked", {
+          invitation_id: id,
+        });
       }
       showToast("Invitation revoked");
       await load();
@@ -1192,6 +1229,13 @@ function MembersPanel({
       setMembers((ms) =>
         ms?.map((m) => (m.id === confirm.id ? { ...m, role: confirm.to } : m)) ?? null,
       );
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        window.pendo.track("user_role_changed", {
+          target_user_id: confirm.id,
+          from_role: confirm.from,
+          to_role: confirm.to,
+        });
+      }
       showToast(`${confirm.name} is now ${ROLE_LABEL[confirm.to]}`);
       setConfirm(null);
     } catch {
@@ -2077,6 +2121,14 @@ function InviteDrawer({
         return;
       }
       const body = (await res.json()) as { inviteUrl: string | null };
+      if (typeof window !== "undefined" && window.pendo?.track) {
+        const trimmed = email.trim().toLowerCase();
+        window.pendo.track("invitation_sent", {
+          invitee_email_domain: trimmed.split("@")[1] ?? "",
+          assigned_role: role,
+          delivered_via: body.inviteUrl ? "link" : "email",
+        });
+      }
       onSent({ email: email.trim().toLowerCase(), inviteUrl: body.inviteUrl });
     } catch {
       setError("Network error. Try again.");

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 // GET /api/sheets — list all custom sheets for the current user
 export async function GET() {
@@ -33,6 +34,15 @@ export async function POST(req: NextRequest) {
       columns: JSON.stringify(columns ?? []),
       rows: JSON.stringify(rows ?? []),
       userId: session.user.id,
+    },
+  });
+
+  pendoTrack("sheet_created", {
+    visitorId: session.user.id,
+    properties: {
+      sheet_id: sheet.id,
+      column_count: (columns ?? []).length,
+      row_count: (rows ?? []).length,
     },
   });
 

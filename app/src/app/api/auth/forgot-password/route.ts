@@ -14,6 +14,7 @@ import { prisma } from "@/platform/db";
 import { issueToken, PASSWORD_RESET_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 function resetUrl(req: NextRequest, token: string): string {
   const origin = req.headers.get("origin") ?? new URL(req.url).origin;
@@ -51,6 +52,11 @@ export async function POST(request: NextRequest) {
     });
 
     const url = resetUrl(request, raw);
+
+    pendoTrack("password_reset_requested", {
+      visitorId: user.id,
+    });
+
     await sendEmail({
       to: user.email,
       subject: "Reset your DBS Friday password",

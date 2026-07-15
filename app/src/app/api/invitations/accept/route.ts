@@ -19,6 +19,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/platform/db";
 import { hashToken } from "@/platform/auth/tokens";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 async function findValidInvitation(rawToken: string) {
   const tokenHash = hashToken(rawToken);
@@ -145,6 +146,14 @@ export async function POST(request: NextRequest) {
       },
     });
     return created;
+  });
+
+  pendoTrack("invitation_accepted", {
+    visitorId: user.id,
+    properties: {
+      role: invitation.role,
+      inviter_id: invitation.inviter?.name ?? "",
+    },
   });
 
   return Response.json({ ok: true, email: user.email });

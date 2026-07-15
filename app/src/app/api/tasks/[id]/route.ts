@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 // PATCH /api/tasks/[id] — update fields, including drag-reorder via position
 export async function PATCH(
@@ -54,6 +55,19 @@ export async function PATCH(
     where: { id },
     include: { project: { select: { id: true, code: true, title: true } } },
   });
+
+  if (body.status === "done") {
+    pendoTrack("task_completed", {
+      visitorId: session.user.id,
+      properties: {
+        task_id: id,
+        priority: task?.priority ?? "",
+        had_due_date: Boolean(task?.dueDate),
+        project_id: task?.project?.id ?? "",
+      },
+    });
+  }
+
   return Response.json(task);
 }
 

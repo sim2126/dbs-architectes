@@ -8,6 +8,7 @@ import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifac
 import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/features/ai/server/agent/blocks";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 import { reconstructHistory } from "@/features/ai/server/agent/context-reconstruction";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -65,6 +66,15 @@ export async function POST(req: NextRequest) {
   } else {
     return Response.json({ error: "Missing message or sessionId" }, { status: 400 });
   }
+
+  pendoTrack("ai_query_sent", {
+    visitorId: session.user.id,
+    properties: {
+      session_id: body.sessionId ?? "",
+      message_length: latestUserPrompt.length,
+      has_session_history: priorHistory.length > 1,
+    },
+  });
 
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
     "{today_date}",

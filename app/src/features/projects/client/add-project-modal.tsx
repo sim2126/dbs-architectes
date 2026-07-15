@@ -98,7 +98,22 @@ export function AddProjectModal({
       });
 
       if (res.ok) {
-        const project = await res.json();
+        const project = await res.json() as { id?: string };
+        if (typeof window !== "undefined" && window.pendo?.track) {
+          window.pendo.track("project_created", {
+            project_id: project.id ?? "",
+            category: form.category,
+            phase: form.phase,
+            country: form.country || undefined,
+            operating_region: form.operatingRegion || undefined,
+            typology: form.typology || undefined,
+            terrain: form.terrain || undefined,
+            roof: form.roof || undefined,
+            has_image: Boolean(imagePreview),
+            has_page_link: Boolean(form.pageLink),
+            year: form.year ? parseInt(form.year) : undefined,
+          });
+        }
         onSuccess(project);
         setForm({
           code: "",

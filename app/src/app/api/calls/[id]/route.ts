@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { deleteDailyRoom, createMeetingToken } from "@/platform/integrations/daily";
 import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo-track";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -67,6 +68,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   // Defer deleting the Daily room so transcription has time to post-process.
   // Summarization will be triggered manually by the host from the UI.
   await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_ENDED, { id });
+
+  pendoTrack("call_ended", {
+    visitorId: session.user.id,
+    properties: {
+      call_id: id,
+      ended_by_role: call.startedBy === session.user.id ? "host" : "admin",
+    },
+  });
 
   // Fire-and-forget room cleanup after 10 min so transcripts/recordings land.
   setTimeout(() => {
