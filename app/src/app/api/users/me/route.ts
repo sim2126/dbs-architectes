@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // Self-service endpoint: the signed-in user can read and update a tight
 // allowlist of their own profile fields. Anything that touches identity
@@ -81,6 +82,18 @@ export async function PATCH(request: NextRequest) {
       defaultRegion: true,
     },
   });
+
+  pendoTrack("profile_updated", {
+    visitorId: session.user.id,
+    properties: {
+      fieldsUpdated: Object.keys(update).join(","),
+      hasName: "name" in update,
+      hasPhone: "phone" in update,
+      hasDefaultCountry: "defaultCountry" in update,
+      hasImage: "image" in update,
+    },
+  });
+
   return Response.json(user);
 }
 

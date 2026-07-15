@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { deleteDailyRoom, createMeetingToken } from "@/platform/integrations/daily";
 import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -54,6 +55,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   if (!canEnd) return Response.json({ error: "Forbidden" }, { status: 403 });
 
+  const participantCount = await prisma.callParticipant.count({ where: { callId: id } });
+
   await prisma.call.update({
     where: { id },
     data: { status: "ended", endedAt: new Date() },
@@ -62,6 +65,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   await prisma.callParticipant.updateMany({
     where: { callId: id, leftAt: null },
     data: { leftAt: new Date() },
+  });
+
+  pendoTrack("call_ended", {
+    visitorId: session.user.id,
+    properties: {
+      callId: id,
+      participantCount,
+    },
   });
 
   // Defer deleting the Daily room so transcription has time to post-process.

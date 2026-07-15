@@ -14,6 +14,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 const VALID_ROLES = ["lead", "editor", "reviewer", "viewer"] as const;
 type AssignmentRole = (typeof VALID_ROLES)[number];
@@ -66,6 +67,15 @@ export async function POST(
     where: { projectId_userId: { projectId: id, userId: body.userId } },
     create: { projectId: id, userId: body.userId, role: body.role },
     update: { role: body.role },
+  });
+
+  pendoTrack("project_member_added", {
+    visitorId: actorUserId,
+    properties: {
+      projectId: id,
+      assignedUserId: body.userId,
+      assignmentRole: body.role,
+    },
   });
 
   await prisma.activity.create({

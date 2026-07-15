@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import type { Block } from "@/features/ai/server/agent/blocks";
 import type { Prisma } from "@prisma/client";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // GET /api/ai-saved — list user's saved insights, pinned-first
 export async function GET() {
@@ -60,6 +61,16 @@ export async function POST(request: NextRequest) {
       title,
       text: body.text ?? "",
       blocks: (body.blocks ?? []) as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  pendoTrack("ai_insight_saved", {
+    visitorId: session.user.id,
+    properties: {
+      sessionId: body.sessionId ?? undefined,
+      hasBlocks: !!body.blocks && body.blocks.length > 0,
+      blockCount: body.blocks?.length ?? 0,
+      titleLength: title.length,
     },
   });
 

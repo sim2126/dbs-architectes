@@ -24,6 +24,7 @@ import {
 } from "@/platform/authz";
 import { issueToken, INVITATION_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 const PICKABLE_ROLES = new Set(["admin", "director", "manager", "employee", "intern"]);
 
@@ -113,6 +114,14 @@ export async function POST(request: NextRequest) {
       ``,
       `— DBS Friday`,
     ].join("\n"),
+  });
+
+  pendoTrack("invitation_sent", {
+    visitorId: actorUserId,
+    properties: {
+      inviteeRole: body.role,
+      deliveredVia: sendResult.deliveredVia,
+    },
   });
 
   return Response.json({

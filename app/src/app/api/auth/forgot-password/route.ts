@@ -14,6 +14,7 @@ import { prisma } from "@/platform/db";
 import { issueToken, PASSWORD_RESET_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 function resetUrl(req: NextRequest, token: string): string {
   const origin = req.headers.get("origin") ?? new URL(req.url).origin;
@@ -68,6 +69,8 @@ export async function POST(request: NextRequest) {
       ].join("\n"),
     });
   }
+
+  pendoTrack("password_reset_requested");
 
   // Always return the same opaque success.
   return Response.json({ ok: true });

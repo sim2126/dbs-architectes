@@ -16,6 +16,7 @@ import {
   getRecordingAccessLink,
 } from "@/platform/integrations/daily";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export const maxDuration = 120;
 
@@ -96,6 +97,17 @@ export async function POST(
         summarizedAt: new Date(),
         summaryError: null,
         detectedLang: summary.language ?? null,
+      },
+    });
+
+    pendoTrack("call_summary_generated", {
+      visitorId: session.user.id,
+      properties: {
+        callId: id,
+        summaryMode: mode,
+        hasProjectId: !!call.projectId,
+        transcriptLength: transcript.length,
+        detectedLang: summary.language ?? undefined,
       },
     });
 

@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { createDailyRoom } from "@/platform/integrations/daily";
 import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET() {
   const session = await auth();
@@ -54,6 +55,15 @@ export async function POST(request: NextRequest) {
       participants: {
         include: { user: { select: { id: true, name: true, initials: true, image: true } } },
       },
+    },
+  });
+
+  pendoTrack("call_started", {
+    visitorId: session.user.id,
+    properties: {
+      callType: type,
+      hasProject: !!projectId,
+      projectId: projectId ?? undefined,
     },
   });
 

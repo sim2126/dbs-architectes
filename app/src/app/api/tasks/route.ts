@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // GET /api/tasks — every personal task for the current user
 //   ?status=todo|doing|done   optional filter
@@ -66,6 +67,16 @@ export async function POST(request: NextRequest) {
     },
     include: {
       project: { select: { id: true, code: true, title: true } },
+    },
+  });
+
+  pendoTrack("task_created", {
+    visitorId: session.user.id,
+    properties: {
+      priority: body.priority ?? "medium",
+      hasDueDate: !!body.dueDate,
+      hasDescription: !!body.description,
+      hasProjectId: !!body.projectId,
     },
   });
 

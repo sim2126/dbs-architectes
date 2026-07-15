@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { pusherServer, PUSHER_EVENTS, channelName } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function POST(
   request: NextRequest,
@@ -55,6 +56,15 @@ export async function POST(
   } catch {
     // non-fatal
   }
+
+  pendoTrack("call_summary_shared_to_thread", {
+    visitorId: session.user.id,
+    properties: {
+      callId: id,
+      targetChannelId,
+      hasProject: !!call.projectId,
+    },
+  });
 
   return Response.json({ success: true, shareUrl, channelId: targetChannelId });
 }

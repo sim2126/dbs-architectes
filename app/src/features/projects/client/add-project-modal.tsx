@@ -99,6 +99,23 @@ export function AddProjectModal({
 
       if (res.ok) {
         const project = await res.json();
+
+        if (typeof pendo !== "undefined") {
+          pendo.track("project_created", {
+            category: form.category,
+            phase: form.phase,
+            country: form.country || undefined,
+            operatingRegion: form.operatingRegion || undefined,
+            typology: form.typology || undefined,
+            terrain: form.terrain || undefined,
+            roof: form.roof || undefined,
+            hasImage: !!imagePreview,
+            hasClient: !!form.client,
+            hasDescription: !!form.description,
+            hasPageLink: !!form.pageLink,
+          });
+        }
+
         onSuccess(project);
         setForm({
           code: "",

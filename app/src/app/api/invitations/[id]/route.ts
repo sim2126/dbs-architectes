@@ -18,6 +18,7 @@ import {
 } from "@/platform/authz";
 import { issueToken, INVITATION_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 function inviteUrl(req: NextRequest, token: string): string {
   const origin = req.headers.get("origin") ?? new URL(req.url).origin;
@@ -28,10 +29,12 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let revokerUserId: string;
   try {
-    await requirePermission(request, "user:invite", {
+    const { subject } = await requirePermission(request, "user:invite", {
       context: { route: "DELETE /api/invitations/:id" },
     });
+    revokerUserId = subject.userId;
   } catch (e) {
     if (e instanceof PermissionError) return permissionResponse(e);
     throw e;
@@ -52,6 +55,12 @@ export async function DELETE(
     where: { id },
     data: { status: "revoked" },
   });
+
+  pendoTrack("invitation_revoked", {
+    visitorId: revokerUserId,
+    properties: { invitationId: id },
+  });
+
   return Response.json({ success: true });
 }
 
@@ -60,10 +69,12 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   let actorName: string | null = null;
+  let resenderUserId: string;
   try {
     const { subject } = await requirePermission(request, "user:invite", {
       context: { route: "POST /api/invitations/:id (resend)" },
     });
+    resenderUserId = subject.userId;
     const inviter = await prisma.user.findUnique({
       where: { id: subject.userId },
       select: { name: true },
@@ -111,6 +122,15 @@ export async function POST(
       ``,
       `— DBS Friday`,
     ].join("\n"),
+  });
+
+  pendoTrack("invitation_resent", {
+    visitorId: resenderUserId,
+    properties: {
+      invitationId: id,
+      inviteeRole: updated.role,
+      deliveredVia: sendResult.deliveredVia,
+    },
   });
 
   return Response.json({

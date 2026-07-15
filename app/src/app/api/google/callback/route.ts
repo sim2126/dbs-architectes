@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { getOAuth2Client } from "@/platform/integrations/google-calendar";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -31,6 +32,10 @@ export async function GET(request: NextRequest) {
       refreshToken: tokens.refresh_token ?? null,
       expiryDate: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
     },
+  });
+
+  pendoTrack("google_calendar_connected", {
+    visitorId: session.user.id,
   });
 
   return Response.redirect(new URL("/dashboard/agenda?gcal=connected", request.url));

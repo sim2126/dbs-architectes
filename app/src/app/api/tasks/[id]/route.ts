@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // PATCH /api/tasks/[id] — update fields, including drag-reorder via position
 export async function PATCH(
@@ -22,6 +23,14 @@ export async function PATCH(
     projectId?: string | null;
     position?: number;
   };
+
+  // Load existing task to detect status transitions
+  const existing = typeof body.status === "string"
+    ? await prisma.task.findFirst({
+        where: { id, userId: session.user.id },
+        select: { status: true, priority: true, projectId: true },
+      })
+    : null;
 
   const data: Record<string, unknown> = {};
   if (typeof body.title === "string") data.title = body.title.trim().slice(0, 500);
@@ -50,6 +59,18 @@ export async function PATCH(
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
+  if (body.status === "done" && existing && existing.status !== "done") {
+    pendoTrack("task_completed", {
+      visitorId: session.user.id,
+      properties: {
+        taskId: id,
+        previousStatus: existing.status,
+        priority: existing.priority,
+        hasProjectId: !!existing.projectId,
+      },
+    });
+  }
+
   const task = await prisma.task.findUnique({
     where: { id },
     include: { project: { select: { id: true, code: true, title: true } } },
@@ -70,6 +91,11 @@ export async function DELETE(
   const { id } = await params;
   await prisma.task.deleteMany({
     where: { id, userId: session.user.id },
+  });
+
+  pendoTrack("task_deleted", {
+    visitorId: session.user.id,
+    properties: { taskId: id },
   });
 
   return Response.json({ ok: true });

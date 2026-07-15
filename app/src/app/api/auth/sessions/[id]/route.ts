@@ -15,6 +15,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function DELETE(
   _request: NextRequest,
@@ -40,5 +41,13 @@ export async function DELETE(
     where: { id: row.id },
     data: { revokedAt: new Date() },
   });
+
+  pendoTrack("session_revoked", {
+    visitorId: session.user.id,
+    properties: {
+      isCurrentSession: session.user.sessionId === id,
+    },
+  });
+
   return Response.json({ ok: true });
 }

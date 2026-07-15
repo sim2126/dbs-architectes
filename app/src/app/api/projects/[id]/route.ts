@@ -8,6 +8,7 @@ import {
 } from "@/platform/authz";
 import { updateProject } from "@/features/projects/server/update-project";
 import { deleteProject } from "@/features/projects/server/delete-project";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // GET stays inline — it returns the raw Prisma shape callers already
 // rely on (different from the page server component's ProjectDetailData).
@@ -73,11 +74,25 @@ export async function PATCH(
     throw e;
   }
 
+  const fieldsChanged = Object.keys(body);
   const project = await updateProject({
     projectId: id,
     actorUserId: subjectUserId,
     data: body,
   });
+
+  pendoTrack("project_updated", {
+    visitorId: subjectUserId,
+    properties: {
+      projectId: id,
+      fieldsChanged: fieldsChanged.join(","),
+      workStatusOnly,
+      newPhase: body.phase,
+      newCategory: body.category,
+      newWorkStatus: body.workStatus,
+    },
+  });
+
   return Response.json(project);
 }
 
@@ -87,17 +102,25 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
+  let actorUserId: string;
   try {
-    const { resource } = await requirePermission(request, "project:delete", {
+    const { subject, resource } = await requirePermission(request, "project:delete", {
       loadResource: (s) => loadProjectForAuth(id, s.userId),
       context: { route: `DELETE /api/projects/${id}` },
     });
     if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
+    actorUserId = subject.userId;
   } catch (e) {
     if (e instanceof PermissionError) return permissionResponse(e);
     throw e;
   }
 
   await deleteProject(id);
+
+  pendoTrack("project_deleted", {
+    visitorId: actorUserId,
+    properties: { projectId: id },
+  });
+
   return Response.json({ success: true });
 }

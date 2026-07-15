@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { isAdmin } from "@/platform/authz/permissions";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET(
   _request: NextRequest,
@@ -42,6 +43,22 @@ export async function PUT(
       })),
     });
   }
+
+  const countries = regions
+    ? [...new Set(regions.map((r: { country: string }) => r.country))]
+    : [];
+  const accessLevels = regions
+    ? [...new Set(regions.map((r: { accessLevel: string }) => r.accessLevel))]
+    : [];
+  pendoTrack("user_region_access_updated", {
+    visitorId: session.user.id,
+    properties: {
+      targetUserId: id,
+      regionCount: regions?.length ?? 0,
+      countries: countries.join(","),
+      accessLevels: accessLevels.join(","),
+    },
+  });
 
   const access = await prisma.userRegionAccess.findMany({ where: { userId: id } });
   return Response.json(access);

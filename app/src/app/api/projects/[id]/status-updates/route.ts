@@ -16,6 +16,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 const VALID_HEALTH = ["on_track", "at_risk", "off_track"] as const;
 type Health = (typeof VALID_HEALTH)[number];
@@ -178,6 +179,17 @@ export async function POST(
           image: true,
         },
       },
+    },
+  });
+
+  pendoTrack("project_status_update_posted", {
+    visitorId: actorUserId,
+    properties: {
+      projectId: id,
+      health: body.health,
+      hasNextSteps: !!next,
+      hasBlockers: !!blockers,
+      summaryLength: summary.length,
     },
   });
 

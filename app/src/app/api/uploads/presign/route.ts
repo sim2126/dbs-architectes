@@ -15,6 +15,7 @@ import {
   UploadConfigError,
   UploadValidationError,
 } from "@/platform/integrations/uploads";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -51,6 +52,19 @@ export async function POST(request: NextRequest) {
       },
       { origin },
     );
+
+    const ext = body.filename.includes(".")
+      ? body.filename.split(".").pop()!.toLowerCase()
+      : "";
+    pendoTrack("file_uploaded", {
+      visitorId: session.user.id,
+      properties: {
+        contentType: body.contentType,
+        contentLength: body.contentLength,
+        fileExtension: ext,
+      },
+    });
+
     return Response.json(presigned);
   } catch (err) {
     if (err instanceof UploadValidationError) {

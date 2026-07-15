@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // POST /api/sheets/sync-projects
 // Body: { updates: { id: string; phase?: string; workStatus?: string; billing?: string; notes?: string }[] }
@@ -45,6 +46,15 @@ export async function POST(req: NextRequest) {
 
   const succeeded = results.filter((r) => r.status === "fulfilled").length;
   const failed = results.filter((r) => r.status === "rejected").length;
+
+  pendoTrack("sheet_projects_synced", {
+    visitorId: session.user.id,
+    properties: {
+      updateCount: updates.length,
+      succeededCount: succeeded,
+      failedCount: failed,
+    },
+  });
 
   return NextResponse.json({ ok: true, succeeded, failed });
 }

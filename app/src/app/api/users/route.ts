@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { isAdmin, defaultPermissionsForRole } from "@/platform/authz/permissions";
 import bcrypt from "bcryptjs";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET() {
   const session = await auth();
@@ -79,6 +80,16 @@ export async function POST(request: NextRequest) {
       isActive: true, canCreate: true, canEdit: true, canDelete: true,
       employmentStatus: true, defaultCountry: true, defaultRegion: true,
       departmentId: true, createdAt: true,
+    },
+  });
+
+  pendoTrack("user_created_by_admin", {
+    visitorId: session.user.id,
+    properties: {
+      newUserRole: effectiveRole,
+      hasDepartment: !!departmentId,
+      hasManager: !!managerId,
+      defaultCountry: defaultCountry || undefined,
     },
   });
 

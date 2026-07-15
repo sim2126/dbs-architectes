@@ -14,6 +14,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 const VALID_ROLES = ["lead", "editor", "reviewer", "viewer"] as const;
 type AssignmentRole = (typeof VALID_ROLES)[number];
@@ -57,9 +58,21 @@ export async function PATCH(
     return Response.json({ error: "Not a project member" }, { status: 404 });
   }
 
+  const previousRole = existing.role;
+
   await prisma.projectAssignment.update({
     where: { id: existing.id },
     data: { role: body.role },
+  });
+
+  pendoTrack("project_member_role_changed", {
+    visitorId: actorUserId,
+    properties: {
+      projectId: id,
+      targetUserId: userId,
+      previousRole,
+      newRole: body.role,
+    },
   });
 
   await prisma.activity.create({
@@ -103,6 +116,14 @@ export async function DELETE(
   }
 
   await prisma.projectAssignment.delete({ where: { id: existing.id } });
+
+  pendoTrack("project_member_removed", {
+    visitorId: actorUserId,
+    properties: {
+      projectId: id,
+      removedUserId: userId,
+    },
+  });
 
   await prisma.activity.create({
     data: {

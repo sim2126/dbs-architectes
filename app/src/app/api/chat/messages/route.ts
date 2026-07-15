@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -197,6 +198,17 @@ export async function POST(request: NextRequest) {
       replies: {
         include: { user: { select: { id: true, name: true, initials: true, image: true } } },
       },
+    },
+  });
+
+  pendoTrack("chat_message_sent", {
+    visitorId: session.user.id,
+    properties: {
+      channelId,
+      messageType: resolvedType,
+      hasAttachment,
+      isReply: !!parentId,
+      contentLength: trimmedContent.length,
     },
   });
 

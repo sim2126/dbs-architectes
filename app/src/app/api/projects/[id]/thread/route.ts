@@ -6,6 +6,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -131,6 +132,15 @@ export async function POST(
       user: { select: { id: true, name: true, initials: true, image: true, role: true } },
       replies: { where: { deletedAt: null } },
       reactions: true,
+    },
+  });
+
+  pendoTrack("project_thread_message_posted", {
+    visitorId: subjectUserId,
+    properties: {
+      projectId: id,
+      isReply: !!parentId,
+      contentLength: content.trim().length,
     },
   });
 

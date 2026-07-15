@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import OpenAI from "openai";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // Full language names for the model prompt
 const LANG_NAMES: Record<string, string> = {
@@ -48,7 +49,18 @@ export async function POST(request: NextRequest) {
   const cacheKey = `${text}||${targetLang}`;
 
   const cached = cache.get(cacheKey);
-  if (cached) return Response.json({ translated: cached });
+  if (cached) {
+    pendoTrack("message_translated", {
+      visitorId: session.user.id,
+      properties: {
+        targetLang,
+        textLength: text.length,
+        engine: "cache",
+        wasCached: true,
+      },
+    });
+    return Response.json({ translated: cached });
+  }
 
   // ── Primary: GPT-4o-mini ─────────────────────────────────────
   // Handles: romanized scripts, Hinglish, code-switching, slang,
@@ -82,6 +94,15 @@ Key rules:
       const translated = completion.choices[0]?.message?.content?.trim();
       if (translated) {
         remember(cacheKey, translated);
+        pendoTrack("message_translated", {
+          visitorId: session.user.id,
+          properties: {
+            targetLang,
+            textLength: text.length,
+            engine: "gpt-4o-mini",
+            wasCached: false,
+          },
+        });
         return Response.json({ translated, engine: "gpt-4o-mini" });
       }
     } catch {
@@ -98,6 +119,15 @@ Key rules:
     const translated = data?.responseData?.translatedText;
     if (translated) {
       remember(cacheKey, translated);
+      pendoTrack("message_translated", {
+        visitorId: session.user.id,
+        properties: {
+          targetLang,
+          textLength: text.length,
+          engine: "mymemory",
+          wasCached: false,
+        },
+      });
       return Response.json({ translated, engine: "mymemory" });
     }
   } catch {

@@ -15,6 +15,7 @@ import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -43,5 +44,8 @@ export async function POST(request: NextRequest) {
     where: { id: session.user.id },
     data: { mfaEnabledAt: null, mfaSecret: null },
   });
+
+  pendoTrack("mfa_disabled", { visitorId: session.user.id });
+
   return Response.json({ ok: true });
 }

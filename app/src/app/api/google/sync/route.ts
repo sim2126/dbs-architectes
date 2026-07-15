@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { createGoogleEvent, deleteGoogleEvent } from "@/platform/integrations/google-calendar";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -44,6 +45,15 @@ export async function POST(request: NextRequest) {
       data: { googleEventId: event.id },
     });
 
+    pendoTrack("google_calendar_synced", {
+      visitorId: session.user.id,
+      properties: {
+        agendaItemId,
+        hasProject: !!item.project,
+        allDay: item.allDay,
+      },
+    });
+
     return Response.json({ success: true, eventId: event.id });
   }
 
@@ -81,5 +91,10 @@ export async function DELETE() {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   await prisma.googleCalendarToken.deleteMany({ where: { userId: session.user.id } });
+
+  pendoTrack("google_calendar_disconnected", {
+    visitorId: session.user.id,
+  });
+
   return Response.json({ success: true });
 }

@@ -20,6 +20,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/platform/db";
 import { hashToken } from "@/platform/auth/tokens";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 async function findValidReset(rawToken: string) {
   const tokenHash = hashToken(rawToken);
@@ -95,6 +96,10 @@ export async function POST(request: NextRequest) {
       where: { id: reset.id },
       data: { usedAt: new Date() },
     });
+  });
+
+  pendoTrack("password_reset_completed", {
+    visitorId: reset.userId,
   });
 
   return Response.json({ ok: true });

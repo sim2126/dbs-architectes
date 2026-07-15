@@ -1,6 +1,7 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import * as XLSX from "xlsx";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET() {
   const session = await auth();
@@ -51,6 +52,14 @@ export async function GET() {
   XLSX.utils.book_append_sheet(wb, ws, "Progetti");
 
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  pendoTrack("projects_exported", {
+    visitorId: session.user.id,
+    properties: {
+      projectCount: projects.length,
+      exportFormat: "xlsx",
+    },
+  });
 
   return new Response(buffer, {
     headers: {

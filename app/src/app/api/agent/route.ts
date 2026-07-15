@@ -8,6 +8,7 @@ import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifac
 import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/features/ai/server/agent/blocks";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 import { reconstructHistory } from "@/features/ai/server/agent/context-reconstruction";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest) {
 
         let round = 0;
         let finalContent = "";
+        let totalToolCalls = 0;
+        const allToolsUsed = new Set<string>();
 
         // Agentic loop — model reasons, calls tools in parallel, then emits
         // a structured `blocks` envelope as its final answer.
@@ -177,6 +180,8 @@ export async function POST(req: NextRequest) {
           }
 
           if (toolCalls.length > 0) {
+            totalToolCalls += toolCalls.length;
+            for (const tc of toolCalls) allToolsUsed.add(tc.function.name);
             send({ type: "tool_start", tools: toolCalls.map((tc) => tc.function.name) });
 
             const toolResults = await Promise.all(
@@ -258,6 +263,18 @@ export async function POST(req: NextRequest) {
             ],
           });
         }
+
+        pendoTrack("ai_agent_query_completed", {
+          visitorId: session.user.id,
+          properties: {
+            sessionId: body.sessionId ?? undefined,
+            toolCallCount: totalToolCalls,
+            toolsUsed: [...allToolsUsed].join(","),
+            roundCount: round,
+            promptLength: latestUserPrompt.length,
+            hasArtifacts: finalContent.includes('"artifact"'),
+          },
+        });
 
         send({ type: "done" });
       } catch (err) {

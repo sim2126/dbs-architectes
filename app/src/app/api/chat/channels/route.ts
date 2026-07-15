@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET() {
   const session = await auth();
@@ -73,6 +74,14 @@ export async function POST(request: NextRequest) {
     },
     include: {
       members: { include: { user: { select: { id: true, name: true, initials: true } } } },
+    },
+  });
+
+  pendoTrack("chat_channel_created", {
+    visitorId: session.user.id,
+    properties: {
+      channelType: type,
+      initialMemberCount: channel.members.length,
     },
   });
 

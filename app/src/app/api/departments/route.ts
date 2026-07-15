@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { isAdmin, isManagerOrAbove } from "@/platform/authz/permissions";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET() {
   const session = await auth();
@@ -26,6 +27,16 @@ export async function POST(request: NextRequest) {
   const dept = await prisma.department.create({
     data: { name, code, country: country || null, description: description || null },
   });
+
+  pendoTrack("department_created", {
+    visitorId: session.user.id,
+    properties: {
+      departmentName: name,
+      departmentCode: code,
+      hasCountry: !!country,
+    },
+  });
+
   return Response.json(dept, { status: 201 });
 }
 

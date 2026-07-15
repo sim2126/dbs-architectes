@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { isAdmin, defaultPermissionsForRole } from "@/platform/authz/permissions";
+import { pendoTrack } from "@/platform/integrations/pendo";
 
 export async function GET(
   _request: NextRequest,
@@ -64,6 +65,14 @@ export async function PATCH(
     if (body.employmentStatus === "suspended" || body.employmentStatus === "terminated") {
       updateData.isActive = false;
       updateData.deactivatedAt = new Date();
+
+      pendoTrack("user_deactivated", {
+        visitorId: session.user.id,
+        properties: {
+          targetUserId: id,
+          employmentStatus: body.employmentStatus,
+        },
+      });
     } else if (body.employmentStatus === "active") {
       updateData.isActive = true;
       updateData.deactivatedAt = null;
@@ -85,6 +94,16 @@ export async function PATCH(
         fromRole: current.role,
         toRole: body.role,
         reason: body.roleChangeReason || null,
+      },
+    });
+
+    pendoTrack("user_role_changed", {
+      visitorId: session.user.id,
+      properties: {
+        targetUserId: id,
+        fromRole: current.role,
+        toRole: body.role,
+        hasReason: !!body.roleChangeReason,
       },
     });
   }
