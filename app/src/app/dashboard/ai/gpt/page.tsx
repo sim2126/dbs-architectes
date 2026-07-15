@@ -105,6 +105,8 @@ const TOOL_LABELS: Record<string, string> = {
   get_activity_log: "Loading activity log",
 };
 
+const PENDO_AGENT_ID = "8Iq3SrfyAGij3yEnYXDiLaC29cA";
+
 const TOOL_ICONS: Record<string, string> = {
   search_projects: "🔍",
   get_project_details: "📋",
@@ -898,6 +900,16 @@ export default function DBSGPTPage() {
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
+    if (typeof window !== "undefined" && window.pendo?.trackAgent) {
+      window.pendo.trackAgent("prompt", {
+        agentId: PENDO_AGENT_ID,
+        conversationId: sessionId,
+        messageId: userMsg.id,
+        content,
+        suggestedPrompt: STARTER_PROMPTS.includes(content),
+      });
+    }
+
     try {
       // New contract: send only the new user message + sessionId. Server
       // reconstructs prior history (including past tool calls + their
@@ -1034,6 +1046,16 @@ export default function DBSGPTPage() {
         }
       }
 
+      if (typeof window !== "undefined" && window.pendo?.trackAgent) {
+        window.pendo.trackAgent("agent_response", {
+          agentId: PENDO_AGENT_ID,
+          conversationId: sessionId,
+          messageId: assistantId,
+          content: pendingAssistantContent.current,
+          toolsUsed: pendingAssistantSteps.current.map((s) => s.name),
+        });
+      }
+
       if (
         sessionId &&
         (pendingAssistantContent.current ||
@@ -1069,6 +1091,16 @@ export default function DBSGPTPage() {
             }
           : m,
       ));
+      if (typeof window !== "undefined" && window.pendo?.trackAgent && sessionId) {
+        window.pendo.trackAgent("agent_response", {
+          agentId: PENDO_AGENT_ID,
+          conversationId: sessionId,
+          messageId: assistantId,
+          content: friendly,
+          toolsUsed: [],
+        });
+      }
+
       // Still persist so the session gets its title and the friendly error is
       // visible in history instead of leaving an orphan "New chat" sidebar row.
       if (sessionId) {
@@ -1243,7 +1275,18 @@ export default function DBSGPTPage() {
                     onOpenSheet={openSheet}
                     onRetry={
                       message.role === "assistant" && idx === messages.length - 1 && lastUserMsg
-                        ? () => { setMessages((prev) => prev.slice(0, -1)); sendMessage(lastUserMsg.content); }
+                        ? () => {
+                            if (typeof window !== "undefined" && window.pendo?.trackAgent) {
+                              window.pendo.trackAgent("user_reaction", {
+                                agentId: PENDO_AGENT_ID,
+                                conversationId: activeSessionId ?? "",
+                                messageId: message.id,
+                                content: "retry",
+                              });
+                            }
+                            setMessages((prev) => prev.slice(0, -1));
+                            sendMessage(lastUserMsg.content);
+                          }
                         : undefined
                     }
                   />
