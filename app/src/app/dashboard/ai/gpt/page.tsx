@@ -890,6 +890,17 @@ export default function DBSGPTPage() {
     const assistantMsg: ChatMessage = { id: assistantId, role: "assistant", content: "", steps: [], isStreaming: true };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    if (typeof window !== "undefined" && window.pendo?.trackAgent) {
+      window.pendo.trackAgent("prompt", {
+        agentId: "8Iq3SrfyAGij3yEnYXDiLaC29cA",
+        conversationId: sessionId!,
+        messageId: userMsg.id,
+        content,
+        suggestedPrompt: STARTER_PROMPTS.includes(content),
+      });
+    }
+
     setInput("");
     setLoading(true);
     pendingUserContent.current = content;
@@ -1049,9 +1060,10 @@ export default function DBSGPTPage() {
       if (typeof window !== "undefined" && window.pendo?.trackAgent) {
         window.pendo.trackAgent("agent_response", {
           agentId: PENDO_AGENT_ID,
-          conversationId: sessionId,
+          conversationId: sessionId ?? "",
           messageId: assistantId,
           content: pendingAssistantContent.current,
+          modelUsed: "gpt-4.1-mini",
           toolsUsed: pendingAssistantSteps.current.map((s) => s.name),
         });
       }
