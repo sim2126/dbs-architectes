@@ -17,7 +17,7 @@ import { NextResponse } from "next/server";
 
 const CANONICAL_HOST = "friday-dbs.vercel.app";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   if (process.env.VERCEL_ENV !== "production") {
     return NextResponse.next();
   }
