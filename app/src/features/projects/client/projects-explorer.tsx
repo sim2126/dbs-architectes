@@ -24,6 +24,10 @@ import { cn } from "@/ui/utils";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
+import {
+  projectMatchesPageQuery,
+  type ProjectPageQuery,
+} from "@/features/projects/domain/project-page-query";
 
 // ─── Types ────────────────────────────────────────────────────
 interface Project {
@@ -72,6 +76,7 @@ interface ProjectsClientProps {
   users: User[];
   permissions: { canCreate: boolean; canEdit: boolean; canDelete: boolean };
   currentUserId: string;
+  initialQuery: ProjectPageQuery;
 }
 
 // ─── Work Status Config — monday.com palette ─────────────────
@@ -96,7 +101,7 @@ const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
 const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
 
 // ─── Main Component ───────────────────────────────────────────
-export function ProjectsExplorer({ initialProjects, users, permissions, currentUserId }: ProjectsClientProps) {
+export function ProjectsExplorer({ initialProjects, users, permissions, currentUserId, initialQuery }: ProjectsClientProps) {
   const t = useT();
   const [projects, setProjects] = useState(initialProjects);
   const { projectsView: view, setProjectsView: setView } = useUserPrefs();
@@ -106,6 +111,11 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [focusProjectId, setFocusProjectId] = useState<string | null>(null);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState<Set<string>>(new Set());
+  const [pageQuery, setPageQuery] = useState(initialQuery);
+
+  useEffect(() => {
+    setPageQuery(initialQuery);
+  }, [initialQuery]);
 
   // Hydrate the user's favourite-project ids once on mount, then refresh
   // whenever a star is toggled anywhere in the app.
@@ -173,10 +183,11 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
     const matchesCommune = filters.commune === "all" || p.commune === filters.commune;
     const matchesCountry = filters.countries.length === 0 || (p.country != null && filters.countries.includes(p.country));
     const matchesRegion = filters.region === "all" || p.operatingRegion === filters.region;
-    return matchesSearch && matchesCategory && matchesPhase && matchesClient && matchesYear && matchesCommune && matchesCountry && matchesRegion;
+    const matchesPageQuery = projectMatchesPageQuery(p, pageQuery, currentUserId);
+    return matchesSearch && matchesCategory && matchesPhase && matchesClient && matchesYear && matchesCommune && matchesCountry && matchesRegion && matchesPageQuery;
   });
 
-  const hasActiveFilters = filters.phases.length > 0 || filters.categories.length > 0 || filters.countries.length > 0 || filters.client !== "all" || filters.year !== "all" || filters.commune !== "all" || filters.region !== "all" || !!searchQuery;
+  const hasActiveFilters = filters.phases.length > 0 || filters.categories.length > 0 || filters.countries.length > 0 || filters.client !== "all" || filters.year !== "all" || filters.commune !== "all" || filters.region !== "all" || !!searchQuery || pageQuery.status !== undefined || pageQuery.scope !== undefined;
 
   const toggleFilter = (key: keyof typeof filters, value: string) => {
     if (Array.isArray(filters[key])) {
@@ -188,6 +199,11 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
   const clearFilters = () => {
     setFilters({ phases: [], categories: [], typologies: [], terrains: [], roofs: [], countries: [], client: "all", year: "all", commune: "all", region: "all" });
     setSearchQuery("");
+    setPageQuery({});
+    const url = new URL(window.location.href);
+    url.searchParams.delete("status");
+    url.searchParams.delete("scope");
+    window.history.replaceState(null, "", url);
   };
 
   const updateProject = useCallback((updated: Partial<Project>) => {
@@ -1203,4 +1219,3 @@ function FilterSelect({ label, value, options, onChange }: {
     </div>
   );
 }
-

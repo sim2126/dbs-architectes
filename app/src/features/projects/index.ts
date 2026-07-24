@@ -28,6 +28,14 @@ export type {
   ProjectFileRow,
   ProjectThreadRow,
 } from "./domain/types";
+export {
+  parseProjectPageQuery,
+  projectMatchesPageQuery,
+} from "./domain/project-page-query";
+export type {
+  ProjectPageQuery,
+  ProjectWorkStatus,
+} from "./domain/project-page-query";
 
 // Server functions are intentionally NOT re-exported here. Route
 // handlers reach for them via deep imports

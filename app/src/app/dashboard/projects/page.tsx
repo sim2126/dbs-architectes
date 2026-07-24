@@ -1,8 +1,13 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { ProjectsExplorer } from "@/features/projects";
+import { parseProjectPageQuery, ProjectsExplorer } from "@/features/projects";
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const initialQuery = parseProjectPageQuery(await searchParams);
   const session = await auth();
 
   const [projects, users] = await Promise.all([
@@ -60,6 +65,7 @@ export default async function ProjectsPage() {
       }))}
       permissions={{ canCreate, canEdit, canDelete }}
       currentUserId={session!.user.id}
+      initialQuery={initialQuery}
     />
   );
 }
