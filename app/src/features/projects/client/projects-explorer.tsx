@@ -98,7 +98,7 @@ function wsCompat(key: WorkStatusKey): WorkStatusEntry {
 type WorkStatusKey = keyof typeof WORK_STATUS;
 const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
 
-const PHASE_ORDER = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
+const PHASE_ORDER = [...PHASES];
 
 // ─── Main Component ───────────────────────────────────────────
 export function ProjectsExplorer({ initialProjects, users, permissions, currentUserId, initialQuery }: ProjectsClientProps) {

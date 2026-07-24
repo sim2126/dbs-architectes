@@ -15,10 +15,8 @@ logger = structlog.get_logger(__name__)
 
 # ── Project Tools ─────────────────────────────────────────────────────────────
 
-# Phases as they actually exist across the DBS schema + seeded data.
-# DB seed uses "ETUDE/AP" / "TERMINATO" / "CONCORSO"; UI also references "MAE",
-# "CHANTIER", "EXE / DG / DV / 3D", "STUCK". We accept both conventions and
-# normalise whitespace around the "/" so users typing either form work.
+# Canonical phases used across the DBS schema, seeded data, and UI. Legacy
+# slash spacing remains accepted at the input boundary.
 VALID_PHASES = {
     "ETUDE/AP", "MAE", "CHANTIER", "EXE/DG/DV/3D", "TERMINATO", "STUCK", "CONCORSO",
 }
@@ -65,7 +63,7 @@ async def get_projects(
             conditions.append("(title ILIKE :name OR code ILIKE :name)")
             params["name"] = f"%{name}%"
         if phase:
-            # Tolerate both "ETUDE/AP" and "ETUDE / AP" in DB and input
+            # Tolerate legacy slash spacing in DB and input.
             conditions.append("REPLACE(phase, ' ', '') ILIKE :phase")
             params["phase"] = _normalize_phase(phase)
         if client:

@@ -5,6 +5,22 @@ from typing import Any
 
 from app.platform.integrations.monday.schemas import FieldMapping
 
+CANONICAL_PROJECT_PHASES = {
+    "ETUDE/AP",
+    "MAE",
+    "CHANTIER",
+    "EXE/DG/DV/3D",
+    "TERMINATO",
+    "STUCK",
+    "CONCORSO",
+}
+
+
+def normalize_project_phase(value: str) -> str:
+    compact = "/".join(part.strip() for part in value.strip().split("/"))
+    canonical = {phase.casefold(): phase for phase in CANONICAL_PROJECT_PHASES}
+    return canonical.get(compact.casefold(), compact)
+
 
 def parse_column_value(raw_value: Any) -> Any:
     if raw_value is None:
@@ -40,7 +56,13 @@ def normalize_mapped_value(value: Any, field_mapping: FieldMapping) -> Any:
         return None
 
     if field_mapping.map and isinstance(value, str):
-        return field_mapping.map.get(value, value)
+        value = field_mapping.map.get(value, value)
+        if field_mapping.target == "Project.phase":
+            return normalize_project_phase(value)
+        return value
+
+    if field_mapping.target == "Project.phase" and isinstance(value, str):
+        return normalize_project_phase(value)
 
     if field_mapping.type == "int":
         try:
@@ -58,4 +80,3 @@ def normalize_mapped_value(value: Any, field_mapping: FieldMapping) -> Any:
         return str(value).strip()
 
     return value
-

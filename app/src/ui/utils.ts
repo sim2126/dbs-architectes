@@ -23,10 +23,10 @@ export function getInitials(name: string) {
 }
 
 export const PHASES = [
-  "ETUDE / AP",
+  "ETUDE/AP",
   "MAE",
   "CHANTIER",
-  "EXE / DG / DV / 3D",
+  "EXE/DG/DV/3D",
   "TERMINATO",
   "STUCK",
 ] as const;
@@ -95,10 +95,10 @@ export const OPERATING_REGIONS: Record<string, { value: string; label: string; c
 };
 
 export const PHASE_COLORS: Record<string, string> = {
-  "ETUDE / AP": "#ef4444",
+  "ETUDE/AP": "#ef4444",
   MAE: "#22c55e",
   CHANTIER: "#3b82f6",
-  "EXE / DG / DV / 3D": "#f97316",
+  "EXE/DG/DV/3D": "#f97316",
   TERMINATO: "#8b5cf6",
   STUCK: "#6b7280",
 };

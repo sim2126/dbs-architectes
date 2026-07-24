@@ -877,10 +877,10 @@ export function useT() {
 
 // Maps raw DB phase strings to translation keys
 const PHASE_KEY_MAP: Record<string, string> = {
-  "ETUDE / AP": "phase.etude_ap",
+  "ETUDE/AP": "phase.etude_ap",
   "MAE": "phase.mae",
   "CHANTIER": "phase.chantier",
-  "EXE / DG / DV / 3D": "phase.exe",
+  "EXE/DG/DV/3D": "phase.exe",
   "TERMINATO": "phase.terminato",
   "STUCK": "phase.stuck",
 };

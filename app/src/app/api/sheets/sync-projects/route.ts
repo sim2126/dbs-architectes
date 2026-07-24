@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { toProjectSyncData, type ProjectSyncUpdate } from "@/features/sheets";
+import { normaliseProjectPhase } from "@/features/projects";
 
 // POST /api/sheets/sync-projects
 // Body: { updates: ProjectSyncUpdate[] }
@@ -23,12 +24,16 @@ export async function POST(req: NextRequest) {
   }
 
   const results = await Promise.allSettled(
-    updates.map((update) =>
-      prisma.project.update({
+    updates.map((update) => {
+      const data = toProjectSyncData(update);
+      return prisma.project.update({
         where: { id: update.id },
-        data: toProjectSyncData(update),
-      })
-    )
+        data: {
+          ...data,
+          ...(data.phase !== undefined ? { phase: normaliseProjectPhase(data.phase) } : {}),
+        },
+      });
+    }),
   );
 
   const succeeded = results.filter((r) => r.status === "fulfilled").length;

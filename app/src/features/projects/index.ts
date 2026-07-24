@@ -36,6 +36,11 @@ export type {
   ProjectPageQuery,
   ProjectWorkStatus,
 } from "./domain/project-page-query";
+export {
+  CANONICAL_PROJECT_PHASES,
+  DEFAULT_PROJECT_PHASE,
+  normaliseProjectPhase,
+} from "./domain/phase-helpers";
 
 // Server functions are intentionally NOT re-exported here. Route
 // handlers reach for them via deep imports

@@ -64,21 +64,21 @@ async function main() {
   }
 
   const projects = [
-    { code: "DBS328", title: "DBS328 Haute-Nendaz Fin Bec", category: "Residenziale", phase: "ETUDE / AP", client: "Privé", year: 2024, commune: "Haute-Nendaz", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
+    { code: "DBS328", title: "DBS328 Haute-Nendaz Fin Bec", category: "Residenziale", phase: "ETUDE/AP", client: "Privé", year: 2024, commune: "Haute-Nendaz", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
     { code: "DBS2024-66", title: "DBS2024-66 Grimisuat Sabatier", category: "Residenziale", phase: "MAE", client: "Sabatier", year: 2024, commune: "Grimisuat", typology: "Ville bifamiliari", terrain: "In piano", roof: "Piano" },
     { code: "DBS283-10", title: "DBS283-10 Riddes Gare", category: "Residenziale", phase: "CHANTIER", client: "Riddes Dev", year: 2023, commune: "Riddes", typology: "Condomini", terrain: "In piano", roof: "Piano" },
-    { code: "DBS182", title: "DBS182 Corin 3174", category: "Residenziale", phase: "EXE / DG / DV / 3D", client: "Corin Partners", year: 2022, commune: "Corin", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
+    { code: "DBS182", title: "DBS182 Corin 3174", category: "Residenziale", phase: "EXE/DG/DV/3D", client: "Corin Partners", year: 2022, commune: "Corin", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
     { code: "DBS010", title: "DBS010 Baroque Giorgetti", category: "Residenziale", phase: "TERMINATO", client: "Giorgetti", year: 2021, commune: "Sion", typology: "Condomini", terrain: "In piano", roof: "Piano" },
-    { code: "DBS2025-104", title: "DBS2025-104 Saviese Crettaz d'y Railles 9409", category: "Residenziale", phase: "ETUDE / AP", client: "Crettaz", year: 2025, commune: "Savièse", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
+    { code: "DBS2025-104", title: "DBS2025-104 Saviese Crettaz d'y Railles 9409", category: "Residenziale", phase: "ETUDE/AP", client: "Crettaz", year: 2025, commune: "Savièse", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
     { code: "DBS020", title: "DBS020 Martigny Clairvaz", category: "Residenziale", phase: "MAE", client: "Clairvaz", year: 2023, commune: "Martigny", typology: "Ville bifamiliari", terrain: "In piano", roof: "Piano" },
-    { code: "DBS087", title: "DBS087 Turin Mazetta", category: "Commerciale", phase: "ETUDE / AP", client: "Mazetta Group", year: 2024, commune: "Turin", typology: "Condomini", terrain: "In piano", roof: "Piano" },
+    { code: "DBS087", title: "DBS087 Turin Mazetta", category: "Commerciale", phase: "ETUDE/AP", client: "Mazetta Group", year: 2024, commune: "Turin", typology: "Condomini", terrain: "In piano", roof: "Piano" },
     { code: "DBS145-00", title: "DBS145-00 Sion Commercial", category: "Commerciale", phase: "STUCK", client: "Sion Dev", year: 2022, commune: "Sion", typology: "Condomini", terrain: "In piano", roof: "Piano" },
-    { code: "DBS1VML", title: "1 Villa Moderna Lago di Como", category: "Residenziale", phase: "ETUDE / AP", client: "Lago Partners", year: 2024, commune: "Como", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
-    { code: "DBS150", title: "DBS150 Sion Centre", category: "Commerciale", phase: "EXE / DG / DV / 3D", client: "Sion Centre SA", year: 2023, commune: "Sion", typology: "Condomini", terrain: "In piano", roof: "Piano" },
+    { code: "DBS1VML", title: "1 Villa Moderna Lago di Como", category: "Residenziale", phase: "ETUDE/AP", client: "Lago Partners", year: 2024, commune: "Como", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
+    { code: "DBS150", title: "DBS150 Sion Centre", category: "Commerciale", phase: "EXE/DG/DV/3D", client: "Sion Centre SA", year: 2023, commune: "Sion", typology: "Condomini", terrain: "In piano", roof: "Piano" },
     { code: "DBS200", title: "DBS200 Lens Villa", category: "Residenziale", phase: "CHANTIER", client: "Privé", year: 2023, commune: "Lens", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
     { code: "DBS210", title: "DBS210 Sierre Residence", category: "Residenziale", phase: "MAE", client: "Sierre Dev", year: 2024, commune: "Sierre", typology: "Condomini", terrain: "In piano", roof: "Piano" },
-    { code: "DBS220", title: "DBS220 Vex Chalet", category: "Residenziale", phase: "ETUDE / AP", client: "Privé", year: 2025, commune: "Vex", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
-    { code: "DBS230", title: "DBS230 Montana Apartments", category: "Residenziale", phase: "EXE / DG / DV / 3D", client: "Montana Invest", year: 2023, commune: "Montana", typology: "Condomini", terrain: "In pendenza", roof: "Piano" },
+    { code: "DBS220", title: "DBS220 Vex Chalet", category: "Residenziale", phase: "ETUDE/AP", client: "Privé", year: 2025, commune: "Vex", typology: "Ville monofamiliari", terrain: "In pendenza", roof: "A falde" },
+    { code: "DBS230", title: "DBS230 Montana Apartments", category: "Residenziale", phase: "EXE/DG/DV/3D", client: "Montana Invest", year: 2023, commune: "Montana", typology: "Condomini", terrain: "In pendenza", roof: "Piano" },
   ];
 
   for (const p of projects) {

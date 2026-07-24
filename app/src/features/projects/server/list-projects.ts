@@ -11,6 +11,7 @@
  */
 
 import { prisma } from "@/platform/db";
+import { normaliseProjectPhase } from "../domain/phase-helpers";
 
 export type ListProjectsInput = {
   search?: string;
@@ -39,6 +40,7 @@ async function fetchProjectsPage(input: ListProjectsInput) {
     cursor = "",
     limit,
   } = input;
+  const normalisedPhase = phase ? normaliseProjectPhase(phase) : "";
 
   const projects = await prisma.project.findMany({
     where: {
@@ -53,7 +55,7 @@ async function fetchProjectsPage(input: ListProjectsInput) {
               ],
             }
           : {},
-        phase           ? { phase }                     : {},
+        normalisedPhase ? { phase: normalisedPhase }    : {},
         category        ? { category }                  : {},
         country         ? { country }                   : {},
         operatingRegion ? { operatingRegion }           : {},

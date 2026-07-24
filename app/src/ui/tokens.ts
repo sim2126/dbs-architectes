@@ -68,8 +68,8 @@ export type PhaseName = keyof typeof FRIDAY_TOKENS.phase;
 export type WorkStatus = keyof typeof FRIDAY_TOKENS.status;
 
 /**
- * Look up a phase color by its database name. Whitespace-tolerant
- * (matches both "ETUDE/AP" and "ETUDE / AP"), case-insensitive,
+ * Look up a phase color by its database name. Whitespace-tolerant for
+ * legacy slash spacing, case-insensitive,
  * with a sensible fallback for unknown values.
  */
 export function getPhaseColor(phase: string | null | undefined): string {

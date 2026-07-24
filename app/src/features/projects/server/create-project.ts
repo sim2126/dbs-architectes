@@ -7,6 +7,7 @@
  */
 
 import { prisma } from "@/platform/db";
+import { DEFAULT_PROJECT_PHASE, normaliseProjectPhase } from "../domain/phase-helpers";
 
 export type CreateProjectInput = {
   actorUserId: string;
@@ -41,7 +42,7 @@ export async function createProject(input: CreateProjectInput) {
       code:            data.code,
       title:           data.title,
       category:        data.category        || "Residenziale",
-      phase:           data.phase           || "ETUDE / AP",
+      phase:           data.phase?.trim() ? normaliseProjectPhase(data.phase) : DEFAULT_PROJECT_PHASE,
       client:          data.client          || null,
       year:            data.year            ? parseInt(String(data.year)) : null,
       commune:         data.commune         || null,

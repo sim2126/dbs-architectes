@@ -8,6 +8,7 @@
  */
 
 import { prisma } from "@/platform/db";
+import { normaliseProjectPhase } from "../domain/phase-helpers";
 
 export type UpdateProjectInput = {
   projectId: string;
@@ -35,12 +36,13 @@ export type UpdateProjectInput = {
 
 export async function updateProject(input: UpdateProjectInput) {
   const { projectId, actorUserId, data } = input;
+  const phase = data.phase?.trim() ? normaliseProjectPhase(data.phase) : undefined;
 
   const project = await prisma.project.update({
     where: { id: projectId },
     data: {
       ...(data.title       && { title: data.title }),
-      ...(data.phase       && { phase: data.phase }),
+      ...(phase            && { phase }),
       ...(data.category    && { category: data.category }),
       ...(data.client      !== undefined && { client: data.client }),
       ...(data.year        !== undefined && { year: data.year }),

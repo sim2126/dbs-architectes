@@ -25,9 +25,11 @@
       "type": "string",
       "map": {
         "ETUDE/AP": "ETUDE/AP",
+        "ETUDE / AP": "ETUDE/AP",
         "MAE": "MAE",
         "CHANTIER": "CHANTIER",
         "EXE/DG/DV/3D": "EXE/DG/DV/3D",
+        "EXE / DG / DV / 3D": "EXE/DG/DV/3D",
         "TERMINATO": "TERMINATO"
       }
     },

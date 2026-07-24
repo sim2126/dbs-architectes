@@ -13,6 +13,10 @@ from sqlalchemy import text
 logger = structlog.get_logger(__name__)
 
 
+def _normalize_phase(value: str) -> str:
+    return "/".join(part.strip() for part in value.upper().split("/"))
+
+
 @tool
 async def search_projects(
     query: str | None = None,
@@ -30,8 +34,8 @@ async def search_projects(
 
     Args:
         query: Free-text search across title, code, client, commune
-        phase: Filter by phase — 'ETUDE / AP', 'MAE', 'CHANTIER',
-               'EXE / DG / DV / 3D', 'TERMINATO', 'STUCK'
+        phase: Filter by phase — 'ETUDE/AP', 'MAE', 'CHANTIER',
+               'EXE/DG/DV/3D', 'TERMINATO', 'STUCK'
         work_status: 'todo' | 'doing' | 'stuck' | 'completed'
         category: e.g. 'Residenziale', 'Commerciale'
         client: Partial match on client name
@@ -53,7 +57,7 @@ async def search_projects(
         params["query"] = f"%{query}%"
     if phase:
         conditions.append('"phase" = :phase')
-        params["phase"] = phase
+        params["phase"] = _normalize_phase(phase)
     if work_status:
         conditions.append('"workStatus" = :work_status')
         params["work_status"] = work_status

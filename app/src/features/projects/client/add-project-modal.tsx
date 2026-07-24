@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/ui/components/select";
 import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
+import { DEFAULT_PROJECT_PHASE } from "../domain/phase-helpers";
 
 interface User {
   id: string;
@@ -49,7 +50,7 @@ export function AddProjectModal({
     code: "",
     title: "",
     category: "Residenziale",
-    phase: "ETUDE / AP",
+    phase: String(DEFAULT_PROJECT_PHASE),
     client: "",
     year: new Date().getFullYear().toString(),
     commune: "",
@@ -104,7 +105,7 @@ export function AddProjectModal({
           code: "",
           title: "",
           category: "Residenziale",
-          phase: "ETUDE / AP",
+          phase: DEFAULT_PROJECT_PHASE,
           client: "",
           year: new Date().getFullYear().toString(),
           commune: "",

@@ -24,7 +24,7 @@ export const AGENT_TOOLS = [
           },
           phase: {
             type: "string",
-            enum: ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"],
+            enum: ["ETUDE/AP", "MAE", "CHANTIER", "EXE/DG/DV/3D", "TERMINATO", "STUCK"],
             description: "Filter by construction phase.",
           },
           work_status: {
@@ -205,6 +205,11 @@ export async function executeTool(
 
 // ─── Tool Implementations ─────────────────────────────────────
 
+function normaliseAgentPhase(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value.trim().replace(/\s*\/\s*/g, "/").toUpperCase();
+}
+
 async function searchProjects(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 15, 50);
   const where: Record<string, unknown> = {};
@@ -216,7 +221,8 @@ async function searchProjects(args: Record<string, unknown>, subject: AgentToolS
   if (args.status) where.status = args.status;
   else where.status = "active";
 
-  if (args.phase) where.phase = args.phase;
+  const phase = normaliseAgentPhase(args.phase);
+  if (phase) where.phase = phase;
   if (args.work_status) where.workStatus = args.work_status;
   if (args.category) where.category = args.category;
   if (args.year) where.year = Number(args.year);

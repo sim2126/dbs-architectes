@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/ui/components/button";
-import { cn } from "@/ui/utils";
+import { cn, PHASES } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProjectThreadPanel } from "@/features/projects/client/project-thread-panel";
 import { buildProjectSyncUpdates } from "@/features/sheets";
@@ -71,7 +71,7 @@ type ActiveView = "projects" | "workload" | string; // string = custom sheet id
 // ─── Constants ─────────────────────────────────────────────────
 
 const WORK_STATUS_OPTIONS = ["todo", "doing", "stuck", "completed"];
-const PHASE_OPTIONS = ["ETUDE / AP", "MAE", "CHANTIER", "EXE / DG / DV / 3D", "TERMINATO", "STUCK"];
+const PHASE_OPTIONS = [...PHASES];
 const BILLING_OPTIONS = ["Completo", "Parziale", "Nessuno", ""];
 
 const STATUS_COLORS: Record<string, string> = {

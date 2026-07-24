@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import pytest
 
+from app.features.ai.server.chat_agent.tools.search_projects import (
+    _normalize_phase as normalize_chat_phase,
+)
 from app.features.ai.server.dbs_gpt.tools import VALID_PHASES, _normalize_phase
+from app.platform.integrations.monday.normalizers import normalize_mapped_value
+from app.platform.integrations.monday.schemas import FieldMapping
 
 
 class TestNormalizePhase:
@@ -46,10 +51,25 @@ class TestNormalizePhase:
     def test_ui_phase_values_are_accepted(self):
         """The phase values the Next.js UI renders must all round-trip."""
         ui_values = [
-            "ETUDE / AP", "MAE", "CHANTIER",
-            "EXE / DG / DV / 3D", "TERMINATO", "STUCK",
+            "ETUDE/AP", "MAE", "CHANTIER",
+            "EXE/DG/DV/3D", "TERMINATO", "STUCK",
         ]
         for v in ui_values:
             assert _normalize_phase(v) in VALID_PHASES, (
                 f"UI renders phase {v!r} but agent rejects it"
             )
+
+
+def test_chat_project_filter_normalises_legacy_phase_spacing():
+    assert normalize_chat_phase(" exe / dg / dv / 3d ") == "EXE/DG/DV/3D"
+
+
+def test_monday_project_mapping_emits_canonical_phase_values():
+    mapping = FieldMapping(
+        target="Project.phase",
+        type="string",
+        map={"ETUDE / AP": "ETUDE/AP"},
+    )
+
+    assert normalize_mapped_value("ETUDE / AP", mapping) == "ETUDE/AP"
+    assert normalize_mapped_value("exe / dg / dv / 3d", mapping) == "EXE/DG/DV/3D"
