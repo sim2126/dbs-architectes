@@ -31,6 +31,7 @@ import { CommandPalette } from "@/ui/components/command-palette";
 import { useT } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
 import { StarredSidebarSection } from "@/ui/layout/starred-sidebar-section";
+import { productSurfaceFlags } from "@/platform/feature-flags";
 
 const navItems = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -46,14 +47,20 @@ const collaborationItems = [
   { labelKey: "nav.users", href: "/dashboard/users", icon: Users, adminOnly: true },
   { labelKey: "nav.team_workload", href: "/dashboard/team-workload", icon: Gauge, managerOnly: true },
   { labelKey: "nav.sheets", href: "/dashboard/sheets", icon: Table2 },
-  { labelKey: "nav.integrations", href: "/dashboard/integrations", icon: Plug },
+  ...(productSurfaceFlags.integrations
+    ? [{ labelKey: "nav.integrations", href: "/dashboard/integrations", icon: Plug }]
+    : []),
 ];
 
 const aiItems = [
   { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
   { labelKey: "nav.ai_saved", href: "/dashboard/ai/saved", icon: Bookmark },
-  { labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image },
-  { labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch },
+  ...(productSurfaceFlags.aiGallery
+    ? [{ labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image }]
+    : []),
+  ...(productSurfaceFlags.aiPlanning
+    ? [{ labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch }]
+    : []),
 ];
 
 interface SidebarProps {

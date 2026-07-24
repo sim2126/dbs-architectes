@@ -16,6 +16,7 @@ import { cn } from "@/ui/utils";
 import { useLanguageStore, type Language } from "@/i18n/language-store";
 import { ACTIONS, type Action } from "@/platform/authz/actions";
 import { authorize, type Resource, type Subject } from "@/platform/authz/authorize";
+import { productSurfaceFlags } from "@/platform/feature-flags";
 
 // ─── Sub-nav data ─────────────────────────────────────────────────
 const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: boolean }[] }[] = [
@@ -46,10 +47,12 @@ const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: b
       { id: "apiusage", label: "API usage", admin: true },
     ],
   },
-  {
-    label: "Integrations",
-    items: [{ id: "integrations", label: "Connected services" }],
-  },
+  ...(productSurfaceFlags.integrations
+    ? [{
+        label: "Integrations",
+        items: [{ id: "integrations", label: "Connected services" }],
+      }]
+    : []),
 ];
 
 // ─── Sub-nav ──────────────────────────────────────────────────────

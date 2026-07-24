@@ -9,6 +9,7 @@ import {
   Building2, Search, X, ArrowRight, Command,
 } from "lucide-react";
 import { useT } from "@/i18n/translations";
+import { productSurfaceFlags } from "@/platform/feature-flags";
 
 interface Project { id: string; code: string; title: string; phase: string }
 
@@ -26,8 +27,12 @@ const NAV_ITEMS = [
 
 const AI_ITEMS = [
   { label: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
-  { label: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image },
-  { label: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch },
+  ...(productSurfaceFlags.aiGallery
+    ? [{ label: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image }]
+    : []),
+  ...(productSurfaceFlags.aiPlanning
+    ? [{ label: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch }]
+    : []),
 ];
 
 interface ResultItem {
