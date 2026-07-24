@@ -56,6 +56,9 @@ const eslintConfig = defineConfig([
               "platform",
               "ui",
               "i18n",
+              // WorkItem is the shared assignment model consumed by project,
+              // workload, and AI features through its public barrel.
+              ["feature", { feature: "work-items" }],
               // Same-feature imports always OK.
               ["feature", { feature: "${from.feature}" }],
             ],

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { scheduledWorkItemWhere, toLegacyAgendaItem } from "@/features/work-items";
 
 // Polymorphic favourites — any project, sheet, agenda item, AI chat
 // session, or team member can be starred per-user.
@@ -60,10 +61,25 @@ export async function GET(request: NextRequest) {
         })
       : Promise.resolve([]),
     byType.get("agenda")
-      ? prisma.agendaItem.findMany({
-          where: { id: { in: byType.get("agenda")! } },
-          select: { id: true, title: true, date: true, priority: true, status: true },
-        })
+      ? prisma.workItem
+          .findMany({
+            where: {
+              id: { in: byType.get("agenda")! },
+              AND: [scheduledWorkItemWhere],
+            },
+          })
+          .then((items) =>
+            items.map((item) => {
+              const legacyItem = toLegacyAgendaItem(item);
+              return {
+                id: legacyItem.id,
+                title: legacyItem.title,
+                date: legacyItem.date,
+                priority: legacyItem.priority,
+                status: legacyItem.status,
+              };
+            }),
+          )
       : Promise.resolve([]),
     byType.get("user")
       ? prisma.user.findMany({

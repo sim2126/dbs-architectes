@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { personalTaskWorkItemWhere, toLegacyTask } from "@/features/work-items";
 
 // GET /api/tasks — every personal task for the current user
 //   ?status=todo|doing|done   optional filter
@@ -13,9 +14,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status") || undefined;
 
-  const tasks = await prisma.task.findMany({
+  const tasks = await prisma.workItem.findMany({
     where: {
       userId: session.user.id,
+      ...personalTaskWorkItemWhere,
       ...(status ? { status } : {}),
     },
     orderBy: [{ status: "asc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -24,7 +26,12 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return Response.json(tasks);
+  return Response.json(
+    tasks.map((task) => ({
+      ...toLegacyTask(task),
+      project: task.project,
+    })),
+  );
 }
 
 // POST /api/tasks — create a new task
@@ -48,14 +55,21 @@ export async function POST(request: NextRequest) {
   }
 
   // New task lands at the bottom of the todo column (largest position + 1).
-  const last = await prisma.task.findFirst({
-    where: { userId: session.user.id, status: "todo" },
+  const last = await prisma.workItem.findFirst({
+    where: {
+      userId: session.user.id,
+      status: "todo",
+      ...personalTaskWorkItemWhere,
+    },
     orderBy: { position: "desc" },
     select: { position: true },
   });
 
-  const task = await prisma.task.create({
+  const id = crypto.randomUUID();
+  const task = await prisma.workItem.create({
     data: {
+      id,
+      legacyTaskId: id,
       userId: session.user.id,
       title: body.title.trim().slice(0, 500),
       description: body.description?.slice(0, 5000) ?? null,
@@ -63,11 +77,15 @@ export async function POST(request: NextRequest) {
       priority: body.priority ?? "medium",
       projectId: body.projectId ?? null,
       position: (last?.position ?? 0) + 1,
+      type: "task",
     },
     include: {
       project: { select: { id: true, code: true, title: true } },
     },
   });
 
-  return Response.json(task);
+  return Response.json({
+    ...toLegacyTask(task),
+    project: task.project,
+  });
 }

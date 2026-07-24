@@ -8,6 +8,7 @@ import {
 } from "@/platform/authz";
 import { updateProject } from "@/features/projects/server/update-project";
 import { deleteProject } from "@/features/projects/server/delete-project";
+import { scheduledWorkItemWhere, toLegacyAgendaItem } from "@/features/work-items";
 
 // GET stays inline — it returns the raw Prisma shape callers already
 // rely on (different from the page server component's ProjectDetailData).
@@ -34,7 +35,7 @@ export async function GET(
     where: { id },
     include: {
       assignments: { include: { user: true } },
-      agendaItems: true,
+      workItems: { where: scheduledWorkItemWhere },
       activities: {
         include: { user: true },
         orderBy: { createdAt: "desc" },
@@ -44,7 +45,11 @@ export async function GET(
   });
 
   if (!project) return Response.json({ error: "Not found" }, { status: 404 });
-  return Response.json(project);
+  const { workItems, ...legacyProject } = project;
+  return Response.json({
+    ...legacyProject,
+    agendaItems: workItems.map(toLegacyAgendaItem),
+  });
 }
 
 export async function PATCH(

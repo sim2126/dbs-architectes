@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { createGoogleEvent, deleteGoogleEvent } from "@/platform/integrations/google-calendar";
+import { getLegacyAgendaDate, scheduledWorkItemWhere } from "@/features/work-items";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -18,8 +19,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "sync") {
-    const item = await prisma.agendaItem.findUnique({
-      where: { id: agendaItemId },
+    const item = await prisma.workItem.findFirst({
+      where: { id: agendaItemId, AND: [scheduledWorkItemWhere] },
       include: { project: { select: { title: true } } },
     });
 
@@ -34,13 +35,13 @@ export async function POST(request: NextRequest) {
     const event = await createGoogleEvent(token.accessToken, token.refreshToken ?? undefined, {
       title: item.project ? `[${item.project.title}] ${item.title}` : item.title,
       description: item.description ?? undefined,
-      start: item.date,
-      end: item.endDate ?? undefined,
+      start: getLegacyAgendaDate(item),
+      end: item.startDate ? item.dueDate ?? undefined : undefined,
       allDay: item.allDay,
     });
 
-    await prisma.agendaItem.update({
-      where: { id: agendaItemId },
+    await prisma.workItem.updateMany({
+      where: { id: agendaItemId, AND: [scheduledWorkItemWhere] },
       data: { googleEventId: event.id },
     });
 
@@ -48,7 +49,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "unsync") {
-    const item = await prisma.agendaItem.findUnique({ where: { id: agendaItemId } });
+    const item = await prisma.workItem.findFirst({
+      where: { id: agendaItemId, AND: [scheduledWorkItemWhere] },
+    });
     if (!item?.googleEventId) return Response.json({ success: true });
 
     const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
@@ -57,7 +60,10 @@ export async function POST(request: NextRequest) {
     }
 
     await deleteGoogleEvent(token.accessToken, token.refreshToken ?? undefined, item.googleEventId);
-    await prisma.agendaItem.update({ where: { id: agendaItemId }, data: { googleEventId: null } });
+    await prisma.workItem.updateMany({
+      where: { id: agendaItemId, AND: [scheduledWorkItemWhere] },
+      data: { googleEventId: null },
+    });
 
     return Response.json({ success: true });
   }

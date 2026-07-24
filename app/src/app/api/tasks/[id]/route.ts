@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { personalTaskWorkItemWhere, toLegacyTask } from "@/features/work-items";
 
 // PATCH /api/tasks/[id] — update fields, including drag-reorder via position
 export async function PATCH(
@@ -41,8 +42,12 @@ export async function PATCH(
     data.position = body.position;
   }
 
-  const result = await prisma.task.updateMany({
-    where: { id, userId: session.user.id },
+  const result = await prisma.workItem.updateMany({
+    where: {
+      id,
+      userId: session.user.id,
+      ...personalTaskWorkItemWhere,
+    },
     data,
   });
 
@@ -50,11 +55,15 @@ export async function PATCH(
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  const task = await prisma.task.findUnique({
-    where: { id },
+  const task = await prisma.workItem.findFirst({
+    where: { id, userId: session.user.id, ...personalTaskWorkItemWhere },
     include: { project: { select: { id: true, code: true, title: true } } },
   });
-  return Response.json(task);
+  if (!task) return Response.json(null);
+  return Response.json({
+    ...toLegacyTask(task),
+    project: task.project,
+  });
 }
 
 // DELETE /api/tasks/[id]
@@ -68,8 +77,12 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  await prisma.task.deleteMany({
-    where: { id, userId: session.user.id },
+  await prisma.workItem.deleteMany({
+    where: {
+      id,
+      userId: session.user.id,
+      ...personalTaskWorkItemWhere,
+    },
   });
 
   return Response.json({ ok: true });
