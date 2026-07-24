@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
@@ -110,15 +111,28 @@ async function main() {
   }
 
   if (adminUser) {
-    const agendaCount = await prisma.agendaItem.count();
+    const agendaCount = await prisma.workItem.count({
+      where: { legacyAgendaId: { not: null } },
+    });
     if (agendaCount === 0) {
-      await prisma.agendaItem.createMany({
-        data: [
-          { title: "Riunione team DBS328", description: "Review Haute-Nendaz", date: new Date(Date.now() + 2 * 86400000), type: "meeting", priority: "high", status: "pending", userId: adminUser.id, color: "#3b82f6" },
-          { title: "Deadline Grimisuat MAE", description: "Consegna elaborati", date: new Date(Date.now() + 7 * 86400000), type: "deadline", priority: "critical", status: "pending", userId: adminUser.id, color: "#ef4444" },
-          { title: "Sopralluogo Riddes Gare", date: new Date(Date.now() + 3 * 86400000), type: "milestone", priority: "medium", status: "pending", userId: adminUser.id, color: "#22c55e" },
-          { title: "Presentazione cliente Como", date: new Date(Date.now() + 14 * 86400000), type: "meeting", priority: "high", status: "pending", userId: adminUser.id, color: "#f59e0b" },
-        ],
+      const agendaSeeds = [
+        { title: "Riunione team DBS328", description: "Review Haute-Nendaz", dueDate: new Date(Date.now() + 2 * 86400000), type: "meeting" as const, priority: "high", color: "#3b82f6" },
+        { title: "Deadline Grimisuat MAE", description: "Consegna elaborati", dueDate: new Date(Date.now() + 7 * 86400000), type: "deadline" as const, priority: "critical", color: "#ef4444" },
+        { title: "Sopralluogo Riddes Gare", dueDate: new Date(Date.now() + 3 * 86400000), type: "milestone" as const, priority: "medium", color: "#22c55e" },
+        { title: "Presentazione cliente Como", dueDate: new Date(Date.now() + 14 * 86400000), type: "meeting" as const, priority: "high", color: "#f59e0b" },
+      ];
+      await prisma.workItem.createMany({
+        data: agendaSeeds.map((item) => {
+          const id = randomUUID();
+          return {
+            ...item,
+            id,
+            legacyAgendaId: id,
+            legacyAgendaType: item.type,
+            status: "pending",
+            userId: adminUser.id,
+          };
+        }),
       });
     }
 

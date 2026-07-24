@@ -11,9 +11,9 @@ from app.platform.integrations.monday.schemas import (
     BoardMappingConfig,
     ImportCounters,
     ImportRunResult,
-    NormalizedAgendaRecord,
     NormalizedMessageRecord,
     NormalizedProjectRecord,
+    NormalizedWorkItemRecord,
 )
 
 logger = structlog.get_logger(__name__)
@@ -60,7 +60,7 @@ class MondayImportService:
             if mapping.subitems:
                 for subitem in item.get("subitems", []):
                     normalized_subitem = self._normalize_subitem(mapping, subitem, parent_item=item)
-                    await self.loader.upsert_agenda_item(mapping, normalized_subitem)
+                    await self.loader.upsert_work_item(mapping, normalized_subitem)
                     result.counters.subitems += 1
 
             if mapping.updates:
@@ -124,7 +124,7 @@ class MondayImportService:
         subitem: dict[str, Any],
         *,
         parent_item: dict[str, Any],
-    ) -> NormalizedAgendaRecord:
+    ) -> NormalizedWorkItemRecord:
         if not mapping.subitems:
             raise ValueError("Subitem mapping is not configured.")
 
@@ -137,10 +137,12 @@ class MondayImportService:
             if normalized_value is not None:
                 fields[field_mapping.target] = normalized_value
 
-        return NormalizedAgendaRecord(
+        fields.setdefault("WorkItem.type", "task")
+
+        return NormalizedWorkItemRecord(
             source_id=str(subitem["id"]),
             parent_source_id=str(parent_item["id"]),
-            title=str(fields.get("AgendaItem.title") or subitem.get("name") or "").strip(),
+            title=str(fields.get("WorkItem.title") or subitem.get("name") or "").strip(),
             fields=fields,
         )
 

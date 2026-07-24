@@ -60,10 +60,13 @@ async def get_project_details(project_id: str) -> str:
         agenda_result = await db.execute(
             text(
                 """
-                SELECT title, date, priority, status, description
-                FROM "AgendaItem"
-                WHERE "projectId" = :id AND date >= NOW()
-                ORDER BY date ASC
+                SELECT title, COALESCE("startDate", "dueDate") AS date,
+                       priority, status, description
+                FROM "WorkItem"
+                WHERE "projectId" = :id
+                  AND "legacyTaskId" IS NULL
+                  AND COALESCE("startDate", "dueDate") >= NOW()
+                ORDER BY COALESCE("startDate", "dueDate") ASC
                 LIMIT 5
                 """
             ),

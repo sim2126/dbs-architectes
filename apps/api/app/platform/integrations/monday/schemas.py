@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 EntityType = Literal["project", "agenda", "staffing", "archive"]
-TargetType = Literal["project", "agenda_item", "message", "assignment", "asset", "field"]
+TargetType = Literal["project", "work_item", "message", "assignment", "asset", "field"]
 
 
 class FieldMapping(BaseModel):
@@ -29,7 +29,7 @@ class UpdateImportConfig(BaseModel):
 
 
 class SubitemMappingConfig(BaseModel):
-    target: str = "AgendaItem"
+    target: str = "WorkItem"
     field_map: dict[str, FieldMapping] = Field(default_factory=dict)
 
 
@@ -65,7 +65,7 @@ class NormalizedProjectRecord(BaseModel):
     assignments: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class NormalizedAgendaRecord(BaseModel):
+class NormalizedWorkItemRecord(BaseModel):
     source_id: str
     parent_source_id: str | None = None
     title: str

@@ -1,4 +1,10 @@
 import { prisma } from "@/platform/db";
+import {
+  compareAgendaItems,
+  getLegacyAgendaDate,
+  getLegacyAgendaType,
+  scheduledWorkItemWhere,
+} from "@/features/work-items";
 
 // ─── OpenAI Tool Definitions ──────────────────────────────────
 
@@ -240,42 +246,54 @@ async function searchProjects(args: Record<string, unknown>, subject: AgentToolS
       assignments: {
         include: { user: { select: { name: true, role: true, initials: true } } },
       },
-      agendaItems: {
-        where: { date: { gte: new Date() }, status: { not: "done" } },
-        orderBy: { date: "asc" },
-        take: 1,
+      workItems: {
+        where: {
+          status: { not: "done" },
+          AND: [
+            scheduledWorkItemWhere,
+            {
+              OR: [
+                { startDate: { gte: new Date() } },
+                { startDate: null, dueDate: { gte: new Date() } },
+              ],
+            },
+          ],
+        },
       },
     },
   });
 
   return {
     count: projects.length,
-    projects: projects.map((p) => ({
-      id: p.id,
-      code: p.code,
-      title: p.title,
-      category: p.category,
-      phase: p.phase,
-      work_status: p.workStatus,
-      status: p.status,
-      client: p.client,
-      commune: p.commune,
-      year: p.year,
-      billing: p.billing,
-      team: p.assignments.map((a) => ({
-        name: a.user.name,
-        role: a.role || a.user.role,
-        initials: a.user.initials,
-      })),
-      next_deadline: p.agendaItems[0]
-        ? {
-            title: p.agendaItems[0].title,
-            date: p.agendaItems[0].date.toISOString().split("T")[0],
-            priority: p.agendaItems[0].priority,
-          }
-        : null,
-      last_updated: p.updatedAt.toISOString(),
-    })),
+    projects: projects.map((p) => {
+      const nextDeadline = p.workItems.sort(compareAgendaItems)[0];
+      return {
+        id: p.id,
+        code: p.code,
+        title: p.title,
+        category: p.category,
+        phase: p.phase,
+        work_status: p.workStatus,
+        status: p.status,
+        client: p.client,
+        commune: p.commune,
+        year: p.year,
+        billing: p.billing,
+        team: p.assignments.map((a) => ({
+          name: a.user.name,
+          role: a.role || a.user.role,
+          initials: a.user.initials,
+        })),
+        next_deadline: nextDeadline
+          ? {
+              title: nextDeadline.title,
+              date: getLegacyAgendaDate(nextDeadline).toISOString().split("T")[0],
+              priority: nextDeadline.priority,
+            }
+          : null,
+        last_updated: p.updatedAt.toISOString(),
+      };
+    }),
   };
 }
 
@@ -289,9 +307,8 @@ async function getProjectDetails(projectId: string, subject: AgentToolSubject) {
       assignments: {
         include: { user: { select: { id: true, name: true, role: true, initials: true, email: true, department: true } } },
       },
-      agendaItems: {
-        orderBy: { date: "asc" },
-        take: 5,
+      workItems: {
+        where: scheduledWorkItemWhere,
         include: { user: { select: { name: true } } },
       },
       activities: {
@@ -329,12 +346,12 @@ async function getProjectDetails(projectId: string, subject: AgentToolSubject) {
       department: a.user.department,
       assigned_at: a.assignedAt.toISOString().split("T")[0],
     })),
-    upcoming_agenda: project.agendaItems.map((item) => ({
+    upcoming_agenda: project.workItems.sort(compareAgendaItems).slice(0, 5).map((item) => ({
       title: item.title,
-      date: item.date.toISOString().split("T")[0],
+      date: getLegacyAgendaDate(item).toISOString().split("T")[0],
       priority: item.priority,
       status: item.status,
-      type: item.type,
+      type: getLegacyAgendaType(item),
       description: item.description,
     })),
     recent_activity: project.activities.map((a) => ({
@@ -445,11 +462,14 @@ async function getTeamMessages(args: Record<string, unknown>, subject: AgentTool
 async function getAgenda(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 20, 50);
   const where: Record<string, unknown> = {};
+  const andFilters: Record<string, unknown>[] = [{ ...scheduledWorkItemWhere }];
   if (!isAdmin(subject)) {
-    where.OR = [
-      { userId: subject.userId },
-      { project: { assignments: { some: { userId: subject.userId } } } },
-    ];
+    andFilters.push({
+      OR: [
+        { userId: subject.userId },
+        { project: { assignments: { some: { userId: subject.userId } } } },
+      ],
+    });
   }
 
   if (args.project_id) where.projectId = args.project_id;
@@ -464,32 +484,43 @@ async function getAgenda(args: Record<string, unknown>, subject: AgentToolSubjec
   } else if (!args.from_date) {
     dateFilter.gte = new Date();
   }
-  if (Object.keys(dateFilter).length > 0) where.date = dateFilter;
+  if (Object.keys(dateFilter).length > 0) {
+    andFilters.push({
+      OR: [
+        { startDate: dateFilter },
+        { startDate: null, dueDate: dateFilter },
+      ],
+    });
+  }
+  if (andFilters.length > 0) where.AND = andFilters;
 
-  const items = await prisma.agendaItem.findMany({
+  const items = await prisma.workItem.findMany({
     where,
-    orderBy: { date: "asc" },
-    take: limit,
     include: {
       project: { select: { code: true, title: true } },
       user: { select: { name: true } },
     },
   });
+  items.sort(compareAgendaItems);
+  const limitedItems = items.slice(0, limit);
 
   const now = new Date();
   return {
-    count: items.length,
-    items: items.map((item) => ({
+    count: limitedItems.length,
+    items: limitedItems.map((item) => {
+      const date = getLegacyAgendaDate(item);
+      return {
       title: item.title,
-      date: item.date.toISOString().split("T")[0],
+      date: date.toISOString().split("T")[0],
       priority: item.priority,
       status: item.status,
-      type: item.type,
-      is_overdue: item.date < now && item.status !== "done",
+      type: getLegacyAgendaType(item),
+      is_overdue: date < now && item.status !== "done",
       project: item.project ? { code: item.project.code, title: item.project.title } : null,
       assigned_to: item.user.name,
       description: item.description,
-    })),
+      };
+    }),
   };
 }
 

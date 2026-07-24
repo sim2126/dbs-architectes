@@ -46,12 +46,12 @@
     "people_column": { "target": "ProjectAssignment", "type": "people[]", "assignment_role": "member" }
   },
   "subitems": {
-    "target": "AgendaItem",
+    "target": "WorkItem",
     "field_map": {
-      "subitem_name": { "target": "AgendaItem.title", "type": "string", "required": true },
-      "date_column": { "target": "AgendaItem.date", "type": "string" },
+      "subitem_name": { "target": "WorkItem.title", "type": "string", "required": true },
+      "date_column": { "target": "WorkItem.dueDate", "type": "string" },
       "priority_column": {
-        "target": "AgendaItem.priority",
+        "target": "WorkItem.priority",
         "type": "string",
         "map": {
           "Critical": "critical",
@@ -60,7 +60,7 @@
           "Low": "low"
         }
       },
-      "owner_column": { "target": "AgendaItem.userId", "type": "string" }
+      "owner_column": { "target": "WorkItem.userId", "type": "string" }
     }
   },
   "updates": {

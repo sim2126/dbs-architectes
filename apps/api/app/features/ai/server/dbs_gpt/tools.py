@@ -229,8 +229,15 @@ async def create_agenda_item(
         item_id = str(uuid.uuid4())
         await db.execute(
             text('''
-                INSERT INTO "AgendaItem" (id, title, description, date, priority, status, "projectId", "userId", "createdAt", "updatedAt")
-                VALUES (:id, :title, :desc, :date, :priority, 'pending', :project_id, :user_id, NOW(), NOW())
+                INSERT INTO "WorkItem" (
+                    id, "legacyAgendaId", "legacyAgendaType", title, description,
+                    type, "dueDate",
+                    priority, status, "projectId", "userId", "createdAt", "updatedAt"
+                )
+                VALUES (
+                    :id, :id, 'task', :title, :desc, 'task', :date,
+                    :priority, 'pending', :project_id, :user_id, NOW(), NOW()
+                )
             '''),
             {
                 "id": item_id, "title": title, "desc": description,
@@ -252,17 +259,19 @@ async def get_upcoming_agenda(days_ahead: int = 7) -> str:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             text('''
-                SELECT a.title, a.date, a.priority, a.status, p.code as project_code
-                FROM "AgendaItem" a
+                SELECT a.title, COALESCE(a."startDate", a."dueDate") AS date,
+                       a.priority, a.status, p.code as project_code
+                FROM "WorkItem" a
                 LEFT JOIN "Project" p ON p.id = a."projectId"
-                WHERE a.date >= NOW()
-                AND a.date <= NOW() + (:days * INTERVAL '1 day')
+                WHERE a."legacyTaskId" IS NULL
+                AND COALESCE(a."startDate", a."dueDate") >= NOW()
+                AND COALESCE(a."startDate", a."dueDate") <= NOW() + (:days * INTERVAL '1 day')
                 AND a.status != 'done'
                 AND (:is_admin OR a."userId" = :user_id OR EXISTS (
                     SELECT 1 FROM "ProjectAssignment" pa
                     WHERE pa."projectId" = a."projectId" AND pa."userId" = :user_id
                 ))
-                ORDER BY a.date ASC
+                ORDER BY COALESCE(a."startDate", a."dueDate") ASC
                 LIMIT 20
             '''),
             {

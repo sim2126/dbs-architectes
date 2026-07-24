@@ -37,46 +37,53 @@ async def get_agenda(
     """
     from app.platform.db.database import AsyncSessionLocal
 
-    conditions = []
+    effective_date = 'COALESCE(a."startDate", a."dueDate")'
+    conditions = [
+        'a."legacyTaskId" IS NULL',
+        f"{effective_date} IS NOT NULL",
+    ]
     params: dict = {"limit": limit}
 
     if from_date:
-        conditions.append('"date" >= :from_date')
+        conditions.append(f"{effective_date} >= :from_date")
         params["from_date"] = from_date
     elif not include_overdue:
-        conditions.append('"date" >= NOW()')
+        conditions.append(f"{effective_date} >= NOW()")
 
     if to_date:
-        conditions.append('"date" <= :to_date')
+        conditions.append(f"{effective_date} <= :to_date")
         params["to_date"] = to_date
 
     if priority:
-        conditions.append('"priority" = :priority')
+        conditions.append('a."priority" = :priority')
         params["priority"] = priority
 
     if project_id:
-        conditions.append('"projectId" = :project_id')
+        conditions.append('a."projectId" = :project_id')
         params["project_id"] = project_id
 
     if status:
-        conditions.append('"status" = :status')
+        conditions.append('a."status" = :status')
         params["status"] = status
 
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             text(
                 f"""
-                SELECT a.id, a.title, a.description, a.date, a."endDate",
-                       a.priority, a.status, a.type,
+                SELECT a.id, a.title, a.description,
+                       COALESCE(a."startDate", a."dueDate") AS date,
+                       CASE WHEN a."startDate" IS NULL THEN NULL ELSE a."dueDate" END AS "endDate",
+                       a.priority, a.status,
+                       COALESCE(a."legacyAgendaType", a.type::text) AS type,
                        p.code AS project_code, p.title AS project_title,
                        u.name AS assigned_to
-                FROM "AgendaItem" a
+                FROM "WorkItem" a
                 LEFT JOIN "Project" p ON p.id = a."projectId"
                 LEFT JOIN "User" u ON u.id = a."userId"
                 {where}
-                ORDER BY a.date ASC
+                ORDER BY COALESCE(a."startDate", a."dueDate") ASC
                 LIMIT :limit
                 """
             ),
