@@ -109,7 +109,7 @@ export function TeamWorkloadClient({ data }: { data: TeamWorkloadData }) {
             </h1>
             <p className="text-[12.5px] text-friday-fg-muted mt-1 m-0 leading-relaxed max-w-2xl">
               Who is carrying what right now. Score weighs active project
-              assignments, open tasks, overdue items, and the week's calendar.
+              assignments, open tasks, overdue items, and the week&apos;s calendar.
               Generated&nbsp;{new Date(data.generatedAt).toLocaleString("en-GB", {
                 hour: "2-digit",
                 minute: "2-digit",

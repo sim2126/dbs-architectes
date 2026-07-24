@@ -3,12 +3,16 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { deleteDailyRoom, createMeetingToken } from "@/platform/integrations/daily";
 import { pusherServer, PUSHER_EVENTS, presenceChannelName } from "@/platform/integrations/pusher";
+import { canAccessCall } from "@/features/calls/server/call-access";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!(await canAccessCall({ callId: id, userId: session.user.id, role: session.user.role }))) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
 
   const call = await prisma.call.findUnique({
     where: { id },

@@ -16,6 +16,7 @@ import {
   getRecordingAccessLink,
 } from "@/platform/integrations/daily";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
+import { canAccessCall } from "@/features/calls/server/call-access";
 
 export const maxDuration = 120;
 
@@ -28,6 +29,9 @@ export async function POST(
   if (isAiDisabled()) return aiDisabledResponse();
 
   const { id } = await params;
+  if (!(await canAccessCall({ callId: id, userId: session.user.id, role: session.user.role }))) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
   const body = (await request.json().catch(() => ({}))) as {
     mode?: SummaryMode;
     transcriptOverride?: string;
@@ -93,6 +97,8 @@ export async function POST(
         summaryMode: mode,
         summary: summary as never,
         shareToken,
+        shareExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        shareRevokedAt: null,
         summarizedAt: new Date(),
         summaryError: null,
         detectedLang: summary.language ?? null,
@@ -128,6 +134,9 @@ export async function GET(
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!(await canAccessCall({ callId: id, userId: session.user.id, role: session.user.role }))) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
   const call = await prisma.call.findUnique({
     where: { id },
     select: {
@@ -137,6 +146,7 @@ export async function GET(
       summaryMode: true,
       summarizedAt: true,
       shareToken: true,
+      shareExpiresAt: true,
       recordingUrl: true,
       summaryError: true,
       detectedLang: true,

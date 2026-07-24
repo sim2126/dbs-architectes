@@ -86,16 +86,31 @@ export async function POST(request: NextRequest) {
   }
 
   const hashed = await bcrypt.hash(body.password, 10);
-  await prisma.$transaction(async (tx) => {
+  const consumed = await prisma.$transaction(async (tx) => {
+    const tokenUpdate = await tx.passwordReset.updateMany({
+      where: {
+        id: reset.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { usedAt: new Date() },
+    });
+    if (tokenUpdate.count !== 1) return false;
+
     await tx.user.update({
       where: { id: reset.userId },
       data: { password: hashed },
     });
-    await tx.passwordReset.update({
-      where: { id: reset.id },
-      data: { usedAt: new Date() },
+    await tx.userSession.updateMany({
+      where: { userId: reset.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
+    return true;
   });
+
+  if (!consumed) {
+    return Response.json({ error: "Reset link is invalid or expired." }, { status: 404 });
+  }
 
   return Response.json({ ok: true });
 }

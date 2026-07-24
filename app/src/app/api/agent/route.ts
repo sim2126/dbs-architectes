@@ -197,7 +197,10 @@ export async function POST(req: NextRequest) {
 
                 let result: unknown;
                 try {
-                  result = await executeTool(tc.function.name, args);
+                  result = await executeTool(tc.function.name, args, {
+                    userId: session.user.id,
+                    role: session.user.role,
+                  });
                 } catch (err) {
                   result = { error: `Tool execution failed: ${String(err)}` };
                 }

@@ -13,7 +13,11 @@ export default async function PublicMeetingSummaryPage({
   const { token } = await params;
 
   const call = await prisma.call.findUnique({
-    where: { shareToken: token },
+    where: {
+      shareToken: token,
+      shareRevokedAt: null,
+      shareExpiresAt: { gt: new Date() },
+    },
     include: {
       starter: { select: { name: true, email: true } },
       project: { select: { code: true, title: true } },
@@ -68,7 +72,7 @@ export default async function PublicMeetingSummaryPage({
           </div>
         </div>
 
-        <SummaryRenderer summary={call.summary as never} recordingUrl={call.recordingUrl} />
+        <SummaryRenderer summary={call.summary as never} />
 
         <div className="mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 text-center">
           Generated {call.summarizedAt ? format(new Date(call.summarizedAt), "PPP") : ""} by DBS

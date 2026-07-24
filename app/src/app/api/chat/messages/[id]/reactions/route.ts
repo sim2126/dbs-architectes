@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
+import { canAccessChannel } from "@/features/calls/server/call-access";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -11,6 +12,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { emoji } = await request.json();
   const message = await prisma.message.findUnique({ where: { id } });
   if (!message) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await canAccessChannel({
+    channelId: message.channelId,
+    userId: session.user.id,
+    role: session.user.role,
+  }))) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
 
   const existing = await prisma.messageReaction.findUnique({
     where: { messageId_userId_emoji: { messageId: id, userId: session.user.id, emoji } },

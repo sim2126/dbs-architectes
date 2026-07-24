@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { pusherServer, PUSHER_EVENTS, channelName } from "@/platform/integrations/pusher";
+import { canAccessCall, canAccessChannel } from "@/features/calls/server/call-access";
 
 export async function POST(
   request: NextRequest,
@@ -14,6 +15,9 @@ export async function POST(
   const { channelId } = (await request.json()) as { channelId?: string };
 
   const call = await prisma.call.findUnique({ where: { id }, include: { project: true } });
+  if (!(await canAccessCall({ callId: id, userId: session.user.id, role: session.user.role }))) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
   if (!call?.shareToken) {
     return Response.json({ error: "Summary not yet generated" }, { status: 400 });
   }
@@ -30,6 +34,13 @@ export async function POST(
   }
   if (!targetChannelId) {
     return Response.json({ error: "No target channel" }, { status: 400 });
+  }
+  if (!(await canAccessChannel({
+    channelId: targetChannelId,
+    userId: session.user.id,
+    role: session.user.role,
+  }))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const origin = request.nextUrl.origin;

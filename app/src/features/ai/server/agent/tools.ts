@@ -164,24 +164,34 @@ export const AGENT_TOOLS = [
 
 // ─── Tool Handlers ────────────────────────────────────────────
 
-export async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+export type AgentToolSubject = { userId: string; role: string };
+
+function isAdmin(subject: AgentToolSubject): boolean {
+  return subject.role === "admin" || subject.role === "super_admin";
+}
+
+export async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  subject: AgentToolSubject,
+): Promise<unknown> {
   switch (name) {
     case "search_projects":
-      return searchProjects(args);
+      return searchProjects(args, subject);
     case "get_project_details":
-      return getProjectDetails(args.project_id as string);
+      return getProjectDetails(args.project_id as string, subject);
     case "get_project_thread":
-      return getProjectThread(args.project_id as string, (args.limit as number) ?? 20);
+      return getProjectThread(args.project_id as string, (args.limit as number) ?? 20, subject);
     case "get_team_messages":
-      return getTeamMessages(args);
+      return getTeamMessages(args, subject);
     case "get_agenda":
-      return getAgenda(args);
+      return getAgenda(args, subject);
     case "get_team_workload":
-      return getTeamWorkload();
+      return getTeamWorkload(subject);
     case "get_statistics":
-      return getStatistics();
+      return getStatistics(subject);
     case "get_activity_log":
-      return getActivityLog(args);
+      return getActivityLog(args, subject);
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -189,9 +199,13 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 
 // ─── Tool Implementations ─────────────────────────────────────
 
-async function searchProjects(args: Record<string, unknown>) {
+async function searchProjects(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 15, 50);
   const where: Record<string, unknown> = {};
+
+  if (!isAdmin(subject)) {
+    where.assignments = { some: { userId: subject.userId } };
+  }
 
   if (args.status) where.status = args.status;
   else where.status = "active";
@@ -265,9 +279,12 @@ async function searchProjects(args: Record<string, unknown>) {
   };
 }
 
-async function getProjectDetails(projectId: string) {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+async function getProjectDetails(projectId: string, subject: AgentToolSubject) {
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      ...(isAdmin(subject) ? {} : { assignments: { some: { userId: subject.userId } } }),
+    },
     include: {
       assignments: {
         include: { user: { select: { id: true, name: true, role: true, initials: true, email: true, department: true } } },
@@ -331,9 +348,15 @@ async function getProjectDetails(projectId: string) {
   };
 }
 
-async function getProjectThread(projectId: string, limit: number) {
+async function getProjectThread(projectId: string, limit: number, subject: AgentToolSubject) {
   const channel = await prisma.channel.findFirst({
-    where: { projectId, type: "project" },
+    where: {
+      projectId,
+      type: "project",
+      ...(isAdmin(subject)
+        ? {}
+        : { project: { assignments: { some: { userId: subject.userId } } } }),
+    },
     include: {
       messages: {
         where: { deletedAt: null, parentId: null },
@@ -367,12 +390,23 @@ async function getProjectThread(projectId: string, limit: number) {
   };
 }
 
-async function getTeamMessages(args: Record<string, unknown>) {
+async function getTeamMessages(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 30, 50);
   const where: Record<string, unknown> = {
     deletedAt: null,
     parentId: null,
-    channel: { projectId: null },
+    channel: {
+      projectId: null,
+      ...(isAdmin(subject)
+        ? {}
+        : {
+            OR: [
+              { type: "public" },
+              { createdBy: subject.userId },
+              { members: { some: { userId: subject.userId } } },
+            ],
+          }),
+    },
   };
 
   if (args.from_date) {
@@ -408,9 +442,15 @@ async function getTeamMessages(args: Record<string, unknown>) {
   };
 }
 
-async function getAgenda(args: Record<string, unknown>) {
+async function getAgenda(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 20, 50);
   const where: Record<string, unknown> = {};
+  if (!isAdmin(subject)) {
+    where.OR = [
+      { userId: subject.userId },
+      { project: { assignments: { some: { userId: subject.userId } } } },
+    ];
+  }
 
   if (args.project_id) where.projectId = args.project_id;
   if (args.priority) where.priority = args.priority;
@@ -453,9 +493,9 @@ async function getAgenda(args: Record<string, unknown>) {
   };
 }
 
-async function getTeamWorkload() {
+async function getTeamWorkload(subject: AgentToolSubject) {
   const users = await prisma.user.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...(isAdmin(subject) ? {} : { id: subject.userId }) },
     include: {
       projects: {
         include: {
@@ -492,17 +532,26 @@ async function getTeamWorkload() {
   };
 }
 
-async function getStatistics() {
+async function getStatistics(subject: AgentToolSubject) {
+  const projectWhere = {
+    status: "active",
+    ...(isAdmin(subject) ? {} : { assignments: { some: { userId: subject.userId } } }),
+  };
   const [total, byPhase, byStatus, unassigned, userCount, recentActivity] = await Promise.all([
-    prisma.project.count({ where: { status: "active" } }),
-    prisma.project.groupBy({ by: ["phase"], where: { status: "active" }, _count: true }),
-    prisma.project.groupBy({ by: ["workStatus"], where: { status: "active" }, _count: true }),
+    prisma.project.count({ where: projectWhere }),
+    prisma.project.groupBy({ by: ["phase"], where: projectWhere, _count: true }),
+    prisma.project.groupBy({ by: ["workStatus"], where: projectWhere, _count: true }),
     prisma.project.count({
-      where: { status: "active", assignments: { none: {} } },
+      where: isAdmin(subject) ? { status: "active", assignments: { none: {} } } : { id: "__none__" },
     }),
-    prisma.user.count({ where: { isActive: true } }),
+    prisma.user.count({ where: { isActive: true, ...(isAdmin(subject) ? {} : { id: subject.userId }) } }),
     prisma.activity.count({
-      where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      where: {
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        ...(isAdmin(subject)
+          ? {}
+          : { project: { assignments: { some: { userId: subject.userId } } } }),
+      },
     }),
   ]);
 
@@ -527,9 +576,15 @@ async function getStatistics() {
   };
 }
 
-async function getActivityLog(args: Record<string, unknown>) {
+async function getActivityLog(args: Record<string, unknown>, subject: AgentToolSubject) {
   const limit = Math.min((args.limit as number) ?? 25, 50);
   const where: Record<string, unknown> = {};
+  if (!isAdmin(subject)) {
+    where.OR = [
+      { userId: subject.userId },
+      { project: { assignments: { some: { userId: subject.userId } } } },
+    ];
+  }
 
   if (args.project_id) where.projectId = args.project_id;
   if (args.from_date) {

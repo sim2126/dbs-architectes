@@ -192,7 +192,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                   Today
                 </p>
                 <h2 className="font-display italic text-foreground text-xl leading-tight mt-0.5">
-                  Today's focus
+                  Today&apos;s focus
                 </h2>
               </div>
               <Link
@@ -381,7 +381,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
               Nothing starred yet.
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Star the projects you watch most — they'll appear here.
+              Star the projects you watch most — they&apos;ll appear here.
             </p>
             <Link
               href="/dashboard/projects"

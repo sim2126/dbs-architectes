@@ -1,0 +1,46 @@
+import { prisma } from "@/platform/db";
+
+const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+
+export async function canAccessCall(input: {
+  callId: string;
+  userId: string;
+  role: string;
+}): Promise<boolean> {
+  if (ADMIN_ROLES.has(input.role)) return true;
+
+  const call = await prisma.call.findFirst({
+    where: {
+      id: input.callId,
+      OR: [
+        { startedBy: input.userId },
+        { participants: { some: { userId: input.userId } } },
+        { project: { assignments: { some: { userId: input.userId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(call);
+}
+
+export async function canAccessChannel(input: {
+  channelId: string;
+  userId: string;
+  role: string;
+}): Promise<boolean> {
+  if (ADMIN_ROLES.has(input.role)) return true;
+
+  const channel = await prisma.channel.findFirst({
+    where: {
+      id: input.channelId,
+      OR: [
+        { type: "public" },
+        { createdBy: input.userId },
+        { members: { some: { userId: input.userId } } },
+        { project: { assignments: { some: { userId: input.userId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(channel);
+}

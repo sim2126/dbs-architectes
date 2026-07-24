@@ -8,7 +8,17 @@ export async function GET() {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
   const rawCalls = await prisma.call.findMany({
+    where: isAdmin
+      ? undefined
+      : {
+          OR: [
+            { startedBy: session.user.id },
+            { participants: { some: { userId: session.user.id } } },
+            { project: { assignments: { some: { userId: session.user.id } } } },
+          ],
+        },
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
@@ -32,6 +42,18 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { title, type = "video", projectId } = body;
+
+  if (projectId) {
+    const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(isAdmin ? {} : { assignments: { some: { userId: session.user.id } } }),
+      },
+      select: { id: true },
+    });
+    if (!project) return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const room = await createDailyRoom({ expiryMinutes: 180 });
 

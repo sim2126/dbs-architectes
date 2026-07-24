@@ -88,7 +88,7 @@ export default function ResetPasswordPage({
               Password reset
             </p>
             <h1 className="font-display italic text-friday-fg text-3xl leading-tight mt-2">
-              This reset link isn't valid.
+              This reset link isn&apos;t valid.
             </h1>
             <p className="text-[13px] text-friday-fg-muted mt-3 leading-relaxed">
               It may have expired (links live for one hour) or already been
@@ -116,7 +116,7 @@ export default function ResetPasswordPage({
                 Choose a new password.
               </h1>
               <p className="text-[13px] text-friday-fg-muted mt-3 leading-relaxed">
-                At least 10 characters. You'll sign in with the new one
+                At least 10 characters. You&apos;ll sign in with the new one
                 straight after.
               </p>
             </header>

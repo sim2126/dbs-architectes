@@ -382,6 +382,8 @@ model Call {
   summary        Json?     // full structured summary
   summaryHtml    String?   // rendered markdown for quick display
   shareToken     String?   @unique
+  shareExpiresAt DateTime?
+  shareRevokedAt DateTime?
   summarizedAt   DateTime?
   summaryError   String?
   detectedLang   String?   // auto-detected transcript language
@@ -394,6 +396,7 @@ model Call {
   @@index([status, createdAt])
   @@index([startedBy, createdAt])
   @@index([projectId, createdAt])
+  @@index([shareToken, shareExpiresAt])
 }
 
 model CallParticipant {

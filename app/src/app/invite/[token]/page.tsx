@@ -135,7 +135,7 @@ export default function AcceptInvitePage({
               Invitation
             </p>
             <h1 className="font-display italic text-friday-fg text-3xl leading-tight mt-2">
-              This link isn't valid anymore.
+              This link isn&apos;t valid anymore.
             </h1>
             <p className="text-[13px] text-friday-fg-muted mt-3 leading-relaxed">
               The invitation may have expired, been revoked, or already been
@@ -246,7 +246,7 @@ export default function AcceptInvitePage({
         {phase === "done" && (
           <div className="border border-friday-border-soft rounded-md bg-friday-surface px-6 py-8 text-center">
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-friday-fg-subtle">
-              You're in
+              You&apos;re in
             </p>
             <h1 className="font-display italic text-friday-fg text-3xl leading-tight mt-2">
               Account created.

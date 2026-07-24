@@ -1,12 +1,19 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import * as XLSX from "xlsx";
+
+function csvCell(value: unknown): string {
+  let text = value == null ? "" : String(value);
+  if (/^[=+@-]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
 
 export async function GET() {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
   const projects = await prisma.project.findMany({
+    where: isAdmin ? undefined : { assignments: { some: { userId: session.user.id } } },
     orderBy: { updatedAt: "desc" },
     include: {
       assignments: {
@@ -37,25 +44,16 @@ export async function GET() {
     "Updated At": p.updatedAt.toLocaleDateString("it-CH"),
   }));
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const csv = [
+    columns.map(csvCell).join(","),
+    ...rows.map((row) => columns.map((column) => csvCell(row[column as keyof typeof row])).join(",")),
+  ].join("\r\n");
 
-  // Column widths
-  ws["!cols"] = [
-    { wch: 15 }, { wch: 35 }, { wch: 15 }, { wch: 15 }, { wch: 20 },
-    { wch: 8 }, { wch: 20 }, { wch: 18 }, { wch: 12 }, { wch: 10 },
-    { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 30 },
-    { wch: 25 }, { wch: 40 }, { wch: 14 }, { wch: 14 },
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, "Progetti");
-
-  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-
-  return new Response(buffer, {
+  return new Response(`\uFEFF${csv}`, {
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="DBS_Progetti_${new Date().toISOString().split("T")[0]}.xlsx"`,
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="DBS_Progetti_${new Date().toISOString().split("T")[0]}.csv"`,
     },
   });
 }

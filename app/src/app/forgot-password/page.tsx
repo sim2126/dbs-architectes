@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
               <br /> a reset link is on its way.
             </h1>
             <p className="text-[13px] text-friday-fg-muted mt-3 leading-relaxed">
-              The link expires in one hour. If it doesn't arrive, check your spam
+              The link expires in one hour. If it doesn&apos;t arrive, check your spam
               folder or ask an admin to invite you again.
             </p>
             <Link
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
                 Forgot your password?
               </h1>
               <p className="text-[13px] text-friday-fg-muted mt-3 leading-relaxed">
-                Enter your account email and we'll send a single-use link to
+                Enter your account email and we&apos;ll send a single-use link to
                 set a new one.
               </p>
             </header>

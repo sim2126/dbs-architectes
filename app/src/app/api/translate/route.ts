@@ -85,24 +85,11 @@ Key rules:
         return Response.json({ translated, engine: "gpt-4o-mini" });
       }
     } catch {
-      // Fall through to fallback
+      return Response.json({ error: "Translation unavailable" }, { status: 503 });
     }
   }
 
   // ── Fallback: MyMemory (no key required) ─────────────────────
   // Used only when OpenAI is unavailable. Quality is limited.
-  try {
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|${targetLang}`;
-    const res = await fetch(url);
-    const data = await res.json() as { responseData?: { translatedText?: string } };
-    const translated = data?.responseData?.translatedText;
-    if (translated) {
-      remember(cacheKey, translated);
-      return Response.json({ translated, engine: "mymemory" });
-    }
-  } catch {
-    // Both failed
-  }
-
   return Response.json({ error: "Translation unavailable" }, { status: 503 });
 }

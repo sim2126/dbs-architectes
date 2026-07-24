@@ -550,13 +550,16 @@ function MessageInput({
   // Pick up a file the parent drag-drop handler pushed in.
   useEffect(() => {
     if (!externalFile) return;
-    setPending({
-      file: externalFile,
-      previewUrl: externalFile.type.startsWith("image/")
-        ? URL.createObjectURL(externalFile)
-        : null,
-    });
-    onExternalFileConsumed?.();
+    const timer = window.setTimeout(() => {
+      setPending({
+        file: externalFile,
+        previewUrl: externalFile.type.startsWith("image/")
+          ? URL.createObjectURL(externalFile)
+          : null,
+      });
+      onExternalFileConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [externalFile, onExternalFileConsumed]);
 
   // Release object URLs for image previews when the attachment changes

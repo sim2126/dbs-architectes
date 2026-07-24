@@ -2201,7 +2201,10 @@ export function SettingsClient({
           if (it.admin) adminIds.add(it.id);
         }),
       );
-      if (adminIds.has(active)) setActive("profile");
+      if (adminIds.has(active)) {
+        const timer = window.setTimeout(() => setActive("profile"), 0);
+        return () => window.clearTimeout(timer);
+      }
     }
   }, [isAdmin, active]);
 

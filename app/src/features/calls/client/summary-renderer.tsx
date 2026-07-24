@@ -53,10 +53,10 @@ export function SummaryRenderer({
   recordingUrl,
 }: {
   summary: AnySummary;
-  recordingUrl: string | null;
+  recordingUrl?: string | null;
 }) {
-  if (summary.mode === "simple") return <SimpleRenderer s={summary} recordingUrl={recordingUrl} />;
-  return <DetailedRenderer s={summary} recordingUrl={recordingUrl} />;
+  if (summary.mode === "simple") return <SimpleRenderer s={summary} recordingUrl={recordingUrl ?? null} />;
+  return <DetailedRenderer s={summary} recordingUrl={recordingUrl ?? null} />;
 }
 
 function SimpleRenderer({ s, recordingUrl }: { s: SimpleSummary; recordingUrl: string | null }) {

@@ -148,8 +148,11 @@ function ThinkingPanel({
 
   useEffect(() => {
     if (allDone && !autoCollapsed) {
-      setOpen(false);
-      setAutoCollapsed(true);
+      const timer = window.setTimeout(() => {
+        setOpen(false);
+        setAutoCollapsed(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [allDone, autoCollapsed]);
 

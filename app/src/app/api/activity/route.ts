@@ -20,11 +20,25 @@ export async function GET(request: NextRequest) {
   const hasPage = searchParams.has("page");
   const page = parseInt(searchParams.get("page") || "1");
   const limit = boundedLimit(searchParams.get("limit"));
-  const where = {
+  const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
+  const filters = {
     ...(type ? { type } : {}),
     ...(userId ? { userId } : {}),
     ...(projectId ? { projectId } : {}),
   };
+  const where = isAdmin
+    ? filters
+    : {
+        AND: [
+          filters,
+          {
+            OR: [
+              { userId: session.user.id },
+              { project: { assignments: { some: { userId: session.user.id } } } },
+            ],
+          },
+        ],
+      };
 
   const activities = await prisma.activity.findMany({
     where,

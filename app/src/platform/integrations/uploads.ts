@@ -53,7 +53,7 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 // shouldn't be shareable through a chat composer.
 const ALLOWED_EXT = new Set([
   // images
-  "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "heic",
+  "png", "jpg", "jpeg", "gif", "webp", "avif", "heic",
   // docs
   "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "csv",
   // architecture
@@ -99,6 +99,9 @@ export function validateUpload(input: PresignInput): void {
     );
   }
   const ext = extOf(input.filename);
+  if (!ext) {
+    throw new UploadValidationError("Files must have an approved extension.");
+  }
   if (FORBIDDEN_EXT.has(ext)) {
     throw new UploadValidationError(
       `.${ext} files can't be shared in chat for security reasons.`,
@@ -108,6 +111,10 @@ export function validateUpload(input: PresignInput): void {
     throw new UploadValidationError(
       `.${ext} isn't on the allowed file types list.`,
     );
+  }
+  const normalizedType = input.contentType.split(";", 1)[0]?.trim().toLowerCase();
+  if (!normalizedType || normalizedType === "text/html" || normalizedType === "image/svg+xml") {
+    throw new UploadValidationError("This file content type isn't allowed.");
   }
 }
 
@@ -159,6 +166,7 @@ async function presignS3(input: PresignInput): Promise<PresignedUpload> {
       Key: key,
       ContentType: input.contentType,
       ContentLength: input.contentLength,
+      ContentDisposition: `attachment; filename="${input.filename.replace(/["\r\n]/g, "_")}"`,
     }),
     { expiresIn: expiresSeconds },
   );
@@ -243,6 +251,12 @@ export async function writeLocalUpload(args: {
   ) {
     throw new UploadValidationError("Invalid upload key.");
   }
+  const filename = args.key.split("/").at(-1)?.replace(/^[a-f0-9]{24}-/, "") ?? "";
+  validateUpload({
+    filename,
+    contentType: args.contentType,
+    contentLength: args.bytes.byteLength,
+  });
   const target = path.join(process.cwd(), "public", "uploads", args.key);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, args.bytes);
