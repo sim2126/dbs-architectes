@@ -888,17 +888,6 @@ export default function DBSGPTPage() {
     const assistantMsg: ChatMessage = { id: assistantId, role: "assistant", content: "", steps: [], isStreaming: true };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
-
-    if (typeof window !== "undefined" && window.pendo?.trackAgent) {
-      window.pendo.trackAgent("prompt", {
-        agentId: "8Iq3SrfyAGij3yEnYXDiLaC29cA",
-        conversationId: sessionId!,
-        messageId: userMsg.id,
-        content,
-        suggestedPrompt: STARTER_PROMPTS.includes(content),
-      });
-    }
-
     setInput("");
     setLoading(true);
     pendingUserContent.current = content;
@@ -1043,17 +1032,6 @@ export default function DBSGPTPage() {
             // malformed SSE line
           }
         }
-      }
-
-      if (typeof window !== "undefined" && window.pendo?.trackAgent) {
-        window.pendo.trackAgent("agent_response", {
-          agentId: "8Iq3SrfyAGij3yEnYXDiLaC29cA",
-          conversationId: sessionId!,
-          messageId: assistantId,
-          content: pendingAssistantContent.current,
-          modelUsed: "gpt-4.1-mini",
-          toolsUsed: pendingAssistantSteps.current.map(s => s.name),
-        });
       }
 
       if (
@@ -1265,18 +1243,7 @@ export default function DBSGPTPage() {
                     onOpenSheet={openSheet}
                     onRetry={
                       message.role === "assistant" && idx === messages.length - 1 && lastUserMsg
-                        ? () => {
-                            if (typeof window !== "undefined" && window.pendo?.trackAgent) {
-                              window.pendo.trackAgent("user_reaction", {
-                                agentId: "8Iq3SrfyAGij3yEnYXDiLaC29cA",
-                                conversationId: activeSessionId ?? "",
-                                messageId: message.id,
-                                content: "retry",
-                              });
-                            }
-                            setMessages((prev) => prev.slice(0, -1));
-                            sendMessage(lastUserMsg.content);
-                          }
+                        ? () => { setMessages((prev) => prev.slice(0, -1)); sendMessage(lastUserMsg.content); }
                         : undefined
                     }
                   />
