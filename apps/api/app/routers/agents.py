@@ -12,11 +12,12 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.platform.auth.auth import TokenData, get_current_user
-from app.platform.config.config import settings
+from app.platform.cache.redis import cache_get, cache_set, get_redis
 from app.platform.cache.redis import check_rate_limit as redis_rate_limit
-from app.platform.cache.redis import get_redis
+from app.platform.config.config import settings
 from app.tasks.agent_tasks import run_dbs_gpt_task
 
 logger = structlog.get_logger(__name__)
@@ -28,9 +29,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     project_id: str | None = None
-    project_context: dict | None = None
     thread_id: str | None = None
-    priority: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -60,6 +59,23 @@ class SyncChatResponse(BaseModel):
     iteration_count: int
 
 
+async def require_project_access(project_id: str | None, current_user: TokenData) -> None:
+    if not project_id or current_user.role in {"admin", "super_admin"}:
+        return
+    from app.platform.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            text(
+                'SELECT 1 FROM "ProjectAssignment" '
+                'WHERE "projectId" = :project_id AND "userId" = :user_id'
+            ),
+            {"project_id": project_id, "user_id": current_user.user_id},
+        )
+        if result.first() is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
@@ -80,21 +96,23 @@ async def submit_chat(
     )
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+    await require_project_access(body.project_id, current_user)
 
     logger.info("agent.chat_submitted", user_id=current_user.user_id, message_len=len(body.message))
 
-    priority = body.priority or current_user.role in {"admin", "super_admin", "project_manager", "director"}
+    priority = current_user.role in {"admin", "super_admin", "project_manager", "director"}
     task = run_dbs_gpt_task.apply_async(
         kwargs={
             "message": body.message,
             "user_id": current_user.user_id,
             "user_role": current_user.role,
             "project_id": body.project_id,
-            "project_context": body.project_context,
+            "project_context": None,
             "thread_id": body.thread_id,
         },
         queue="high_priority" if priority else "agents",
     )
+    await cache_set(f"agent-task-owner:{task.id}", current_user.user_id, ttl=3600)
 
     return ChatResponse(task_id=task.id)
 
@@ -120,6 +138,7 @@ async def submit_chat_sync(
     )
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
+    await require_project_access(body.project_id, current_user)
 
     logger.info("agent.chat_sync_submitted", user_id=current_user.user_id, message_len=len(body.message))
     start = time.perf_counter()
@@ -128,7 +147,7 @@ async def submit_chat_sync(
         user_id=current_user.user_id,
         user_role=current_user.role,
         project_id=body.project_id,
-        project_context=body.project_context,
+        project_context=None,
         thread_id=body.thread_id,
     )
     duration_ms = (time.perf_counter() - start) * 1000
@@ -157,6 +176,9 @@ async def get_task_result(
     current_user: TokenData = Depends(get_current_user),
 ):
     """Poll for a task result by task_id."""
+    owner_id = await cache_get(f"agent-task-owner:{task_id}")
+    if owner_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Task not found")
     from celery.result import AsyncResult
     result = AsyncResult(task_id, app=run_dbs_gpt_task.app)
 
@@ -186,6 +208,9 @@ async def stream_task_updates(
     Server-Sent Events (SSE) stream for real-time task updates.
     The frontend subscribes to this and gets updates as the agent progresses.
     """
+    owner_id = await cache_get(f"agent-task-owner:{task_id}")
+    if owner_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Task not found")
     async def event_generator():
         r = await get_redis()
         pubsub = r.pubsub()

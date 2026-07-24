@@ -35,7 +35,8 @@ async def get_statistics() -> str:
                 """
             )
         )
-        total_row = dict(totals.mappings().first())
+        total_mapping = totals.mappings().first()
+        total_row = dict(total_mapping) if total_mapping else {"total": 0}
 
         # Phase distribution
         phases = await db.execute(

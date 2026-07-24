@@ -85,7 +85,7 @@ class FakeRedis:
     async def aclose(self) -> None:
         return None
 
-    def pipeline(self) -> "FakePipeline":
+    def pipeline(self) -> FakePipeline:
         return FakePipeline(self)
 
 
@@ -94,11 +94,11 @@ class FakePipeline:
         self.redis = redis
         self._ops: list[tuple[str, tuple[Any, ...]]] = []
 
-    def incr(self, key: str) -> "FakePipeline":
+    def incr(self, key: str) -> FakePipeline:
         self._ops.append(("incr", (key,)))
         return self
 
-    def expire(self, key: str, seconds: int) -> "FakePipeline":
+    def expire(self, key: str, seconds: int) -> FakePipeline:
         self._ops.append(("expire", (key, seconds)))
         return self
 
@@ -142,8 +142,8 @@ async def app_client(patched_redis) -> AsyncIterator[AsyncClient]:
     The `get_current_user` dep is overridden to return a fixed test user, so
     tests never need to mint JWTs.
     """
-    from app.platform.auth.auth import TokenData, get_current_user
     from app.main import app
+    from app.platform.auth.auth import TokenData, get_current_user
 
     async def _test_user() -> TokenData:
         return TokenData(user_id=TEST_USER_ID, email=TEST_USER_EMAIL, role=TEST_USER_ROLE)
@@ -164,7 +164,7 @@ class FakeResult:
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
         self._rows = rows or []
 
-    def mappings(self) -> "FakeResult":
+    def mappings(self) -> FakeResult:
         return self
 
     def all(self) -> list[dict[str, Any]]:
@@ -241,3 +241,17 @@ def fake_llm_supervisor_route():
         return mock_llm
 
     return _factory
+@pytest.fixture(autouse=True)
+def agent_subject_context():
+    """Run tool tests as a real scoped caller; production tools fail closed."""
+    from app.features.ai.server.dbs_gpt.security_context import (
+        reset_agent_subject,
+        set_agent_subject,
+    )
+
+    tokens = set_agent_subject("test-user-id", "admin")
+    try:
+        yield
+    finally:
+        reset_agent_subject(tokens)
+

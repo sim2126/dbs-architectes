@@ -5,7 +5,6 @@ Fetch upcoming deadlines, milestones, and scheduled tasks.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import structlog
 from langchain_core.tools import tool
@@ -16,11 +15,11 @@ logger = structlog.get_logger(__name__)
 
 @tool
 async def get_agenda(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    priority: Optional[str] = None,
-    project_id: Optional[str] = None,
-    status: Optional[str] = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    priority: str | None = None,
+    project_id: str | None = None,
+    status: str | None = None,
     include_overdue: bool = True,
     limit: int = 30,
 ) -> str:

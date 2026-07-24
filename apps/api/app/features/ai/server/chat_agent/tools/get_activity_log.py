@@ -5,7 +5,6 @@ Fetch recent activity events across the portfolio.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import structlog
 from langchain_core.tools import tool
@@ -16,8 +15,8 @@ logger = structlog.get_logger(__name__)
 
 @tool
 async def get_activity_log(
-    project_id: Optional[str] = None,
-    from_date: Optional[str] = None,
+    project_id: str | None = None,
+    from_date: str | None = None,
     limit: int = 30,
 ) -> str:
     """

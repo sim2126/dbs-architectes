@@ -23,6 +23,7 @@ import argparse
 import asyncio
 import statistics
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -109,10 +110,8 @@ async def run_scenario(
         if warmup:
             print(f"   warming up ({warmup} requests)...", end="", flush=True)
             for _ in range(warmup):
-                try:
+                with suppress(Exception):
                     await client.get(path, timeout=30.0)
-                except Exception:
-                    pass
             print(" ok")
 
         queue: asyncio.Queue[str] = asyncio.Queue()

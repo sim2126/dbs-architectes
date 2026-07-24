@@ -6,8 +6,6 @@ Tools are exposed as langchain `@tool` objects — we invoke them through
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.ai.server.dbs_gpt.tools import (
     get_project_team,
     get_projects,

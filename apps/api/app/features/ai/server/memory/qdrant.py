@@ -2,22 +2,27 @@
 Qdrant vector memory for DBS GPT agents.
 Handles storing and retrieving semantic memories (regulations, project notes, conversation history).
 """
-from typing import Optional
+import uuid
+
+import structlog
+from langchain_openai import OpenAIEmbeddings
+from pydantic import SecretStr
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
-    Distance, VectorParams, PointStruct, Filter,
-    FieldCondition, MatchValue, SearchRequest,
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
 )
-from langchain_openai import OpenAIEmbeddings
-import uuid
-import structlog
 
 from app.platform.config.config import settings
 
 logger = structlog.get_logger(__name__)
 
-_client: Optional[AsyncQdrantClient] = None
-_embedder: Optional[OpenAIEmbeddings] = None
+_client: AsyncQdrantClient | None = None
+_embedder: OpenAIEmbeddings | None = None
 
 
 def get_qdrant() -> AsyncQdrantClient:
@@ -32,7 +37,7 @@ def get_embedder() -> OpenAIEmbeddings:
     if _embedder is None:
         _embedder = OpenAIEmbeddings(
             model=settings.OPENAI_EMBEDDING_MODEL,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
         )
     return _embedder
 
@@ -84,7 +89,7 @@ async def search_memory(
     query: str,
     collection: str = "memory",
     limit: int = 5,
-    filter_conditions: Optional[dict] = None,
+    filter_conditions: dict | None = None,
 ) -> list[dict]:
     """Semantic search over stored memories. Returns ranked results."""
     client = get_qdrant()
@@ -110,16 +115,17 @@ async def search_memory(
         with_payload=True,
     )
 
-    return [
-        {
-            "id": str(r.id),
-            "score": r.score,
-            "content": r.payload.get("content", ""),
-            "source": r.payload.get("source", "unknown"),
-            **{k: v for k, v in r.payload.items() if k not in ("content", "source")},
-        }
-        for r in results
-    ]
+    memories = []
+    for result in results:
+        payload = result.payload or {}
+        memories.append({
+            "id": str(result.id),
+            "score": result.score,
+            "content": payload.get("content", ""),
+            "source": payload.get("source", "unknown"),
+            **{k: v for k, v in payload.items() if k not in ("content", "source")},
+        })
+    return memories
 
 
 async def delete_memory(point_id: str, collection: str = "memory") -> None:

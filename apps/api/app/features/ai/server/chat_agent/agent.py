@@ -13,20 +13,26 @@ Architecture: ReAct loop via LangGraph
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import date
-from typing import AsyncIterator, Optional
+from typing import Any, cast
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from .state import ChatAgentState
-from .tools import ALL_TOOLS
 from .title_generator import generate_chat_title
+from .tools import ALL_TOOLS
 
 logger = structlog.get_logger(__name__)
 
 MAX_ROUNDS = 6
+
+
+def _content_text(content: str | list[str | dict[Any, Any]]) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(part if isinstance(part, str) else str(part.get("text", "")) for part in content)
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -65,7 +71,7 @@ async def run_chat_agent(
     *,
     user_name: str = "User",
     user_role: str = "viewer",
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     stream: bool = True,
 ) -> AsyncIterator[dict]:
     """
@@ -109,23 +115,22 @@ async def run_chat_agent(
                 # Stream the response
                 async for chunk in llm_with_tools.astream(history):
                     if chunk.content:
-                        assistant_text += chunk.content
-                        accumulated_text += chunk.content
-                        yield {"type": "text", "content": chunk.content}
+                        chunk_text = _content_text(chunk.content)
+                        assistant_text += chunk_text
+                        accumulated_text += chunk_text
+                        yield {"type": "text", "content": chunk_text}
                     if hasattr(chunk, "tool_calls") and chunk.tool_calls:
                         tool_calls_this_round.extend(chunk.tool_calls)
             else:
-                response = await llm_with_tools.ainvoke(history)
-                assistant_text = response.content or ""
+                response = cast(AIMessage, await llm_with_tools.ainvoke(history))
+                assistant_text = _content_text(response.content)
                 accumulated_text += assistant_text
                 if assistant_text:
                     yield {"type": "text", "content": assistant_text}
-                tool_calls_this_round = response.tool_calls or []
+                tool_calls_this_round = cast(list[dict], response.tool_calls or [])
 
             # Add assistant message to history
-            ai_msg = AIMessage(content=assistant_text)
-            if tool_calls_this_round:
-                ai_msg.tool_calls = tool_calls_this_round  # type: ignore[attr-defined]
+            ai_msg = AIMessage(content=assistant_text, tool_calls=cast(Any, tool_calls_this_round))
             history.append(ai_msg)
 
             # No tool calls → done

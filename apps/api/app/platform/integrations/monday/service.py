@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 
@@ -32,7 +32,7 @@ class MondayImportService:
         self,
         mappings: list[BoardMappingConfig],
         *,
-        mode: str = "dry_run",
+        mode: Literal["dry_run", "full", "delta"] = "dry_run",
     ) -> ImportRunResult:
         result = ImportRunResult(mode=mode, counters=ImportCounters())
 
@@ -172,4 +172,3 @@ class MondayImportService:
             content=reply.get("text_body") or reply.get("body") or "",
             created_at=reply.get("created_at"),
         )
-

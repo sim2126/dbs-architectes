@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     MONDAY_API_URL: str = "https://api.monday.com/v2"
     MONDAY_REQUEST_TIMEOUT_SECONDS: float = 30.0
     MONDAY_DEFAULT_PAGE_SIZE: int = 100
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self):
+        if self.ENVIRONMENT.lower() == "production":
+            if self.SECRET_KEY == "change-me-in-production-use-openssl-rand-hex-32":
+                raise ValueError("SECRET_KEY must be configured in production")
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError("SECRET_KEY must be at least 32 characters in production")
+        return self
 
 
 @lru_cache

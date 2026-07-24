@@ -14,9 +14,9 @@ from app.tasks.celery_app import celery_app
 logger = get_task_logger(__name__)
 
 
-def _resolve_mapping_paths(mapping_paths: list[str]) -> list[str]:
+def _resolve_mapping_paths(mapping_paths: list[str]) -> list[str | Path]:
     base_dir = Path(__file__).resolve().parents[1] / "importers" / "monday" / "configs"
-    resolved: list[str] = []
+    resolved: list[str | Path] = []
     for path in mapping_paths:
         candidate = Path(path)
         if not candidate.is_absolute():
@@ -53,4 +53,3 @@ def run_monday_full_import(self, mapping_paths: list[str]) -> dict:
     payload = result.model_dump()
     payload["task_id"] = self.request.id
     return payload
-

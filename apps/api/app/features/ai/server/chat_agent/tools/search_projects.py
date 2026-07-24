@@ -5,7 +5,6 @@ Search and filter the DBS project portfolio.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import structlog
 from langchain_core.tools import tool
@@ -16,13 +15,13 @@ logger = structlog.get_logger(__name__)
 
 @tool
 async def search_projects(
-    query: Optional[str] = None,
-    phase: Optional[str] = None,
-    work_status: Optional[str] = None,
-    category: Optional[str] = None,
-    client: Optional[str] = None,
-    commune: Optional[str] = None,
-    year: Optional[int] = None,
+    query: str | None = None,
+    phase: str | None = None,
+    work_status: str | None = None,
+    category: str | None = None,
+    client: str | None = None,
+    commune: str | None = None,
+    year: int | None = None,
     status: str = "active",
     limit: int = 20,
 ) -> str:

@@ -1,8 +1,8 @@
 from operator import add
-from typing import TypedDict, Annotated, Optional, Literal
+from typing import Annotated, Literal, TypedDict
+
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
-
 
 # ── Agent State ───────────────────────────────────────────────────────────────
 # This is the shared state that flows through every node in the graph.
@@ -17,27 +17,20 @@ class AgentState(TypedDict):
     user_role: str  # super_admin | admin | project_manager | collaborator | viewer
 
     # Current project context (if the user is talking from a project thread)
-    project_id: Optional[str]
-    project_context: Optional[dict]
+    project_id: str | None
+    project_context: dict | None
 
     # Routing: which sub-agent should handle the next step
-    next: Optional[Literal[
-        "project_manager",
-        "scheduler",
-        "regulations_expert",
-        "data_analyst",
-        "file_handler",
-        "FINISH"
-    ]]
+    next: Literal["project_manager", "scheduler", "regulations_expert", "data_analyst", "file_handler", "FINISH"] | None
 
     # What type of task was identified by the supervisor
-    task_type: Optional[str]
+    task_type: str | None
 
     # Final response to return to the user
-    final_response: Optional[str]
+    final_response: str | None
 
     # Error state
-    error: Optional[str]
+    error: str | None
 
     # Iteration guard (prevents infinite loops)
     iteration_count: int

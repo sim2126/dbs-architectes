@@ -7,10 +7,6 @@ or OpenAI being real — all external edges are stubbed in conftest.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
-import pytest
-
 
 async def test_health_endpoint_returns_ok(app_client):
     resp = await app_client.get("/health")
@@ -33,7 +29,6 @@ async def test_chat_submit_returns_task_id(app_client, monkeypatch):
     from app.routers import agents as agents_router
 
     fake_task = type("_Task", (), {"id": "task-abc-123"})()
-    apply_async = AsyncMock(return_value=fake_task)
     # Celery's apply_async is synchronous; wrap as Mock not AsyncMock
     from unittest.mock import Mock
     monkeypatch.setattr(

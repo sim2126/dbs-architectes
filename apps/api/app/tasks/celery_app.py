@@ -1,6 +1,6 @@
+import structlog
 from celery import Celery
 from kombu import Queue
-import structlog
 
 from app.platform.config.config import settings
 

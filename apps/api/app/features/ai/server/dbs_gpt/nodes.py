@@ -6,6 +6,7 @@ import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
+from pydantic import SecretStr
 
 from app.features.ai.server.dbs_gpt.state import AgentState
 from app.features.ai.server.dbs_gpt.tools import (
@@ -23,9 +24,9 @@ logger = structlog.get_logger(__name__)
 def _llm(temperature: float = 0.1) -> ChatOpenAI:
     return ChatOpenAI(
         model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
+        api_key=SecretStr(settings.OPENAI_API_KEY),
         temperature=temperature,
-        max_tokens=settings.OPENAI_MAX_TOKENS,
+        model_kwargs={"max_tokens": settings.OPENAI_MAX_TOKENS},
     )
 
 
@@ -85,7 +86,8 @@ async def supervisor_node(state: AgentState) -> dict:
 
     project_ctx = ""
     if state.get("project_id"):
-        project_ctx = f"User is viewing project: {state.get('project_context', {}).get('code', state['project_id'])}"
+        project_context = state.get("project_context") or {}
+        project_ctx = f"User is viewing project: {project_context.get('code', state['project_id'])}"
 
     llm = _llm(temperature=0.0)
     system = SUPERVISOR_SYSTEM.format(
@@ -100,7 +102,8 @@ async def supervisor_node(state: AgentState) -> dict:
         HumanMessage(content=f"Route this request: {last_message}"),
     ])
 
-    next_agent = response.content.strip().lower().replace("-", "_")
+    response_text = response.content if isinstance(response.content, str) else ""
+    next_agent = response_text.strip().lower().replace("-", "_")
     valid = {"project_manager", "scheduler", "regulations_expert", "data_analyst", "finish"}
     if next_agent not in valid:
         next_agent = "project_manager"  # safe default

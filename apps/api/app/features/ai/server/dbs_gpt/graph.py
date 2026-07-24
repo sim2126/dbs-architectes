@@ -14,6 +14,7 @@ Architecture:
 """
 import structlog
 from langchain_core.messages import ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
@@ -28,6 +29,7 @@ from app.features.ai.server.dbs_gpt.nodes import (
     scheduler_node,
     supervisor_node,
 )
+from app.features.ai.server.dbs_gpt.security_context import reset_agent_subject, set_agent_subject
 from app.features.ai.server.dbs_gpt.state import AgentState
 
 logger = structlog.get_logger(__name__)
@@ -38,7 +40,7 @@ def route_from_supervisor(state: AgentState) -> str:
     next_ = state.get("next", "FINISH")
     if next_ in ("FINISH", "finish"):
         return END
-    return next_
+    return next_ or "project_manager"
 
 
 def route_after_agent(state: AgentState) -> str:
@@ -170,12 +172,13 @@ async def run_agent_with_trace(
     arguments and a truncated result, plus the final text.
     """
     import uuid
-    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from langchain_core.messages import AIMessage, HumanMessage
 
     # Fresh thread per call → visited_nodes reflects only this turn, not
     # accumulated history from prior calls via the checkpointer.
     thread_key = thread_id or f"{user_id}-{uuid.uuid4().hex[:8]}"
-    config = {"configurable": {"thread_id": thread_key}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_key}}
     initial_state = {
         "messages": [HumanMessage(content=message)],
         "user_id": user_id,
@@ -189,6 +192,7 @@ async def run_agent_with_trace(
         "visited_nodes": [],
     }
 
+    subject_tokens = set_agent_subject(user_id, user_role)
     try:
         result = await compiled_graph.ainvoke(initial_state, config=config)
     except Exception as e:
@@ -197,6 +201,8 @@ async def run_agent_with_trace(
             "An error occurred while processing your request. Please try again.",
             {"error": str(e), "visited_nodes": [], "tool_calls": []},
         )
+    finally:
+        reset_agent_subject(subject_tokens)
 
     # Extract ordered tool calls from message history
     tool_calls: list[dict] = []
@@ -212,14 +218,14 @@ async def run_agent_with_trace(
                 tool_calls.append({
                     "name": call.get("name"),
                     "args": call.get("args", {}),
-                    "result": tool_results_by_id.get(call.get("id", ""), ""),
+                    "result": tool_results_by_id.get(call.get("id") or "", ""),
                 })
 
     # Final response = last AIMessage with content and no further tool calls
     final_text: str | None = None
     for msg in reversed(messages_list):
         if isinstance(msg, AIMessage) and msg.content and not getattr(msg, "tool_calls", None):
-            final_text = msg.content
+            final_text = msg.content if isinstance(msg.content, str) else ""
             break
     if not final_text:
         final_text = result.get("final_response") or "I couldn't process that request."

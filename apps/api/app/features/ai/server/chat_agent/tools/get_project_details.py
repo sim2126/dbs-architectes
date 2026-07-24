@@ -5,7 +5,6 @@ Fetch full detail for a single project including team, agenda, and recent activi
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import structlog
 from langchain_core.tools import tool

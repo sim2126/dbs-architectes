@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 EntityType = Literal["project", "agenda", "staffing", "archive"]
 TargetType = Literal["project", "agenda_item", "message", "assignment", "asset", "field"]
 
@@ -104,4 +103,3 @@ class ImportRunResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-

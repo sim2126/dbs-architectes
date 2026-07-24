@@ -6,6 +6,9 @@ Each tool is a function that the LLM can call to interact with the platform.
 import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
+
+from app.features.ai.server.dbs_gpt.security_context import require_agent_subject
 
 logger = structlog.get_logger(__name__)
 
@@ -48,10 +51,16 @@ async def get_projects(
       limit:   Max rows, default 20, capped at 50.
     """
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
     limit = min(max(limit, 1), 50)
     async with AsyncSessionLocal() as db:
         conditions = ['status != \'deleted\'']
-        params: dict = {"limit": limit}
+        params: dict = {"limit": limit, "user_id": user_id}
+        if role not in {"admin", "super_admin"}:
+            conditions.append(
+                'EXISTS (SELECT 1 FROM "ProjectAssignment" pa '
+                'WHERE pa."projectId" = "Project".id AND pa."userId" = :user_id)'
+            )
         if name:
             conditions.append("(title ILIKE :name OR code ILIKE :name)")
             params["name"] = f"%{name}%"
@@ -91,10 +100,24 @@ async def update_project_phase(project_code: str, new_phase: str) -> str:
         return f"Invalid phase '{new_phase}'. Valid options: {', '.join(sorted(VALID_PHASES))}"
 
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
+    if role not in {"admin", "super_admin", "project_manager"}:
+        return "You do not have permission to update project phases."
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            text('UPDATE "Project" SET phase = :phase, "updatedAt" = NOW() WHERE code = :code RETURNING title'),
-            {"phase": norm, "code": project_code},
+            text(
+                'UPDATE "Project" SET phase = :phase, "updatedAt" = NOW() '
+                'WHERE code = :code AND ('
+                ':is_admin OR EXISTS (SELECT 1 FROM "ProjectAssignment" pa '
+                'WHERE pa."projectId" = "Project".id AND pa."userId" = :user_id)) '
+                'RETURNING title'
+            ),
+            {
+                "phase": norm,
+                "code": project_code,
+                "user_id": user_id,
+                "is_admin": role in {"admin", "super_admin"},
+            },
         )
         row = result.fetchone()
         if not row:
@@ -113,16 +136,26 @@ async def get_project_team(project_code: str) -> str:
     get_projects first.
     """
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
     async with AsyncSessionLocal() as db:
         # Accept a code OR a title substring — normalise to a single code
         lookup = await db.execute(
             text('''
                 SELECT code FROM "Project"
-                WHERE code = :q OR title ILIKE :like OR code ILIKE :like
+                WHERE (code = :q OR title ILIKE :like OR code ILIKE :like)
+                  AND (:is_admin OR EXISTS (
+                    SELECT 1 FROM "ProjectAssignment" pa
+                    WHERE pa."projectId" = "Project".id AND pa."userId" = :user_id
+                  ))
                 ORDER BY CASE WHEN code = :q THEN 0 ELSE 1 END
                 LIMIT 1
             '''),
-            {"q": project_code, "like": f"%{project_code}%"},
+            {
+                "q": project_code,
+                "like": f"%{project_code}%",
+                "user_id": user_id,
+                "is_admin": role in {"admin", "super_admin"},
+            },
         )
         row = lookup.fetchone()
         if not row:
@@ -157,7 +190,6 @@ async def create_agenda_item(
     project_code: str | None = None,
     priority: str = "medium",
     description: str | None = None,
-    user_id: str = "",
 ) -> str:
     """
     Create a new agenda/task item. Date must be ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.
@@ -167,6 +199,7 @@ async def create_agenda_item(
     from datetime import datetime
 
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
 
     try:
         parsed_date = datetime.fromisoformat(date)
@@ -177,11 +210,21 @@ async def create_agenda_item(
         project_id = None
         if project_code:
             result = await db.execute(
-                text('SELECT id FROM "Project" WHERE code = :code'), {"code": project_code}
+                text(
+                    'SELECT id FROM "Project" WHERE code = :code AND ('
+                    ':is_admin OR EXISTS (SELECT 1 FROM "ProjectAssignment" pa '
+                    'WHERE pa."projectId" = "Project".id AND pa."userId" = :user_id))'
+                ),
+                {
+                    "code": project_code,
+                    "user_id": user_id,
+                    "is_admin": role in {"admin", "super_admin"},
+                },
             )
             row = result.fetchone()
-            if row:
-                project_id = row[0]
+            if not row:
+                return "Project not found or unavailable."
+            project_id = row[0]
 
         item_id = str(uuid.uuid4())
         await db.execute(
@@ -201,9 +244,10 @@ async def create_agenda_item(
 
 
 @tool
-async def get_upcoming_agenda(days_ahead: int = 7, user_id: str = "") -> str:
+async def get_upcoming_agenda(days_ahead: int = 7) -> str:
     """Get upcoming agenda items for the next N days."""
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
     days_ahead = min(max(days_ahead, 1), 365)
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -214,16 +258,24 @@ async def get_upcoming_agenda(days_ahead: int = 7, user_id: str = "") -> str:
                 WHERE a.date >= NOW()
                 AND a.date <= NOW() + (:days * INTERVAL '1 day')
                 AND a.status != 'done'
+                AND (:is_admin OR a."userId" = :user_id OR EXISTS (
+                    SELECT 1 FROM "ProjectAssignment" pa
+                    WHERE pa."projectId" = a."projectId" AND pa."userId" = :user_id
+                ))
                 ORDER BY a.date ASC
                 LIMIT 20
             '''),
-            {"days": days_ahead},
+            {
+                "days": days_ahead,
+                "user_id": user_id,
+                "is_admin": role in {"admin", "super_admin"},
+            },
         )
         rows = result.mappings().all()
         if not rows:
             return f"No upcoming tasks in the next {days_ahead} days."
 
-        def _fmt(r: dict) -> str:
+        def _fmt(r: RowMapping) -> str:
             code = f"({r['project_code']})" if r["project_code"] else ""
             return f"• {r['date'].strftime('%d %b %Y')} — {r['title']} [{r['priority']}] {code}"
 
@@ -254,6 +306,7 @@ async def search_regulations(query: str) -> str:
 async def get_project_statistics() -> str:
     """Get a summary of project statistics: counts by phase, billing status, active vs stuck."""
     from app.platform.db.database import AsyncSessionLocal
+    user_id, role = require_agent_subject()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             text('''
@@ -264,9 +317,14 @@ async def get_project_statistics() -> str:
                     COUNT(CASE WHEN billing = 'Parziale' THEN 1 END) as partial
                 FROM "Project"
                 WHERE status != 'deleted'
+                  AND (:is_admin OR EXISTS (
+                    SELECT 1 FROM "ProjectAssignment" pa
+                    WHERE pa."projectId" = "Project".id AND pa."userId" = :user_id
+                  ))
                 GROUP BY phase
                 ORDER BY count DESC
-            ''')
+            '''),
+            {"user_id": user_id, "is_admin": role in {"admin", "super_admin"}},
         )
         rows = result.mappings().all()
         total = sum(r["count"] for r in rows)

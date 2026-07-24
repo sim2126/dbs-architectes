@@ -2,19 +2,20 @@
 DBS Architectes FastAPI Backend
 Entry point — run with: uvicorn app.main:app --reload --port 8000
 """
+import time
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-import structlog
-import time
 
-from app.platform.config.config import settings
-from app.platform.cache.redis import get_redis, close_redis
 from app.features.ai.server.memory.qdrant import ensure_collections
-from app.routers import health, agents
+from app.platform.cache.redis import close_redis, get_redis
+from app.platform.config.config import settings
+from app.routers import agents, health
 
 logger = structlog.get_logger(__name__)
 

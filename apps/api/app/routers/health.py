@@ -1,10 +1,10 @@
+import structlog
 from fastapi import APIRouter
 from sqlalchemy import text
-import structlog
 
-from app.platform.db.database import AsyncSessionLocal
 from app.platform.cache.redis import get_redis
 from app.platform.config.config import settings
+from app.platform.db.database import AsyncSessionLocal
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["health"])

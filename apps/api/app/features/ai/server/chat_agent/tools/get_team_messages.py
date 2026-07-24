@@ -5,7 +5,6 @@ Fetch messages from general or announcement team channels.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 import structlog
 from langchain_core.tools import tool
@@ -16,7 +15,7 @@ logger = structlog.get_logger(__name__)
 
 @tool
 async def get_team_messages(
-    channel_name: Optional[str] = None,
+    channel_name: str | None = None,
     limit: int = 30,
 ) -> str:
     """
