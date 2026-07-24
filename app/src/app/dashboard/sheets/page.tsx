@@ -23,6 +23,7 @@ import { Button } from "@/ui/components/button";
 import { cn } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProjectThreadPanel } from "@/features/projects/client/project-thread-panel";
+import { buildProjectSyncUpdates } from "@/features/sheets";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -369,18 +370,27 @@ export default function SheetsPage() {
     setSyncing(true);
     setSyncResult(null);
     try {
-      const updates = projectRows
-        .filter((r) => dirtyProjectIds.has(r.id))
-        .map(({ id, phase, workStatus, billing, notes }) => ({ id, phase, workStatus, billing, notes }));
+      const updates = buildProjectSyncUpdates(projectRows, dirtyProjectIds);
 
       const res = await fetch("/api/sheets/sync-projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ updates }),
       });
-      const data = await res.json() as { succeeded: number; failed: number };
-      setDirtyProjectIds(new Set());
-      setSyncResult(`Synced ${data.succeeded} project${data.succeeded !== 1 ? "s" : ""}${data.failed > 0 ? ` (${data.failed} failed)` : ""}`);
+      const data = await res.json() as { succeeded?: number; failed?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Project sync failed");
+
+      const succeeded = data.succeeded ?? 0;
+      const failed = data.failed ?? 0;
+      if (failed === 0) setDirtyProjectIds(new Set());
+      setSyncResult(
+        failed > 0
+          ? `Synced ${succeeded} project${succeeded !== 1 ? "s" : ""}; ${failed} failed and remain unsaved`
+          : `Synced ${succeeded} project${succeeded !== 1 ? "s" : ""}`,
+      );
+      setTimeout(() => setSyncResult(null), 4000);
+    } catch {
+      setSyncResult("Sync failed — changes remain unsaved");
       setTimeout(() => setSyncResult(null), 4000);
     } finally {
       setSyncing(false);
