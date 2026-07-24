@@ -9,9 +9,6 @@ import {
   Users,
   BarChart3,
   Calendar,
-  Brain,
-  Image,
-  FileSearch,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -20,7 +17,6 @@ import {
   Activity,
   Plug,
   Table2,
-  Bookmark,
   Target,
   Gauge,
 } from "lucide-react";
@@ -54,13 +50,6 @@ const collaborationItems = [
 
 const aiItems = [
   { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
-  { labelKey: "nav.ai_saved", href: "/dashboard/ai/saved", icon: Bookmark },
-  ...(productSurfaceFlags.aiGallery
-    ? [{ labelKey: "nav.ai_gallery", href: "/dashboard/ai/gallery", icon: Image }]
-    : []),
-  ...(productSurfaceFlags.aiPlanning
-    ? [{ labelKey: "nav.ai_planning", href: "/dashboard/ai/planning", icon: FileSearch }]
-    : []),
 ];
 
 interface SidebarProps {

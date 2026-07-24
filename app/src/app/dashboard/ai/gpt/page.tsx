@@ -24,6 +24,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Button } from "@/ui/components/button";
 import ReactMarkdown from "react-markdown";
@@ -58,6 +59,15 @@ interface ChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface SavedInsight {
+  id: string;
+  title: string;
+  text: string;
+  blocks: Block[];
+  sessionId: string | null;
+  createdAt: string;
 }
 
 interface SSEEvent {
@@ -343,12 +353,14 @@ function ArtifactTableCard({
 function MessageBubble({
   message,
   sessionId,
+  onSaved,
   onRetry,
   onExportArtifact,
   onOpenSheet,
 }: {
   message: ChatMessage;
   sessionId: string | null;
+  onSaved?: () => void;
   onRetry?: () => void;
   onExportArtifact?: (artifactId: string) => void;
   onOpenSheet?: (sheetId: string) => void;
@@ -378,6 +390,7 @@ function MessageBubble({
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onSaved?.();
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -385,7 +398,7 @@ function MessageBubble({
     } finally {
       setSaving(false);
     }
-  }, [message.id, message.content, message.blocks, sessionId, saved, saving]);
+  }, [message.id, message.content, message.blocks, sessionId, saved, saving, onSaved]);
 
   if (message.role === "user") {
     return (
@@ -488,15 +501,21 @@ function MessageBubble({
 
 function ChatHistorySidebar({
   sessions,
+  savedInsights,
+  savedInsightsError,
   activeId,
   onSelect,
+  onSelectSaved,
   onNew,
   onDelete,
   onRename,
 }: {
   sessions: ChatSession[];
+  savedInsights: SavedInsight[] | null;
+  savedInsightsError: boolean;
   activeId: string | null;
   onSelect: (id: string) => void;
+  onSelectSaved: (insight: SavedInsight) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -504,6 +523,7 @@ function ChatHistorySidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [savedOpen, setSavedOpen] = useState(true);
 
   const groupByDate = (sessions: ChatSession[]) => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -622,6 +642,59 @@ function ChatHistorySidebar({
         {sessions.length === 0 && (
           <p className="px-3 pt-4 text-[11px] text-friday-fg-subtle text-center italic">No conversations yet</p>
         )}
+
+        <div className="border-t border-friday-border-soft pt-2">
+          <button
+            type="button"
+            onClick={() => setSavedOpen((open) => !open)}
+            className="flex w-full items-center gap-1 px-3 py-1 text-left font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle hover:text-friday-fg transition-colors"
+            aria-expanded={savedOpen}
+          >
+            {savedOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <span className="flex-1">Saved</span>
+            {savedInsights && savedInsights.length > 0 && (
+              <span className="tracking-normal">{savedInsights.length}</span>
+            )}
+          </button>
+
+          {savedOpen && (
+            <div>
+              {savedInsightsError ? (
+                <p className="px-3 py-2 text-[11px] text-red-600">Saved insights unavailable</p>
+              ) : savedInsights === null ? (
+                <p className="px-3 py-2 text-[11px] text-friday-fg-subtle italic">Loading saved insights...</p>
+              ) : savedInsights.length === 0 ? (
+                <p className="px-3 py-2 text-[11px] text-friday-fg-subtle italic">No saved insights</p>
+              ) : (
+                savedInsights.map((insight) => (
+                  <button
+                    key={insight.id}
+                    type="button"
+                    onClick={() => onSelectSaved(insight)}
+                    title={insight.title}
+                    className={cn(
+                      "group relative flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px] transition-colors",
+                      insight.sessionId && activeId === insight.sessionId
+                        ? "text-friday-fg font-medium"
+                        : "text-friday-fg-muted hover:text-friday-fg",
+                    )}
+                  >
+                    {insight.sessionId && activeId === insight.sessionId && (
+                      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-sm bg-friday-accent" />
+                    )}
+                    <Bookmark className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{insight.title}</span>
+                      <span className="block truncate text-[10px] font-normal text-friday-fg-subtle">
+                        Saved {formatDistanceToNow(new Date(insight.createdAt), { addSuffix: true })}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -633,6 +706,9 @@ export default function DBSGPTPage() {
   const router = useRouter();
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [savedInsights, setSavedInsights] = useState<SavedInsight[] | null>(null);
+  const [savedInsightsError, setSavedInsightsError] = useState(false);
+  const [activeSavedInsight, setActiveSavedInsight] = useState<SavedInsight | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -664,6 +740,23 @@ export default function DBSGPTPage() {
     fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
   }, []);
 
+  const loadSavedInsights = useCallback(async () => {
+    setSavedInsightsError(false);
+    try {
+      const response = await fetch("/api/ai-saved");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setSavedInsights((await response.json()) as SavedInsight[]);
+    } catch (error) {
+      console.error("[gpt] saved insights load failed:", error);
+      setSavedInsights([]);
+      setSavedInsightsError(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedInsights();
+  }, [loadSavedInsights]);
+
   // Probe AI status — when AI_DISABLED is on in Vercel, the empty state
   // explains the planned break and the composer is disabled instead of
   // letting users send messages that would 503.
@@ -692,6 +785,8 @@ export default function DBSGPTPage() {
   // session-load effect from racing sendMessage() and wiping the in-flight
   // user/assistant messages right after a starter-prompt click.
   const loadedSessionRef = useRef<string | null>(null);
+  const savedFallbackRef = useRef<SavedInsight | null>(null);
+  const sessionSelectionRef = useRef(0);
 
   // Restore the previously-viewed chat from ?chat=<id> on mount so a
   // refresh / sidebar-jump / back-button keeps the user inside their
@@ -725,25 +820,43 @@ export default function DBSGPTPage() {
   // Load messages for active session (skipped when already primed locally)
   useEffect(() => {
     if (!activeSessionId) {
+      setLoadingSession(false);
       setMessages([]);
       loadedSessionRef.current = null;
       return;
     }
     if (loadedSessionRef.current === activeSessionId) return;
 
+    const selection = sessionSelectionRef.current;
     setLoadingSession(true);
     fetch(`/api/ai-chats/${activeSessionId}`)
       .then(async (r) => {
+        if (selection !== sessionSelectionRef.current) return null;
         if (!r.ok) {
-          // Stale ?chat=<id> from a deleted/foreign session — drop it
-          // so the URL cleans up and we land on the empty new-chat state.
+          const fallback = savedFallbackRef.current;
+          if (fallback?.sessionId === activeSessionId) {
+            setActiveSavedInsight(fallback);
+          }
+          // Drop a stale deleted/foreign session so the URL cleans up.
+          // Saved selections continue with their stored read-only snapshot.
           setActiveSessionId(null);
           loadedSessionRef.current = null;
+          savedFallbackRef.current = null;
           throw new Error(`HTTP ${r.status}`);
         }
-        return r.json();
+        return (await r.json()) as {
+          messages: {
+            id: string;
+            role: string;
+            content: string;
+            artifacts?: AiArtifact[];
+            steps?: ToolStep[];
+            blocks?: Block[];
+          }[];
+        };
       })
-      .then((d: { messages: { id: string; role: string; content: string; artifacts?: AiArtifact[]; steps?: ToolStep[]; blocks?: Block[] }[] }) => {
+      .then((d) => {
+        if (!d || selection !== sessionSelectionRef.current) return;
         setMessages((d.messages ?? []).map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
@@ -752,10 +865,14 @@ export default function DBSGPTPage() {
           steps: m.steps ?? [],
           blocks: m.blocks ?? [],
         })));
+        setActiveSavedInsight(null);
         loadedSessionRef.current = activeSessionId;
+        savedFallbackRef.current = null;
       })
       .catch(() => {})
-      .finally(() => setLoadingSession(false));
+      .finally(() => {
+        if (selection === sessionSelectionRef.current) setLoadingSession(false);
+      });
   }, [activeSessionId]);
 
   const createSession = useCallback(async (): Promise<string> => {
@@ -764,7 +881,9 @@ export default function DBSGPTPage() {
     setSessions((prev) => [data, ...prev]);
     // Mark as locally-loaded BEFORE switching activeSessionId, so the load
     // effect's early-return kicks in on the same render tick.
+    sessionSelectionRef.current += 1;
     loadedSessionRef.current = data.id;
+    setLoadingSession(false);
     setMessages([]);
     setActiveSessionId(data.id);
     return data.id;
@@ -775,17 +894,48 @@ export default function DBSGPTPage() {
   // actually sends their first message, so abandoned new-chat rows
   // never accumulate.
   const handleNew = useCallback(() => {
+    sessionSelectionRef.current += 1;
     setActiveSessionId(null);
+    setActiveSavedInsight(null);
+    setLoadingSession(false);
     setMessages([]);
     loadedSessionRef.current = null;
+    savedFallbackRef.current = null;
   }, []);
 
-  const handleSelect = useCallback((id: string) => { setActiveSessionId(id); }, []);
+  const handleSelect = useCallback((id: string) => {
+    if (id !== activeSessionId) sessionSelectionRef.current += 1;
+    setActiveSavedInsight(null);
+    savedFallbackRef.current = null;
+    setActiveSessionId(id);
+  }, [activeSessionId]);
+
+  const handleSelectSaved = useCallback((insight: SavedInsight) => {
+    if (!insight.sessionId) {
+      sessionSelectionRef.current += 1;
+      setActiveSessionId(null);
+      setMessages([]);
+      setActiveSavedInsight(insight);
+      setLoadingSession(false);
+      loadedSessionRef.current = null;
+      savedFallbackRef.current = null;
+      return;
+    }
+    if (insight.sessionId !== activeSessionId) sessionSelectionRef.current += 1;
+    setActiveSavedInsight(null);
+    savedFallbackRef.current = insight;
+    setActiveSessionId(insight.sessionId);
+  }, [activeSessionId]);
 
   const handleDelete = useCallback(async (id: string) => {
     await fetch(`/api/ai-chats/${id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); }
+    if (activeSessionId === id) {
+      sessionSelectionRef.current += 1;
+      setActiveSessionId(null);
+      setMessages([]);
+      setLoadingSession(false);
+    }
   }, [activeSessionId]);
 
   const handleRename = useCallback(async (id: string, title: string) => {
@@ -1121,6 +1271,9 @@ export default function DBSGPTPage() {
         return `${days} d ago`;
       })()
     : null;
+  const activeSavedTimeAgo = activeSavedInsight
+    ? formatDistanceToNow(new Date(activeSavedInsight.createdAt), { addSuffix: true })
+    : null;
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-friday-bg">
@@ -1131,8 +1284,9 @@ export default function DBSGPTPage() {
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatHistorySidebar
-            sessions={sessions} activeId={activeSessionId}
-            onSelect={handleSelect} onNew={handleNew}
+            sessions={sessions} savedInsights={savedInsights}
+            savedInsightsError={savedInsightsError} activeId={activeSessionId}
+            onSelect={handleSelect} onSelectSaved={handleSelectSaved} onNew={handleNew}
             onDelete={handleDelete} onRename={handleRename}
           />
         </div>
@@ -1143,7 +1297,16 @@ export default function DBSGPTPage() {
         {/* Top bar */}
         <div className="shrink-0 border-b border-friday-border-soft bg-friday-bg/95 backdrop-blur-sm px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0 flex items-baseline gap-2.5">
-            {activeSession ? (
+            {activeSavedInsight ? (
+              <>
+                <span className="font-display italic text-[15px] text-friday-fg truncate">
+                  {activeSavedInsight.title}
+                </span>
+                <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em] shrink-0">
+                  Saved insight · {activeSavedTimeAgo}
+                </span>
+              </>
+            ) : activeSession ? (
               <>
                 <span className="font-display italic text-[15px] text-friday-fg truncate">
                   {activeSession.title}
@@ -1162,7 +1325,7 @@ export default function DBSGPTPage() {
             <span className="hidden sm:flex items-center gap-1 text-[10.5px] text-friday-fg-subtle">
               <kbd className="px-1.5 py-0.5 font-mono text-[10px] border border-friday-border-soft rounded bg-friday-surface">⌘K</kbd>
             </span>
-            {messages.length > 0 && (
+            {(activeSavedInsight || messages.length > 0) && (
               <button
                 onClick={handleNew}
                 className="inline-flex items-center gap-1 text-[12px] text-friday-fg-muted hover:text-friday-fg transition-colors"
@@ -1178,6 +1341,21 @@ export default function DBSGPTPage() {
           {loadingSession ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : activeSavedInsight ? (
+            <div className="mx-auto max-w-3xl px-6 py-6">
+              <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
+                <p className="mb-3 font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
+                  Saved snapshot · Original conversation unavailable
+                </p>
+                {activeSavedInsight.blocks.length > 0 ? (
+                  <BlocksView blocks={activeSavedInsight.blocks} />
+                ) : (
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-[13.5px] leading-7">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeSavedInsight.text}</ReactMarkdown>
+                  </div>
+                )}
+              </div>
             </div>
           ) : !aiStatus.enabled ? (
             <motion.div
@@ -1242,6 +1420,7 @@ export default function DBSGPTPage() {
                     key={message.id}
                     message={message}
                     sessionId={activeSessionId}
+                    onSaved={loadSavedInsights}
                     onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
                     onOpenSheet={openSheet}
                     onRetry={
@@ -1263,7 +1442,9 @@ export default function DBSGPTPage() {
             <textarea
               ref={textareaRef}
               placeholder={
-                aiStatus.enabled
+                activeSavedInsight
+                  ? "Saved snapshots are read-only — start a new chat to continue"
+                  : aiStatus.enabled
                   ? "Ask about projects, deadlines, team workload, regulations…"
                   : `DBS AI is offline — back ${aiStatus.eta ?? "soon"}`
               }
@@ -1271,12 +1452,12 @@ export default function DBSGPTPage() {
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               rows={1}
-              disabled={!aiStatus.enabled}
+              disabled={!aiStatus.enabled || Boolean(activeSavedInsight)}
               className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <Button
               onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading || !aiStatus.enabled}
+              disabled={!input.trim() || loading || !aiStatus.enabled || Boolean(activeSavedInsight)}
               size="icon"
               className="h-[52px] w-[52px] rounded-2xl shrink-0"
             >
@@ -1284,7 +1465,9 @@ export default function DBSGPTPage() {
             </Button>
           </div>
           <p className="mx-auto max-w-3xl mt-2 text-xs text-muted-foreground">
-            {aiStatus.enabled
+            {activeSavedInsight
+              ? "Saved snapshot · Read-only"
+              : aiStatus.enabled
               ? "Enter to send · Shift+Enter for new line"
               : `Scheduled return: ${aiStatus.eta ?? "soon"}`}
           </p>

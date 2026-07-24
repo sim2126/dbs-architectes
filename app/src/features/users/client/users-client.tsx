@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Globe, Building2, ChevronDown, X, Check, Shield } from "lucide-react";
+import { Plus, Pencil, Trash2, Globe, Building2, ChevronDown, X, Check, Shield, Mail } from "lucide-react";
 import { Button } from "@/ui/components/button";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/ui/components/dialog";
@@ -11,6 +11,7 @@ import { Label } from "@/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/components/select";
 import { ROLES, EMPLOYMENT_STATUSES, COUNTRIES } from "@/ui/utils";
 import { cn } from "@/ui/utils";
+import { InviteUserDialog, PendingInvitations } from "./user-invitations";
 
 // ─── Types ───────────────────────────────────────────────────
 interface RegionAccess { country: string; operatingRegion?: string | null; accessLevel: string; }
@@ -214,6 +215,7 @@ function EditUserDialog({
 export function UsersClient({ users: initialUsers, currentUserId, departments }: UsersClientProps) {
   const [users, setUsers]           = useState(initialUsers);
   const [addOpen, setAddOpen]       = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [editUser, setEditUser]     = useState<UserData | null>(null);
   const [loading, setLoading]       = useState(false);
   const [filterRole, setFilterRole] = useState<string>("all");
@@ -282,9 +284,14 @@ export function UsersClient({ users: initialUsers, currentUserId, departments }:
           <h1 className="text-2xl font-bold">Users & Permissions</h1>
           <p className="text-muted-foreground mt-0.5">{users.filter((u) => u.isActive).length} active · {users.length} total</p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="w-4 h-4 mr-1" />Add User
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setInviteOpen(true)}>
+            <Mail className="w-4 h-4 mr-1" />Invite user
+          </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" />Add User
+          </Button>
+        </div>
       </div>
 
       {/* Role stats cards */}
@@ -320,6 +327,8 @@ export function UsersClient({ users: initialUsers, currentUserId, departments }:
           </button>
         ))}
       </div>
+
+      <PendingInvitations />
 
       {/* Table */}
       <motion.div
@@ -434,6 +443,8 @@ export function UsersClient({ users: initialUsers, currentUserId, departments }:
           onSaved={(updates) => { handleSaved(editUser.id, updates); setEditUser(null); }}
         />
       )}
+
+      <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
 
       {/* Add user modal */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
