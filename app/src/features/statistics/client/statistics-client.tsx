@@ -88,12 +88,12 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
 
   const stats = useMemo(() => {
     const totalProjects = filteredProjects.length;
-    const activeProjects = filteredProjects.filter(
-      (p) => p.phase !== "TERMINATO" && p.phase !== "STUCK"
-    ).length;
+    const completedProjects = filteredProjects.filter((p) => p.phase === "TERMINATO").length;
+    const stuckProjects = filteredProjects.filter((p) => p.phase === "STUCK").length;
+    const activeProjects = totalProjects - completedProjects - stuckProjects;
     const teamMembers = filteredUsers.length;
     const avgPerPerson = teamMembers > 0 ? (totalProjects / teamMembers).toFixed(1) : "0";
-    return { totalProjects, activeProjects, teamMembers, avgPerPerson };
+    return { totalProjects, activeProjects, completedProjects, stuckProjects, teamMembers, avgPerPerson };
   }, [filteredProjects, filteredUsers]);
 
   const phaseDistribution = useMemo(() => {
@@ -105,23 +105,25 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
   }, [filteredProjects]);
 
   const userWorkload = useMemo(() => {
-    const countsById: Record<string, { active: number; done: number }> = {};
-    for (const u of filteredUsers) countsById[u.id] = { active: 0, done: 0 };
+    const countsById: Record<string, { active: number; stuck: number; completed: number }> = {};
+    for (const u of filteredUsers) countsById[u.id] = { active: 0, stuck: 0, completed: 0 };
     for (const p of filteredProjects) {
       for (const uid of p.userIds) {
         if (!countsById[uid]) continue;
-        if (p.phase === "TERMINATO" || p.phase === "STUCK") countsById[uid].done++;
+        if (p.phase === "TERMINATO") countsById[uid].completed++;
+        else if (p.phase === "STUCK") countsById[uid].stuck++;
         else countsById[uid].active++;
       }
     }
     return filteredUsers.map((u) => {
-      const c = countsById[u.id] ?? { active: 0, done: 0 };
+      const c = countsById[u.id] ?? { active: 0, stuck: 0, completed: 0 };
       return {
         name: u.initials,
         fullName: u.name,
         active: c.active,
-        stuckTerminated: c.done,
-        total: c.active + c.done,
+        stuck: c.stuck,
+        completed: c.completed,
+        total: c.active + c.stuck + c.completed,
       };
     });
   }, [filteredProjects, filteredUsers]);
@@ -193,7 +195,7 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
           {
             title: "Total Projects",
             value: stats.totalProjects,
-            sub: `${stats.totalProjects - stats.activeProjects} completed`,
+            sub: `${stats.completedProjects} completed · ${stats.stuckProjects} stuck`,
             icon: FolderOpen,
             color: "text-blue-600",
             bg: "bg-blue-50 dark:bg-blue-950/20",
@@ -284,18 +286,19 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
                       }}
                       formatter={(value, name) => [
                         value,
-                        name === "active" ? "Active Projects" : "Stuck/Terminated",
+                        name === "active" ? "Active" : name === "stuck" ? "Stuck" : "Completed",
                       ]}
                     />
                     <Legend
                       formatter={(value) =>
-                        value === "active" ? "Active Projects" : "Stuck/Terminated"
+                        value === "active" ? "Active" : value === "stuck" ? "Stuck" : "Completed"
                       }
                       iconType="circle"
                       iconSize={8}
                     />
                     <Bar dataKey="active" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="stuckTerminated" stackId="a" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="stuck" stackId="a" fill="#f59e0b" />
+                    <Bar dataKey="completed" stackId="a" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -448,7 +451,9 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
                       <div className="flex items-center gap-3 shrink-0">
                         <div className="text-right">
                           <p className="text-xs text-blue-600 font-medium">{u.active} active</p>
-                          <p className="text-xs text-muted-foreground">{u.stuckTerminated} done</p>
+                          <p className="text-xs text-muted-foreground">
+                            {u.completed} done{u.stuck > 0 ? ` · ${u.stuck} stuck` : ""}
+                          </p>
                         </div>
                       </div>
                     </div>
