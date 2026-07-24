@@ -1,13 +1,7 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
-import { PendoInitializer } from "./pendo";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <SessionProvider>
-      <PendoInitializer />
-      {children}
-    </SessionProvider>
-  );
+  return <SessionProvider>{children}</SessionProvider>;
 }

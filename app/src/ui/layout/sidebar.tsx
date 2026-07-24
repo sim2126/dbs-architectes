@@ -321,10 +321,7 @@ export function Sidebar({ user }: SidebarProps) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    onClick={() => {
-                      if (typeof pendo !== "undefined") pendo.clearSession();
-                      signOut({ callbackUrl: "/login" });
-                    }}
+                    onClick={() => signOut({ callbackUrl: "/login" })}
                     className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
                     title="Sign out"
                   >
