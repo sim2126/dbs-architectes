@@ -44,6 +44,7 @@ model User {
   sessions         Session[]
   projects         ProjectAssignment[]
   agendaItems      AgendaItem[]
+  workItems        WorkItem[]
   activities       Activity[]
   channelsCreated  Channel[]           @relation("ChannelCreator")
   channelMembers   ChannelMember[]
@@ -139,6 +140,7 @@ model Project {
 
   assignments    ProjectAssignment[]
   agendaItems    AgendaItem[]
+  workItems      WorkItem[]
   gallery        GalleryImage[]
   floorPlans     FloorPlan[]
   activities     Activity[]
@@ -194,6 +196,7 @@ model ProjectAssignment {
   @@index([userId])
 }
 
+/// @deprecated Rollback-only during the WorkItem transition. New reads and writes use WorkItem.
 model AgendaItem {
   id          String    @id @default(cuid())
   title       String
@@ -218,6 +221,54 @@ model AgendaItem {
   @@index([date, status])
   @@index([userId, date])
   @@index([projectId, date])
+}
+
+enum WorkItemType {
+  task
+  meeting
+  milestone
+  deadline
+}
+
+model WorkItem {
+  id             String       @id @default(cuid())
+  userId         String
+  projectId      String?
+  parentId       String?
+  legacyTaskId   String?      @unique
+  legacyAgendaId String?      @unique
+  legacyAgendaType String?
+  title          String
+  description    String?
+  type           WorkItemType @default(task)
+  startDate      DateTime?
+  dueDate        DateTime?
+  status         String       @default("todo")
+  priority       String       @default("medium")
+  position       Float        @default(0)
+  completedAt    DateTime?
+  color          String?
+  allDay         Boolean      @default(false)
+  googleEventId  String?
+  sourceSystem   String?
+  sourceId       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  project  Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parent   WorkItem?  @relation("WorkItemHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children WorkItem[] @relation("WorkItemHierarchy")
+
+  @@index([userId, status, position])
+  @@index([userId, dueDate])
+  @@index([userId, startDate])
+  @@index([dueDate, status])
+  @@index([startDate, status])
+  @@index([projectId, dueDate])
+  @@index([projectId, startDate])
+  @@index([parentId, position])
+  @@index([projectId, parentId, position])
 }
 
 model GalleryImage {
@@ -654,10 +705,11 @@ model SavedAiResponse {
 }
 
 // ─── PERSONAL TASKS ────────────────────────────────────────
-// Lightweight personal to-dos, distinct from project-scoped AgendaItem.
+// Rollback-only legacy personal to-dos. New reads and writes use WorkItem.
 // `position` is a sparse float (1, 2, 3, 1.5, ...) for cheap drag-reorder
 // without renumbering every row.
 
+/// @deprecated Rollback-only during the WorkItem transition. New reads and writes use WorkItem.
 model Task {
   id          String   @id @default(cuid())
   userId      String
