@@ -5,8 +5,8 @@ import bcrypt from "bcryptjs";
 import { verifySync } from "otplib";
 import { headers } from "next/headers";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: "jwt" },
+const nextAuth = NextAuth({
+  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   pages: {
     signIn: "/login",
   },
@@ -86,24 +86,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.defaultCountry = u.defaultCountry ?? null;
         token.defaultRegion = u.defaultRegion ?? null;
 
-        try {
-          const h = await headers();
-          const ua = h.get("user-agent")?.slice(0, 500) ?? null;
-          const ip =
-            h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-            h.get("x-real-ip") ??
-            null;
-          const session = await prisma.userSession.create({
-            data: { userId: user.id!, ip, userAgent: ua },
-            select: { id: true },
-          });
-          token.sessionId = session.id;
-        } catch (err) {
-          // Session-row creation must never block sign-in. Worst case:
-          // the user is logged in but their session is non-revocable
-          // until they log out and back in. Logged so it's visible.
-          console.warn("[auth] could not create UserSession row", err);
-        }
+        const h = await headers();
+        const ua = h.get("user-agent")?.slice(0, 500) ?? null;
+        const ip =
+          h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+          h.get("x-real-ip") ??
+          null;
+        const session = await prisma.userSession.create({
+          data: { userId: user.id!, ip, userAgent: ua },
+          select: { id: true },
+        });
+        token.sessionId = session.id;
       }
       // Keep the rest of the token intact across refreshes.
       void trigger;
@@ -122,6 +115,63 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const { handlers, signIn, signOut } = nextAuth;
+
+/**
+ * Resolve a signed-in session against live account and session state.
+ * All protected pages and routes import this function, so deactivation,
+ * role changes, and per-device revocation take effect immediately.
+ */
+export async function auth() {
+  const session = await nextAuth.auth();
+  if (!session?.user?.id || !session.user.sessionId) return null;
+
+  const [user, userSession] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        role: true,
+        isActive: true,
+        employmentStatus: true,
+        defaultCountry: true,
+        defaultRegion: true,
+      },
+    }),
+    prisma.userSession.findUnique({
+      where: { id: session.user.sessionId },
+      select: { userId: true, revokedAt: true, lastSeenAt: true },
+    }),
+  ]);
+
+  if (
+    !user ||
+    !user.isActive ||
+    user.employmentStatus === "suspended" ||
+    user.employmentStatus === "terminated" ||
+    !userSession ||
+    userSession.userId !== session.user.id ||
+    userSession.revokedAt
+  ) {
+    return null;
+  }
+
+  session.user.role = user.role;
+  session.user.employmentStatus = user.employmentStatus;
+  session.user.defaultCountry = user.defaultCountry;
+  session.user.defaultRegion = user.defaultRegion;
+
+  if (userSession.lastSeenAt.getTime() < Date.now() - 5 * 60 * 1000) {
+    void prisma.userSession
+      .update({
+        where: { id: session.user.sessionId },
+        data: { lastSeenAt: new Date() },
+      })
+      .catch((error: unknown) => console.warn("[auth] lastSeenAt update failed", error));
+  }
+
+  return session;
+}
 
 declare module "next-auth" {
   interface User {

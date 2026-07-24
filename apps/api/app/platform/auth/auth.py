@@ -1,11 +1,12 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+
+import structlog
+from fastapi import Depends, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import HTTPException, Security, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-import structlog
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import text
 
 from app.platform.config.config import settings
 
@@ -29,9 +30,9 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode["exp"] = expire
@@ -47,15 +48,37 @@ def decode_token(token: str) -> TokenData:
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         return TokenData(user_id=user_id, email=email, role=role)
-    except JWTError as e:
+    except (JWTError, ValidationError) as e:
         logger.warning("auth.token_invalid", error=str(e))
-        raise HTTPException(status_code=401, detail="Could not validate credentials")
+        raise HTTPException(status_code=401, detail="Could not validate credentials") from e
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
 ) -> TokenData:
-    return decode_token(credentials.credentials)
+    token_data = decode_token(credentials.credentials)
+    from app.platform.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            text(
+                'SELECT email, role, "isActive", "employmentStatus" '
+                'FROM "User" WHERE id = :user_id'
+            ),
+            {"user_id": token_data.user_id},
+        )
+        user = result.mappings().first()
+    if (
+        not user
+        or not user["isActive"]
+        or user["employmentStatus"] in {"suspended", "terminated"}
+    ):
+        raise HTTPException(status_code=401, detail="Account is not active")
+    return TokenData(
+        user_id=token_data.user_id,
+        email=user["email"],
+        role=user["role"],
+    )
 
 
 def require_roles(*roles: str):
