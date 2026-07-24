@@ -13,6 +13,11 @@
  */
 
 import { prisma } from "@/platform/db";
+import {
+  getLegacyAgendaDate,
+  personalTaskWorkItemWhere,
+  scheduledWorkItemWhere,
+} from "@/features/work-items";
 import type {
   TeamMemberWorkload,
   TeamWorkloadData,
@@ -94,8 +99,10 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
   };
 
   type AgendaRow = {
+    id: string;
     userId: string;
-    date: Date;
+    startDate: Date | null;
+    dueDate: Date | null;
     status: string;
   };
 
@@ -106,7 +113,7 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
     project: { code: string };
   };
 
-  const [assignments, tasks, agenda, statusRows] = await Promise.all([
+  const [assignments, tasks, agendaWorkItems, statusRows] = await Promise.all([
     prisma.projectAssignment.findMany({
       where: { userId: { in: userIds } },
       select: {
@@ -123,25 +130,30 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
         },
       },
     }) as Promise<AssignmentRow[]>,
-    prisma.task.findMany({
+    prisma.workItem.findMany({
       where: {
         userId: { in: userIds },
+        ...personalTaskWorkItemWhere,
         status: { not: "done" },
       },
       select: {
+        id: true,
         userId: true,
         status: true,
         dueDate: true,
       },
     }) as Promise<TaskRow[]>,
-    prisma.agendaItem.findMany({
+    prisma.workItem.findMany({
       where: {
         userId: { in: userIds },
         status: { not: "done" },
+        AND: [scheduledWorkItemWhere],
       },
       select: {
+        id: true,
         userId: true,
-        date: true,
+        startDate: true,
+        dueDate: true,
         status: true,
       },
     }) as Promise<AgendaRow[]>,
@@ -156,6 +168,12 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
       },
     }) as Promise<StatusRow[]>,
   ]);
+
+  const agenda = agendaWorkItems.map((item) => ({
+    userId: item.userId,
+    date: getLegacyAgendaDate(item),
+    status: item.status,
+  }));
 
   // Group everything by userId. Single pass per collection.
   const projectsByUser = new Map<string, WorkloadProject[]>();

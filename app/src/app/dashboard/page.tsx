@@ -3,6 +3,12 @@ import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
 import { loadProjectsNeedingAttention } from "@/features/dashboard/server/load-projects-needing-attention";
 import { loadTeamWorkload } from "@/features/team-workload/server/load-team-workload";
+import {
+  compareAgendaItems,
+  getLegacyAgendaDate,
+  getLegacyAgendaType,
+  scheduledWorkItemWhere,
+} from "@/features/work-items";
 
 function roleTier(role?: string | null): RoleTier {
   if (role === "super_admin" || role === "admin") return "admin";
@@ -93,12 +99,20 @@ async function buildDashboardData(args: {
     const myActive = myProjectIds.length === 0 ? 0 : await prisma.project.count({
       where: { id: { in: myProjectIds }, phase: { notIn: ["TERMINATO"] } },
     });
-    const upcomingMeetings = await prisma.agendaItem.count({
+    const upcomingMeetings = await prisma.workItem.count({
       where: {
         userId,
-        type: { in: ["meeting", "call"] },
+        type: "meeting",
         status: { not: "done" },
-        date: { gte: startOfDay, lte: sevenDaysOut },
+        AND: [
+          scheduledWorkItemWhere,
+          {
+            OR: [
+              { startDate: { gte: startOfDay, lte: sevenDaysOut } },
+              { startDate: null, dueDate: { gte: startOfDay, lte: sevenDaysOut } },
+            ],
+          },
+        ],
       },
     });
     const myStuck = myProjectIds.length === 0 ? 0 : await prisma.project.count({
@@ -116,22 +130,30 @@ async function buildDashboardData(args: {
 
   // ── Today's Focus ──────────────────────────────────────────
   // Admin/Lead see their own agenda; everyone is filtered by user.
-  const todayItems = await prisma.agendaItem.findMany({
-    take: 6,
+  const todayItems = await prisma.workItem.findMany({
     where: {
       userId,
       status: { not: "done" },
-      date: { gte: startOfDay, lt: endOfDay },
+      AND: [
+        scheduledWorkItemWhere,
+        {
+          OR: [
+            { startDate: { gte: startOfDay, lt: endOfDay } },
+            { startDate: null, dueDate: { gte: startOfDay, lt: endOfDay } },
+          ],
+        },
+      ],
     },
-    orderBy: { date: "asc" },
     include: { project: { select: { code: true, title: true } } },
   });
 
-  const todayFocus = todayItems.map((it) => ({
+  todayItems.sort(compareAgendaItems);
+
+  const todayFocus = todayItems.slice(0, 6).map((it) => ({
     id: it.id,
     title: it.title,
-    date: it.date.toISOString(),
-    type: it.type,
+    date: getLegacyAgendaDate(it).toISOString(),
+    type: getLegacyAgendaType(it),
     priority: it.priority,
     project: it.project ? { code: it.project.code, title: it.project.title } : null,
   }));

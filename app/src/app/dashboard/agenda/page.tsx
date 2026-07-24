@@ -1,13 +1,18 @@
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { AgendaClient } from "@/features/agenda";
+import {
+  compareAgendaItems,
+  scheduledWorkItemWhere,
+  toLegacyAgendaItem,
+} from "@/features/work-items";
 
 export default async function AgendaPage() {
   const session = await auth();
 
   const [agendaItems, projects] = await Promise.all([
-    prisma.agendaItem.findMany({
-      orderBy: { date: "asc" },
+    prisma.workItem.findMany({
+      where: scheduledWorkItemWhere,
       include: {
         project: { select: { id: true, title: true, code: true } },
         user: { select: { id: true, name: true, initials: true } },
@@ -22,20 +27,23 @@ export default async function AgendaPage() {
 
   return (
     <AgendaClient
-      initialItems={agendaItems.map((item) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        date: item.date.toISOString(),
-        endDate: item.endDate?.toISOString() || null,
-        type: item.type,
-        priority: item.priority,
-        status: item.status,
-        color: item.color,
-        allDay: item.allDay,
-        project: item.project,
-        user: item.user,
-      }))}
+      initialItems={agendaItems.sort(compareAgendaItems).map((item) => {
+        const legacyItem = toLegacyAgendaItem(item);
+        return {
+          id: legacyItem.id,
+          title: legacyItem.title,
+          description: legacyItem.description,
+          date: legacyItem.date.toISOString(),
+          endDate: legacyItem.endDate?.toISOString() || null,
+          type: legacyItem.type,
+          priority: legacyItem.priority,
+          status: legacyItem.status,
+          color: legacyItem.color,
+          allDay: legacyItem.allDay,
+          project: item.project,
+          user: item.user,
+        };
+      })}
       projects={projects}
       currentUserId={session!.user.id}
     />

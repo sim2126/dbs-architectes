@@ -19,6 +19,12 @@
  */
 
 import { prisma } from "@/platform/db";
+import {
+  compareAgendaItems,
+  getLegacyAgendaDate,
+  getLegacyAgendaType,
+  scheduledWorkItemWhere,
+} from "@/features/work-items";
 import type { ProjectDetailData } from "../domain/types";
 
 export type LoadProjectDetailInput = {
@@ -49,11 +55,11 @@ export async function loadProjectDetail(
               },
             },
           },
-          agendaItems: {
-            orderBy: [{ status: "asc" }, { date: "asc" }],
-            take: 30,
+          workItems: {
+            where: scheduledWorkItemWhere,
             select: {
-              id: true, title: true, date: true, status: true,
+              id: true, title: true, startDate: true, dueDate: true, status: true,
+              legacyAgendaType: true,
               priority: true, type: true,
             },
           },
@@ -176,14 +182,19 @@ export async function loadProjectDetail(
         role: a.user.role,
       },
     })),
-    agenda: project.agendaItems.map((a) => ({
+    agenda: project.workItems
+      .sort((left, right) =>
+        left.status.localeCompare(right.status) || compareAgendaItems(left, right),
+      )
+      .slice(0, 30)
+      .map((a) => ({
       id: a.id,
       title: a.title,
-      date: a.date.toISOString(),
+      date: getLegacyAgendaDate(a).toISOString(),
       status: a.status,
       priority: a.priority,
-      type: a.type,
-    })),
+      type: getLegacyAgendaType(a),
+      })),
     activities: project.activities.map((a) => ({
       id: a.id,
       type: a.type,

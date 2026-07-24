@@ -1,6 +1,6 @@
 "use client";
 
-// Personal Tasks — distinct from project-scoped AgendaItem.
+// Legacy Tasks surface backed by task-compatible WorkItems.
 // Each user has their own list, grouped by status: Todo / Doing / Done.
 // Optional link to a project surfaces the task on the project view too.
 
