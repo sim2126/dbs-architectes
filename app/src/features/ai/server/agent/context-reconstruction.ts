@@ -16,9 +16,134 @@
 
 import type OpenAI from "openai";
 import { parseStoredAssistantMessage } from "@/features/ai/server/agent/artifacts";
+import type { ResolvedContext } from "@/platform/ai/grounding";
 
 /** Keep this many of the latest assistant turns with full tool replays. */
 export const FULL_TOOL_TURNS = 5;
+
+/** Remove client-controlled system/tool roles from the legacy chat contract. */
+export function sanitiseLegacyHistory(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  return messages.flatMap((message) => {
+    if (message.role !== "user" && message.role !== "assistant") return [];
+    if (typeof message.content === "string") {
+      return [{ role: message.role, content: message.content }];
+    }
+    if (message.role !== "user" || !Array.isArray(message.content)) return [];
+    const text = message.content
+      .flatMap((part) => ("text" in part && typeof part.text === "string" ? [part.text] : []))
+      .join(" ");
+    return text ? [{ role: "user" as const, content: text }] : [];
+  });
+}
+
+function normaliseReference(value: string): string {
+  return value.trim().toLocaleLowerCase("en");
+}
+
+function collectProjectReferences(value: unknown, references: Set<string>): void {
+  if (typeof value === "string") {
+    for (const code of value.match(/\bDBS-?\d[A-Z0-9]*(?:-[A-Z0-9]+)*\b/gi) ?? []) {
+      references.add(code);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectProjectReferences(item, references));
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["projectId", "project_id", "projectCode", "project_code"] as const) {
+    if (typeof record[key] === "string") references.add(record[key]);
+  }
+  const looksLikeProject = ["code", "phase", "client", "commune", "workStatus"]
+    .some((key) => key in record);
+  if (looksLikeProject && typeof record.id === "string") references.add(record.id);
+  if (looksLikeProject && typeof record.code === "string") references.add(record.code);
+  Object.values(record).forEach((child) => collectProjectReferences(child, references));
+}
+
+function messageProjectReferences(
+  message: OpenAI.Chat.ChatCompletionMessageParam,
+): Set<string> {
+  const references = new Set<string>();
+  if (message.role === "assistant" && Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
+      if (call.type !== "function") continue;
+      try {
+        collectProjectReferences(JSON.parse(call.function.arguments), references);
+      } catch {
+        collectProjectReferences(call.function.arguments, references);
+      }
+    }
+  }
+
+  const content = "content" in message ? message.content : null;
+  if (typeof content === "string") {
+    try {
+      collectProjectReferences(JSON.parse(content), references);
+    } catch {
+      collectProjectReferences(content, references);
+      for (const match of content.matchAll(/\bproject(?:_?id)?\s*[:=]\s*([A-Z0-9_-]+)/gi)) {
+        references.add(match[1]);
+      }
+    }
+  }
+  return references;
+}
+
+function isGroundedHistoryMessage(
+  message: OpenAI.Chat.ChatCompletionMessageParam,
+  allowedProjects: Set<string>,
+): boolean {
+  return [...messageProjectReferences(message)]
+    .every((reference) => allowedProjects.has(normaliseReference(reference)));
+}
+
+/**
+ * Remove historical assistant/tool data that no longer falls inside the
+ * caller's current project scope. User messages remain so follow-up intent is
+ * preserved, but stale tool round-trips and the answer derived from them are
+ * discarded as one atomic group.
+ */
+export function filterHistoryForGrounding(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  resolved: ResolvedContext,
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  const allowedProjects = new Set(
+    resolved.projects.flatMap((project) => [project.id, project.code]).map(normaliseReference),
+  );
+  const filtered: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index];
+    if (message.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length) {
+      const group: OpenAI.Chat.ChatCompletionMessageParam[] = [message];
+      let cursor = index + 1;
+      while (cursor < messages.length && messages[cursor].role === "tool") {
+        group.push(messages[cursor]);
+        cursor++;
+      }
+      if (cursor < messages.length && messages[cursor].role === "assistant") {
+        group.push(messages[cursor]);
+        cursor++;
+      }
+      if (group.every((item) => isGroundedHistoryMessage(item, allowedProjects))) {
+        filtered.push(...group);
+      }
+      index = cursor - 1;
+      continue;
+    }
+
+    if (message.role !== "assistant" || isGroundedHistoryMessage(message, allowedProjects)) {
+      filtered.push(message);
+    }
+  }
+  return filtered;
+}
 
 interface DbMessage {
   id: string;

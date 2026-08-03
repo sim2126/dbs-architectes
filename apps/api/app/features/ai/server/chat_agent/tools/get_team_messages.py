@@ -10,6 +10,8 @@ import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from .access import require_tool_subject
+
 logger = structlog.get_logger(__name__)
 
 
@@ -29,9 +31,19 @@ async def get_team_messages(
     """
     from app.platform.db.database import AsyncSessionLocal
 
+    user_id, is_admin = require_tool_subject()
     limit = min(limit, 100)
-    params: dict = {"limit": limit}
-    channel_filter = 'c."projectId" IS NULL'
+    params: dict = {
+        "limit": limit,
+        "user_id": user_id,
+        "is_admin": is_admin,
+    }
+    channel_filter = (
+        'c."projectId" IS NULL '
+        "AND (:is_admin OR c.type = 'public' OR c.\"createdBy\" = :user_id OR EXISTS ("
+        'SELECT 1 FROM "ChannelMember" access_cm '
+        'WHERE access_cm."channelId" = c.id AND access_cm."userId" = :user_id))'
+    )
 
     if channel_name:
         channel_filter += " AND c.name ILIKE :channel_name"

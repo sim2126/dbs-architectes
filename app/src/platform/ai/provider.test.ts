@@ -34,6 +34,7 @@ test("builds a strict OpenAI JSON schema policy without changing the model", () 
 
   assert.equal(policy.model, "gpt-4.1-mini");
   assert.equal(policy.temperature, 0.2);
+  assert.equal(policy.store, false);
   assert.deepEqual(policy.response_format, {
     type: "json_schema",
     json_schema: {
@@ -74,7 +75,7 @@ test("the OpenAI client wrapper always applies the strict policy", async () => {
 
   await createOpenAIStructuredCompletion(
     client as never,
-    { messages: [{ role: "user", content: "Ground this" }] },
+    { messages: [{ role: "user", content: "Ground this" }], store: true } as never,
     {
       model: "gpt-4o-mini",
       temperature: 1,
@@ -85,6 +86,7 @@ test("the OpenAI client wrapper always applies the strict policy", async () => {
 
   assert.equal(captured?.model, "gpt-4o-mini");
   assert.equal(captured?.temperature, 0.2);
+  assert.equal(captured?.store, false);
   assert.deepEqual(captured?.response_format, {
     type: "json_schema",
     json_schema: { name: "GroundedAnswer", strict: true, schema: OUTPUT_SCHEMA },

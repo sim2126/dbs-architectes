@@ -55,7 +55,7 @@ def resolved_context() -> ResolvedContext:
                 memory_id="memory-1",
                 project_id="project-saillen",
                 text="Retain the stone facade",
-                decided_by="Giulio Sovran",
+                decided_by="user-giulio",
                 decided_at="2026-08-02T09:30:00Z",
             ),
         ),
@@ -233,3 +233,140 @@ def test_table_columns_are_validated_without_rewriting_cells(
 def test_rejects_invalid_validation_mode(resolved_context: ResolvedContext) -> None:
     with pytest.raises(ValueError, match="mode must be"):
         validate_grounding({}, resolved_context, mode="delete")  # type: ignore[arg-type]
+
+
+def test_rejects_known_mentions_omitted_from_entity_citations(
+    resolved_context: ResolvedContext,
+) -> None:
+    result = validate_grounding(
+        {
+            "answer": "Giulio Sovran is reviewing Le Saillen.",
+            "userIds": [],
+            "projectIds": [],
+            "phases": [],
+            "dates": [],
+        },
+        resolved_context,
+    )
+
+    assert result.valid is False
+    assert [
+        (issue.kind, issue.value, issue.reason) for issue in result.issues
+    ] == [
+        ("user", "user-giulio", "missing-entity-citation"),
+        ("project", "project-saillen", "missing-entity-citation"),
+    ]
+
+
+def test_rejects_known_phase_and_date_mentions_omitted_from_citations(
+    resolved_context: ResolvedContext,
+) -> None:
+    result = validate_grounding(
+        {
+            "answer": "ETUDE / AP is due tomorrow (2026-08-04T09:00:00Z).",
+            "userIds": [],
+            "projectIds": [],
+            "phases": [],
+            "dates": [],
+        },
+        resolved_context,
+    )
+
+    assert result.valid is False
+    assert [
+        (issue.kind, issue.value, issue.reason) for issue in result.issues
+    ] == [
+        ("phase", "ETUDE/AP", "missing-entity-citation"),
+        ("date", "2026-08-04", "missing-entity-citation"),
+    ]
+
+
+def test_accepts_canonical_phase_and_date_citations(
+    resolved_context: ResolvedContext,
+) -> None:
+    result = validate_grounding(
+        {
+            "answer": "ETUDE / AP is due tomorrow (2026-08-04).",
+            "userIds": [],
+            "projectIds": [],
+            "phases": ["ETUDE/AP"],
+            "dates": ["2026-08-04"],
+        },
+        resolved_context,
+    )
+
+    assert result.valid is True
+    assert result.issues == ()
+
+
+def test_rejects_inconsistent_fields_within_structured_entities(
+    resolved_context: ResolvedContext,
+) -> None:
+    context = resolved_context.model_copy(
+        update={
+            "projects": (
+                *resolved_context.projects,
+                ResolvedProject(
+                    id="project-solaris",
+                    code="DBS-2015-048",
+                    title="Solaris",
+                    phase="TERMINATO",
+                    client=None,
+                    commune="Sion",
+                    aliases=("DBS-2015-048", "Solaris"),
+                ),
+            )
+        }
+    )
+    result = validate_grounding(
+        {
+            "people": [{"userId": "user-giulio", "name": "Luigi"}],
+            "action_items": [
+                {"owner_user_id": "user-giulio", "owner_name": "Luigi"}
+            ],
+            "projects": [
+                {"projectId": "project-saillen", "title": "Solaris"}
+            ],
+        },
+        context,
+    )
+
+    assert result.valid is False
+    assert [
+        (issue.kind, issue.path, issue.reason) for issue in result.issues
+    ] == [
+        ("user", "$.people[0].name", "inconsistent-entity-reference"),
+        (
+            "user",
+            "$.action_items[0].owner_name",
+            "inconsistent-entity-reference",
+        ),
+        ("project", "$.projects[0].title", "inconsistent-entity-reference"),
+    ]
+
+
+def test_flags_unknown_dates_in_prose(resolved_context: ResolvedContext) -> None:
+    result = validate_grounding(
+        {"summary": "The review is planned for 2027-01-01."},
+        resolved_context,
+    )
+
+    assert result.valid is True
+    assert [(issue.kind, issue.value, issue.severity) for issue in result.issues] == [
+        ("date", "2027-01-01", "warning")
+    ]
+
+
+def test_flags_unknown_natural_entities_in_prose(
+    resolved_context: ResolvedContext,
+) -> None:
+    result = validate_grounding(
+        {"summary": "John Smith proposed the Alpine Tower option."},
+        resolved_context,
+    )
+
+    assert result.valid is True
+    assert [(issue.kind, issue.value, issue.severity) for issue in result.issues] == [
+        ("entity", "John Smith", "warning"),
+        ("entity", "Alpine Tower", "warning"),
+    ]

@@ -186,6 +186,8 @@ class ResolvedContext(GroundingModel):
     resolved_at: str
     users: tuple[ResolvedUser, ...]
     projects: tuple[ResolvedProject, ...]
+    mentioned_user_ids: tuple[str, ...] = ()
+    mentioned_project_ids: tuple[str, ...] = ()
     phases: tuple[ResolvedPhase, ...]
     dates: tuple[ResolvedDate, ...]
     recent_meeting_decisions: tuple[ResolvedMeetingDecision, ...]
@@ -228,9 +230,7 @@ class GroundingDataSource(Protocol):
 
 SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
-WORKSPACE_PROJECT_ROLES = frozenset(
-    {"admin", "super_admin", "director", "manager", "project_manager"}
-)
+WORKSPACE_PROJECT_ROLES = frozenset({"admin", "super_admin"})
 
 
 class SqlGroundingDataSource:
@@ -279,7 +279,7 @@ class SqlGroundingDataSource:
             result = await db.execute(
                 text(
                     'SELECT p.id, p.code, p.title, p.phase, p.client, p.commune '
-                    'FROM "Project" p WHERE p.status = \'active\''
+                    'FROM "Project" p WHERE p.status != \'deleted\''
                     f"{access_clause} ORDER BY p.code ASC"
                 ),
                 params,
@@ -349,7 +349,7 @@ def _contains_alias(normalised_input: str, alias: str) -> bool:
     return bool(normalised_alias) and f" {normalised_alias} " in f" {normalised_input} "
 
 
-def _user_aliases(row: GroundingUserRow, unique_first_names: set[str]) -> tuple[str, ...]:
+def _user_aliases(row: GroundingUserRow) -> tuple[str, ...]:
     name_parts = (row.name or "").strip().split()
     first_name = name_parts[0] if name_parts else None
     email_local = row.email.split("@", 1)[0]
@@ -359,8 +359,33 @@ def _user_aliases(row: GroundingUserRow, unique_first_names: set[str]) -> tuple[
             row.email,
             email_local,
             row.initials,
-            first_name if first_name and _normalise(first_name) in unique_first_names else None,
+            first_name,
         )
+    )
+
+
+def _remove_ambiguous_aliases(
+    candidates: Sequence[tuple[str, tuple[str, ...]]],
+) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    owners: dict[str, set[str]] = {}
+    labels: dict[str, str] = {}
+    for entity_id, aliases in candidates:
+        for alias in aliases:
+            normalised = _normalise(alias)
+            if normalised:
+                owners.setdefault(normalised, set()).add(entity_id)
+                labels.setdefault(normalised, alias)
+    ambiguous = {
+        alias: labels[alias] for alias, entity_ids in owners.items() if len(entity_ids) > 1
+    }
+    return (
+        {
+            entity_id: tuple(
+                alias for alias in aliases if _normalise(alias) not in ambiguous
+            )
+            for entity_id, aliases in candidates
+        },
+        ambiguous,
     )
 
 
@@ -386,7 +411,10 @@ def _select_entities(  # noqa: UP047 - PEP 695 syntax requires Python 3.13
         return [
             entity
             for entity in entities
-            if any(_contains_alias(normalised_input, alias) for alias in entity.aliases)
+            if any(
+                _contains_alias(normalised_input, alias)
+                for alias in (entity.id, *entity.aliases)
+            )
         ], []
 
     by_id = {entity.id: entity for entity in entities}
@@ -397,6 +425,90 @@ def _select_entities(  # noqa: UP047 - PEP 695 syntax requires Python 3.13
         if entity_id not in by_id
     ]
     return resolved, unresolved
+
+
+def _unresolved_input_mentions(
+    contract: GroundingContract,
+    users: Sequence[ResolvedUser],
+    projects: Sequence[ResolvedProject],
+    ambiguous_user_aliases: dict[str, str],
+    ambiguous_project_aliases: dict[str, str],
+) -> list[GroundingMiss]:
+    misses: list[GroundingMiss] = []
+    normalised_input = _normalise(contract.input)
+    if contract.users.scope != "none":
+        known_users = {
+            _normalise(value)
+            for user in users
+            for value in (user.id, user.email, *user.aliases)
+        }
+        references = [
+            *re.findall(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", contract.input, re.I),
+            *(
+                match.group(1)
+                for match in re.finditer(
+                    r"\buser(?:_?id)?\s*[:=]\s*([A-Z0-9_-]+)",
+                    contract.input,
+                    re.I,
+                )
+            ),
+        ]
+        misses.extend(
+            GroundingMiss(kind="user", reference=reference, reason="not-found")
+            for reference in _unique(references)
+            if _normalise(reference) not in known_users
+        )
+        misses.extend(
+            GroundingMiss(kind="user", reference=label, reason="invalid")
+            for alias, label in ambiguous_user_aliases.items()
+            if _contains_alias(normalised_input, alias)
+        )
+    if contract.projects.scope != "none":
+        known_projects = {
+            _normalise(value)
+            for project in projects
+            for value in (project.id, project.code, *project.aliases)
+        }
+        references = [
+            *re.findall(
+                r"\bDBS-?\d[A-Z0-9]*(?:-[A-Z0-9]+)*\b",
+                contract.input,
+                re.I,
+            ),
+            *(
+                match.group(1)
+                for match in re.finditer(
+                    r"\bproject(?:_?id)?\s*[:=]\s*([A-Z0-9_-]+)",
+                    contract.input,
+                    re.I,
+                )
+            ),
+        ]
+        misses.extend(
+            GroundingMiss(kind="project", reference=reference, reason="not-found")
+            for reference in _unique(references)
+            if _normalise(reference) not in known_projects
+        )
+        misses.extend(
+            GroundingMiss(kind="project", reference=label, reason="invalid")
+            for alias, label in ambiguous_project_aliases.items()
+            if _contains_alias(normalised_input, alias)
+        )
+    return misses
+
+
+def _requests_broad_recent_decisions(input_value: str) -> bool:
+    normalised = _normalise(input_value)
+    if not re.search(r"\b(?:decision|decisions|decided)\b", normalised):
+        return False
+    return any(
+        re.search(pattern, normalised)
+        for pattern in (
+            r"\b(?:latest|recent)\b.*\bdecisions?\b",
+            r"\bwhat\s+(?:was|were|has\s+been|have\s+been)\s+decided\b",
+            r"\bdecisions?\b.*\b(?:all|across|portfolio|workspace)\b",
+        )
+    )
 
 
 def _canonical_phase(value: str) -> str | None:
@@ -501,8 +613,10 @@ def _decision_time(value: Any, fallback: datetime) -> str:
 def _resolve_decisions(
     memories: Sequence[GroundingMemoryRow],
     limit: int,
-) -> list[ResolvedMeetingDecision]:
+    users: Sequence[ResolvedUser],
+) -> tuple[list[ResolvedMeetingDecision], list[GroundingMiss]]:
     decisions: list[ResolvedMeetingDecision] = []
+    unresolved: list[GroundingMiss] = []
     for memory in memories:
         if not isinstance(memory.key_decisions, list):
             continue
@@ -512,18 +626,40 @@ def _resolve_decisions(
             decision_text = item.get("what")
             if not isinstance(decision_text, str) or not decision_text.strip():
                 continue
-            decided_by = item.get("who")
+            decided_by_reference = item.get("who")
+            decided_by_user = None
+            if isinstance(decided_by_reference, str) and decided_by_reference.strip():
+                reference = _normalise(decided_by_reference)
+                decided_by_user = next(
+                    (
+                        user
+                        for user in users
+                        if any(
+                            _normalise(alias) == reference
+                            for alias in (user.id, *user.aliases)
+                        )
+                    ),
+                    None,
+                )
+                if decided_by_user is None:
+                    unresolved.append(
+                        GroundingMiss(
+                            kind="user",
+                            reference=decided_by_reference.strip(),
+                            reason="not-found",
+                        )
+                    )
             decisions.append(
                 ResolvedMeetingDecision(
                     memory_id=memory.id,
                     project_id=memory.project_id,
                     text=decision_text.strip(),
-                    decided_by=decided_by if isinstance(decided_by, str) else None,
+                    decided_by=decided_by_user.id if decided_by_user else None,
                     decided_at=_decision_time(item.get("at"), memory.updated_at),
                 )
             )
     decisions.sort(key=lambda decision: decision.decided_at or "", reverse=True)
-    return decisions[: max(0, limit)]
+    return decisions[: max(0, limit)], unresolved
 
 
 def _resolved_at(value: datetime) -> str:
@@ -547,25 +683,27 @@ async def resolve_grounding(
         source.list_projects(contract.subject) if needs_projects else _empty_projects(),
     )
 
-    first_name_counts: dict[str, int] = {}
-    for row in user_rows:
-        name_parts = (row.name or "").split()
-        first_name = _normalise(name_parts[0]) if name_parts else ""
-        if first_name:
-            first_name_counts[first_name] = first_name_counts.get(first_name, 0) + 1
-    unique_first_names = {
-        first_name for first_name, count in first_name_counts.items() if count == 1
-    }
-
+    user_alias_candidates = [
+        (row.id, _user_aliases(row)) for row in user_rows
+    ]
+    user_aliases_by_id, ambiguous_user_aliases = _remove_ambiguous_aliases(
+        user_alias_candidates
+    )
     all_users = [
         ResolvedUser(
             id=row.id,
             name=(row.name or "").strip() or row.email,
             email=row.email,
-            aliases=_user_aliases(row, unique_first_names),
+            aliases=user_aliases_by_id[row.id],
         )
         for row in user_rows
     ]
+    project_alias_candidates = [
+        (row.id, _unique((row.code, row.title))) for row in project_rows
+    ]
+    project_aliases_by_id, ambiguous_project_aliases = _remove_ambiguous_aliases(
+        project_alias_candidates
+    )
     all_projects = [
         ResolvedProject(
             id=row.id,
@@ -574,7 +712,7 @@ async def resolve_grounding(
             phase=row.phase,
             client=row.client,
             commune=row.commune,
-            aliases=_unique((row.code, row.title)),
+            aliases=project_aliases_by_id[row.id],
         )
         for row in project_rows
     ]
@@ -586,9 +724,36 @@ async def resolve_grounding(
     selected_projects, project_misses = _select_entities(
         all_projects, contract.projects, normalised_input, "project"
     )
+    mentioned_users = (
+        []
+        if contract.users.scope == "none"
+        else _select_entities(
+            all_users,
+            MentionEntityResolutionNeed(),
+            normalised_input,
+            "user",
+        )[0]
+    )
+    mentioned_projects = (
+        []
+        if contract.projects.scope == "none"
+        else _select_entities(
+            all_projects,
+            MentionEntityResolutionNeed(),
+            normalised_input,
+            "project",
+        )[0]
+    )
     resolved_phases, phase_misses = _resolve_phases(contract.phases, contract.input)
     resolution_time = now or datetime.now(UTC)
     resolved_dates, date_misses = _resolve_dates(contract.dates, contract.input, resolution_time)
+    input_mention_misses = _unresolved_input_mentions(
+        contract,
+        all_users,
+        all_projects,
+        ambiguous_user_aliases,
+        ambiguous_project_aliases,
+    )
 
     recent_decisions: list[ResolvedMeetingDecision] = []
     decision_misses: list[GroundingMiss] = []
@@ -618,17 +783,23 @@ async def resolve_grounding(
                 "project",
             )
             decision_project_ids = [project.id for project in mentioned_projects]
+            if not decision_project_ids and _requests_broad_recent_decisions(contract.input):
+                decision_project_ids = [project.id for project in all_projects]
         memories = await source.list_meeting_memories(decision_project_ids)
-        recent_decisions = _resolve_decisions(
+        recent_decisions, unresolved_decision_users = _resolve_decisions(
             memories,
             contract.recent_meeting_decisions.limit,
+            selected_users,
         )
+        decision_misses.extend(unresolved_decision_users)
 
     return ResolvedContext(
         surface=contract.surface,
         resolved_at=_resolved_at(resolution_time),
         users=tuple(selected_users),
         projects=tuple(selected_projects),
+        mentioned_user_ids=tuple(user.id for user in mentioned_users),
+        mentioned_project_ids=tuple(project.id for project in mentioned_projects),
         phases=tuple(resolved_phases),
         dates=tuple(resolved_dates),
         recent_meeting_decisions=tuple(recent_decisions),
@@ -638,6 +809,7 @@ async def resolve_grounding(
                 *project_misses,
                 *phase_misses,
                 *date_misses,
+                *input_mention_misses,
                 *decision_misses,
             ]
         ),
@@ -654,3 +826,52 @@ async def _empty_projects() -> Sequence[GroundingProjectRow]:
 
 def serialise_resolved_context(context: ResolvedContext) -> str:
     return json.dumps(context.model_dump(mode="json", by_alias=True), separators=(",", ":"))
+
+
+def _collect_trusted_date_values(value: Any, output: list[str]) -> None:
+    if isinstance(value, str):
+        output.extend(re.findall(r"\b\d{4}-\d{2}-\d{2}(?=$|[^0-9])", value))
+        output.extend(
+            re.findall(r"\b\d{1,2}[/.]\d{1,2}[/.]\d{4}(?=$|[^0-9])", value)
+        )
+        return
+    if isinstance(value, list | tuple):
+        for item in value:
+            _collect_trusted_date_values(item, output)
+        return
+    if isinstance(value, dict):
+        for child in value.values():
+            _collect_trusted_date_values(child, output)
+
+
+def extend_grounding_with_trusted_tool_result(
+    context: ResolvedContext,
+    result: Any,
+    *,
+    now: datetime | None = None,
+) -> ResolvedContext:
+    """Extend context with dates returned by an already-authorised tool call."""
+
+    values: list[str] = []
+    _collect_trusted_date_values(result, values)
+    if not values:
+        return context
+
+    discovered_dates, discovered_misses = _resolve_dates(
+        ValueDateResolutionNeed(values=_unique(values)),
+        "",
+        now or datetime.now(UTC),
+    )
+    date_keys = {(item.source, item.iso_date) for item in context.dates}
+    merged_dates = list(context.dates)
+    for item in discovered_dates:
+        key = (item.source, item.iso_date)
+        if key not in date_keys:
+            date_keys.add(key)
+            merged_dates.append(item)
+    return context.model_copy(
+        update={
+            "dates": tuple(merged_dates),
+            "unresolved": (*context.unresolved, *discovered_misses),
+        }
+    )

@@ -2,11 +2,13 @@
 LangGraph nodes — each node is a pure function: State → State.
 Every node receives the full state and returns a partial update.
 """
+from collections.abc import Sequence
+from typing import Any, cast
+
 import structlog
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
-from pydantic import SecretStr
 
 from app.features.ai.server.dbs_gpt.state import AgentState
 from app.features.ai.server.dbs_gpt.tools import (
@@ -15,19 +17,82 @@ from app.features.ai.server.dbs_gpt.tools import (
     REGULATIONS_TOOLS,
     SCHEDULE_TOOLS,
 )
+from app.features.ai.server.structured_output import (
+    STRUCTURED_RESPONSE_INSTRUCTION,
+    GroundedAssistantOutput,
+    RouteDecision,
+    output_schema,
+    route_schema,
+)
+from app.platform.ai.grounding import (
+    ResolvedContext,
+    extend_grounding_with_trusted_tool_result,
+    serialise_resolved_context,
+)
+from app.platform.ai.provider import (
+    create_openai_structured_chat_model,
+    invoke_openai_structured_chat,
+    parse_structured_output,
+)
 from app.platform.config.config import settings
 
 logger = structlog.get_logger(__name__)
 
 # ── LLM instances (one per sub-agent for independent configuration) ────────────
 
-def _llm(temperature: float = 0.1) -> ChatOpenAI:
-    return ChatOpenAI(
+def _llm(
+    *,
+    temperature: float = 0.1,
+    schema_name: str = "GroundedAssistantOutput",
+    schema: dict[str, object] | None = None,
+) -> ChatOpenAI:
+    return create_openai_structured_chat_model(
         model=settings.OPENAI_MODEL,
-        api_key=SecretStr(settings.OPENAI_API_KEY),
         temperature=temperature,
-        model_kwargs={"max_tokens": settings.OPENAI_MAX_TOKENS},
+        schema_name=schema_name,
+        schema=schema or output_schema(),
+        api_key=settings.OPENAI_API_KEY,
+        max_tokens=settings.OPENAI_MAX_TOKENS,
     )
+
+
+def _content_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "".join(
+        part if isinstance(part, str) else str(part.get("text", ""))
+        for part in content
+        if isinstance(part, (str, dict))
+    )
+
+
+def _context_system_prompt(
+    state: AgentState,
+    prompt: str,
+    *,
+    resolved_context: ResolvedContext | None = None,
+) -> str:
+    context = serialise_resolved_context(resolved_context or state["resolved_context"])
+    return f"{prompt}\n\nResolved context (authoritative JSON):\n{context}"
+
+
+def _grounded_system_prompt(
+    state: AgentState,
+    prompt: str,
+    *,
+    resolved_context: ResolvedContext | None = None,
+) -> str:
+    return (
+        f"{_context_system_prompt(state, prompt, resolved_context=resolved_context)}\n\n"
+        f"{STRUCTURED_RESPONSE_INSTRUCTION}"
+    )
+
+
+async def _invoke(llm: Any, messages: Sequence[BaseMessage]) -> BaseMessage:
+    invoke = llm.ainvoke
+    return await invoke_openai_structured_chat(invoke, messages)
 
 
 # ── Supervisor Node ────────────────────────────────────────────────────────────
@@ -73,8 +138,8 @@ Routing examples:
 Current user role: {user_role}
 {project_context}
 
-Respond with EXACTLY one token: project_manager, scheduler,
-regulations_expert, or data_analyst. No other text."""
+Return one JSON object with a single `next` field. Its value must be
+project_manager, scheduler, regulations_expert, or data_analyst."""
 
 
 async def supervisor_node(state: AgentState) -> dict:
@@ -82,36 +147,62 @@ async def supervisor_node(state: AgentState) -> dict:
 
     if state.get("iteration_count", 0) >= 5:
         logger.warning("agent.max_iterations_reached", user_id=state["user_id"])
-        return {"next": "FINISH", "final_response": "I've reached the maximum number of steps. Please rephrase your request."}
+        return {
+            "next": "FINISH",
+            "final_response": GroundedAssistantOutput(
+                answer="I've reached the maximum number of steps. Please rephrase your request.",
+                user_ids=(),
+                project_ids=(),
+                phases=(),
+                dates=(),
+            ),
+        }
 
     project_ctx = ""
     if state.get("project_id"):
-        project_context = state.get("project_context") or {}
-        project_ctx = f"User is viewing project: {project_context.get('code', state['project_id'])}"
+        project = next(
+            (
+                candidate
+                for candidate in state["resolved_context"].projects
+                if candidate.id == state["project_id"]
+            ),
+            None,
+        )
+        project_ctx = (
+            f"User is viewing project: {project.code} - {project.title}"
+            if project
+            else "The requested project was not present in the resolved context."
+        )
 
-    llm = _llm(temperature=0.0)
-    system = SUPERVISOR_SYSTEM.format(
-        user_role=state.get("user_role", "viewer"),
-        project_context=project_ctx,
+    llm = _llm(
+        temperature=0.0,
+        schema_name="RouteDecision",
+        schema=route_schema(),
+    )
+    system = _context_system_prompt(
+        state,
+        SUPERVISOR_SYSTEM.format(
+            user_role=state.get("user_role", "viewer"),
+            project_context=project_ctx,
+        ),
     )
 
     last_message = state["messages"][-1].content if state["messages"] else ""
 
-    response = await llm.ainvoke([
-        SystemMessage(content=system),
-        HumanMessage(content=f"Route this request: {last_message}"),
-    ])
-
-    response_text = response.content if isinstance(response.content, str) else ""
-    next_agent = response_text.strip().lower().replace("-", "_")
-    valid = {"project_manager", "scheduler", "regulations_expert", "data_analyst", "finish"}
-    if next_agent not in valid:
-        next_agent = "project_manager"  # safe default
-    if next_agent == "finish":
-        next_agent = "FINISH"
+    response = await _invoke(
+        llm,
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=f"Route this request: {last_message}"),
+        ],
+    )
+    decision = parse_structured_output(
+        _content_text(response.content),
+        RouteDecision.model_validate,
+    )
 
     return {
-        "next": next_agent,
+        "next": decision.next,
         "iteration_count": state.get("iteration_count", 0) + 1,
         "visited_nodes": ["supervisor"],
     }
@@ -143,9 +234,12 @@ async def project_manager_node(state: AgentState) -> dict:
         tool for tool in PROJECT_TOOLS if tool.name != "update_project_phase"
     ]
     llm = _llm().bind_tools(tools)
-    system = PROJECT_MANAGER_SYSTEM.format(user_role=role)
+    system = _grounded_system_prompt(
+        state,
+        PROJECT_MANAGER_SYSTEM.format(user_role=role),
+    )
     messages = [SystemMessage(content=system)] + state["messages"]
-    response = await llm.ainvoke(messages)
+    response = await _invoke(llm, messages)
     return {"messages": [response], "next": "FINISH", "visited_nodes": ["project_manager"]}
 
 
@@ -164,9 +258,9 @@ Always confirm what was created with the exact date."""
 async def scheduler_node(state: AgentState) -> dict:
     logger.info("agent.scheduler", user_id=state["user_id"])
     llm = _llm().bind_tools(SCHEDULE_TOOLS)
-    system = SCHEDULER_SYSTEM
+    system = _grounded_system_prompt(state, SCHEDULER_SYSTEM)
     messages = [SystemMessage(content=system)] + state["messages"]
-    response = await llm.ainvoke(messages)
+    response = await _invoke(llm, messages)
     return {"messages": [response], "next": "FINISH", "visited_nodes": ["scheduler"]}
 
 
@@ -190,9 +284,9 @@ recommend consulting the official document directly."""
 async def regulations_expert_node(state: AgentState) -> dict:
     logger.info("agent.regulations_expert", user_id=state["user_id"])
     llm = _llm(temperature=0.0).bind_tools(REGULATIONS_TOOLS)
-    system = REGULATIONS_SYSTEM
+    system = _grounded_system_prompt(state, REGULATIONS_SYSTEM)
     messages = [SystemMessage(content=system)] + state["messages"]
-    response = await llm.ainvoke(messages)
+    response = await _invoke(llm, messages)
     return {"messages": [response], "next": "FINISH", "visited_nodes": ["regulations_expert"]}
 
 
@@ -208,15 +302,71 @@ Highlight anything that looks like a bottleneck (e.g., many STUCK projects)."""
 
 async def data_analyst_node(state: AgentState) -> dict:
     logger.info("agent.data_analyst", user_id=state["user_id"])
+    project_health_context = state["resolved_context"].model_copy(
+        update={"surface": "project-health"}
+    )
     llm = _llm(temperature=0.2).bind_tools(ANALYTICS_TOOLS)
-    system = ANALYST_SYSTEM
+    system = _grounded_system_prompt(
+        state,
+        ANALYST_SYSTEM,
+        resolved_context=project_health_context,
+    )
     messages = [SystemMessage(content=system)] + state["messages"]
-    response = await llm.ainvoke(messages)
-    return {"messages": [response], "next": "FINISH", "visited_nodes": ["data_analyst"]}
+    response = await _invoke(llm, messages)
+    return {
+        "messages": [response],
+        "next": "FINISH",
+        "visited_nodes": ["data_analyst"],
+        "resolved_context": project_health_context,
+    }
 
 
 # ── Tool executor nodes (one per sub-agent) ────────────────────────────────────
-project_tools_node = ToolNode(PROJECT_TOOLS)
-schedule_tools_node = ToolNode(SCHEDULE_TOOLS)
-regulations_tools_node = ToolNode(REGULATIONS_TOOLS)
-analytics_tools_node = ToolNode(ANALYTICS_TOOLS)
+def extend_grounding_from_tool_messages(
+    context: ResolvedContext,
+    messages: Sequence[BaseMessage],
+) -> ResolvedContext:
+    """Extend context only with outputs from tools that passed access checks."""
+
+    extended = context
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            extended = extend_grounding_with_trusted_tool_result(
+                extended,
+                message.content,
+            )
+    return extended
+
+
+async def _run_grounded_tools(node: ToolNode, state: AgentState) -> dict[str, Any]:
+    result = cast(dict[str, Any], await node.ainvoke(state))
+    messages = cast(list[BaseMessage], result.get("messages", []))
+    return {
+        **result,
+        "resolved_context": extend_grounding_from_tool_messages(
+            state["resolved_context"],
+            messages,
+        ),
+    }
+
+
+_project_tools_node = ToolNode(PROJECT_TOOLS)
+_schedule_tools_node = ToolNode(SCHEDULE_TOOLS)
+_regulations_tools_node = ToolNode(REGULATIONS_TOOLS)
+_analytics_tools_node = ToolNode(ANALYTICS_TOOLS)
+
+
+async def project_tools_node(state: AgentState) -> dict[str, Any]:
+    return await _run_grounded_tools(_project_tools_node, state)
+
+
+async def schedule_tools_node(state: AgentState) -> dict[str, Any]:
+    return await _run_grounded_tools(_schedule_tools_node, state)
+
+
+async def regulations_tools_node(state: AgentState) -> dict[str, Any]:
+    return await _run_grounded_tools(_regulations_tools_node, state)
+
+
+async def analytics_tools_node(state: AgentState) -> dict[str, Any]:
+    return await _run_grounded_tools(_analytics_tools_node, state)

@@ -1,95 +1,41 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
-import OpenAI from "openai";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
+import { auth } from "@/platform/auth";
+import { toSafeAiFailure } from "@/platform/ai/provider";
+import {
+  TRANSLATION_LANGUAGES,
+  translateGroundedText,
+} from "@/platform/integrations/translator";
 
-// Full language names for the model prompt
-const LANG_NAMES: Record<string, string> = {
-  en: "English",
-  it: "Italian",
-  fr: "French",
-  de: "German",
-  hi: "Hindi",
-  es: "Spanish",
-  pt: "Portuguese",
-  zh: "Chinese (Simplified)",
-  ar: "Arabic",
-  ru: "Russian",
-};
-
-// In-memory cache: "text||targetLang" → translated string
-// Prevents duplicate LLM calls within the same server instance
-const cache = new Map<string, string>();
-const MAX_CACHE_ENTRIES = 500;
 const MAX_TEXT_CHARS = 4000;
-
-function remember(cacheKey: string, translated: string) {
-  if (cache.size >= MAX_CACHE_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    if (oldest) cache.delete(oldest);
-  }
-  cache.set(cacheKey, translated);
-}
 
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   if (isAiDisabled()) return aiDisabledResponse();
 
-  const { text, targetLang } = await request.json() as { text: string; targetLang: string };
-  if (!text?.trim() || !targetLang) {
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const text = body?.text;
+  const targetLang = body?.targetLang;
+  if (typeof text !== "string" || !text.trim() || typeof targetLang !== "string") {
     return Response.json({ error: "Missing params" }, { status: 400 });
   }
   if (text.length > MAX_TEXT_CHARS) {
     return Response.json({ error: "Text too long" }, { status: 413 });
   }
-
-  const targetName = LANG_NAMES[targetLang] ?? targetLang.toUpperCase();
-  const cacheKey = `${text}||${targetLang}`;
-
-  const cached = cache.get(cacheKey);
-  if (cached) return Response.json({ translated: cached });
-
-  // ── Primary: GPT-4o-mini ─────────────────────────────────────
-  // Handles: romanized scripts, Hinglish, code-switching, slang,
-  // emoji-mixed text, and any standard language automatically.
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    try {
-      const openai = new OpenAI({ apiKey: openaiKey });
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.1,
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert multilingual translator. Translate the user's message to ${targetName}.
-
-Key rules:
-- Auto-detect source language regardless of how it is written — including romanized scripts (e.g. "kya kar rhe ho" = Hindi), code-mixed text (Hinglish, Franglais, Spanglish), slang, abbreviations, or emoji-mixed messages
-- Translate the full intended meaning naturally — do not transliterate
-- Preserve the original tone (casual stays casual, formal stays formal)
-- Return ONLY the translated text. No explanations, no quotes, no extra commentary.`,
-          },
-          {
-            role: "user",
-            content: text,
-          },
-        ],
-      });
-
-      const translated = completion.choices[0]?.message?.content?.trim();
-      if (translated) {
-        remember(cacheKey, translated);
-        return Response.json({ translated, engine: "gpt-4o-mini" });
-      }
-    } catch {
-      return Response.json({ error: "Translation unavailable" }, { status: 503 });
-    }
+  if (!Object.hasOwn(TRANSLATION_LANGUAGES, targetLang)) {
+    return Response.json({ error: "Unsupported target language" }, { status: 400 });
   }
 
-  // ── Fallback: MyMemory (no key required) ─────────────────────
-  // Used only when OpenAI is unavailable. Quality is limited.
-  return Response.json({ error: "Translation unavailable" }, { status: 503 });
+  try {
+    const result = await translateGroundedText({
+      text,
+      targetLang,
+      subject: { userId: session.user.id, role: session.user.role },
+    });
+    return Response.json(result);
+  } catch (error) {
+    const failure = toSafeAiFailure("translation", error);
+    return Response.json({ error: failure.message }, { status: failure.httpStatus });
+  }
 }

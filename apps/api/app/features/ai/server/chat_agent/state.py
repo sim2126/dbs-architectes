@@ -9,6 +9,8 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
+from app.platform.ai.grounding import ResolvedContext
+
 
 class ChatAgentState(BaseModel):
     """Mutable state flowing through the agent graph."""
@@ -22,6 +24,7 @@ class ChatAgentState(BaseModel):
     user_name: str = "User"
     user_role: str = "viewer"
     today_date: str = ""
+    resolved_context: ResolvedContext
 
     # Accumulated token usage across all LLM calls in this run
     input_tokens: int = 0

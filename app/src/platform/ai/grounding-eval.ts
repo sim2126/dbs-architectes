@@ -1,3 +1,10 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import {
+  buildAgentGroundingContract,
+  buildMeetingSummaryGroundingContract,
+  buildTranslationGroundingContract,
+} from "./contracts";
 import type { AiSurface, GroundingContract, GroundingDataSource } from "./grounding";
 import { resolveGrounding } from "./grounding";
 
@@ -91,6 +98,81 @@ const SEEDED_PROJECTS = [
   ["DBS-2015-003", "Solaris", "TERMINATO", "Sion"],
 ] as const;
 
+type TeamFixtureRow = readonly [name: string, email: string, initials: string];
+type ProjectFixtureRow = readonly [code: string, title: string, phase: string, commune: string];
+
+function seedSlug(value: string): string {
+  return value
+    .toLocaleLowerCase("en")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+}
+
+function sourceSection(source: string, declaration: string): string {
+  const start = source.indexOf(declaration);
+  if (start < 0) throw new Error(`Could not find ${declaration} in prisma/seed-dbsarc.ts.`);
+  const end = source.indexOf("\n];", start);
+  if (end < 0) throw new Error(`Could not parse ${declaration} in prisma/seed-dbsarc.ts.`);
+  return source.slice(start, end);
+}
+
+function readSeedSource(): string {
+  const candidates = [
+    resolvePath(process.cwd(), "prisma", "seed-dbsarc.ts"),
+    resolvePath(process.cwd(), "app", "prisma", "seed-dbsarc.ts"),
+  ];
+  const seedPath = candidates.find((candidate) => existsSync(candidate));
+  if (!seedPath) throw new Error("Could not locate app/prisma/seed-dbsarc.ts.");
+  return readFileSync(seedPath, "utf8");
+}
+
+function parseSeedFixtures(source: string): {
+  team: TeamFixtureRow[];
+  projects: ProjectFixtureRow[];
+} {
+  const teamSection = sourceSection(source, "const TEAM = [");
+  const team = [...teamSection.matchAll(/\{\s*first:\s*"([^"]+)",\s*last:\s*"([^"]+)"/g)]
+    .map(([, first, last]): TeamFixtureRow => [
+      `${first} ${last}`,
+      `${seedSlug(first)}.${seedSlug(last)}@dbsarc.com`,
+      `${first[0] ?? ""}${last[0] ?? ""}`.toUpperCase(),
+    ]);
+
+  const projectSection = sourceSection(source, "const PROJECTS: ProjectSeed[] = [");
+  const yearCounters = new Map<number, number>();
+  const projects = [...projectSection.matchAll(
+    /\{\s*title:\s*"([^"]+)",\s*city:\s*"([^"]+)"[^}]*?year:\s*(\d{4})[^}]*?status:\s*"(Built|Planned|Competition)"\s*\}/g,
+  )].map(([, title, city, yearText, status]): ProjectFixtureRow => {
+    const year = Number(yearText);
+    const sequence = (yearCounters.get(year) ?? 0) + 1;
+    yearCounters.set(year, sequence);
+    const phase = status === "Built"
+      ? "TERMINATO"
+      : status === "Competition"
+        ? "CONCORSO"
+        : "ETUDE/AP";
+    return [`DBS-${year}-${String(sequence).padStart(3, "0")}`, title, phase, city];
+  });
+
+  return { team, projects };
+}
+
+function assertFixtureParity(): void {
+  const parsed = parseSeedFixtures(readSeedSource());
+  if (JSON.stringify(parsed.team) !== JSON.stringify(SEEDED_TEAM)) {
+    throw new Error(
+      "Grounding team fixture has drifted from app/prisma/seed-dbsarc.ts; refresh the eval fixture.",
+    );
+  }
+  if (JSON.stringify(parsed.projects) !== JSON.stringify(SEEDED_PROJECTS)) {
+    throw new Error(
+      "Grounding project fixture has drifted from app/prisma/seed-dbsarc.ts; refresh the eval fixture.",
+    );
+  }
+}
+
 function userFixtureId(email: string): string {
   return `fixture-user:${email}`;
 }
@@ -121,22 +203,69 @@ const fixtureDataSource: GroundingDataSource = {
   listMeetingMemories: () => Promise.resolve([]),
 };
 
+type EvalCaseKind = "positive" | "ambiguous" | "negative";
+
+interface ExpectedMiss {
+  kind: "user" | "project";
+  reference: string;
+}
+
 interface EvalCase {
   id: string;
   surface: AiSurface;
   prompt: string;
-  userEmail: string;
-  projectCode: string;
+  userEmails: readonly string[];
+  projectCodes: readonly string[];
+  kind: EvalCaseKind;
+  expectedMisses: readonly ExpectedMiss[];
 }
 
 function evalCase(
   id: string,
   surface: AiSurface,
   prompt: string,
-  userEmail: string,
+  userEmails: string | readonly string[] | null,
+  projectCodes: string | readonly string[] | null,
+  kind: EvalCaseKind = "positive",
+  expectedMisses: readonly ExpectedMiss[] = [],
+): EvalCase {
+  return {
+    id,
+    surface,
+    prompt,
+    userEmails: userEmails === null ? [] : typeof userEmails === "string" ? [userEmails] : userEmails,
+    projectCodes: projectCodes === null
+      ? []
+      : typeof projectCodes === "string"
+        ? [projectCodes]
+        : projectCodes,
+    kind,
+    expectedMisses,
+  };
+}
+
+function ambiguousCase(
+  id: string,
+  surface: AiSurface,
+  prompt: string,
   projectCode: string,
 ): EvalCase {
-  return { id, surface, prompt, userEmail, projectCode };
+  return evalCase(id, surface, prompt, null, projectCode, "ambiguous");
+}
+
+function negativeCase(id: string, surface: AiSurface): EvalCase {
+  return evalCase(
+    id,
+    surface,
+    "Find fake.person@dbsarc.com on DBS-2099-999.",
+    null,
+    null,
+    "negative",
+    [
+      { kind: "user", reference: "fake.person@dbsarc.com" },
+      { kind: "project", reference: "DBS-2099-999" },
+    ],
+  );
 }
 
 const EVAL_CASES: readonly EvalCase[] = [
@@ -148,8 +277,8 @@ const EVAL_CASES: readonly EvalCase[] = [
   evalCase("meeting-06", "meeting-summary", "Florencia Schilling raised a risk on Healing Resort.", "florencia.schilling@dbsarc.com", "DBS-2023-007"),
   evalCase("meeting-07", "meeting-summary", "Marco Iebba owns the follow-up for Riddes Buildings.", "marco.iebba@dbsarc.com", "DBS-2022-002"),
   evalCase("meeting-08", "meeting-summary", "Nicolo Viozzi discussed the Condemines House programme.", "nicolo.viozzi@dbsarc.com", "DBS-2020-002"),
-  evalCase("meeting-09", "meeting-summary", "Anais Morceau will circulate the Crans Carlton notes.", "anais.morceau@dbsarc.com", "DBS-2018-001"),
-  evalCase("meeting-10", "meeting-summary", "Sergio Facchetti presented visuals for DBS-2019-002.", "sergio.facchetti@dbsarc.com", "DBS-2019-002"),
+  ambiguousCase("meeting-09", "meeting-summary", "Michele will circulate the Crans Carlton notes.", "DBS-2018-001"),
+  negativeCase("meeting-10", "meeting-summary"),
 
   evalCase("gpt-01", "dbs-gpt", "Show Giulio's current work on Le Hameau.", "giulio.sovran@dbsarc.com", "DBS-2025-003"),
   evalCase("gpt-02", "dbs-gpt", "What is Luigi Di Berardino doing on DBS-2024-001?", "luigi.di.berardino@dbsarc.com", "DBS-2024-001"),
@@ -159,8 +288,8 @@ const EVAL_CASES: readonly EvalCase[] = [
   evalCase("gpt-06", "dbs-gpt", "Open Clerc House context for Giuseppe Marchica.", "giuseppe.marchica@dbsarc.com", "DBS-2023-006"),
   evalCase("gpt-07", "dbs-gpt", "What did Petko Slavov update on 6 Houses in Ollon (VD)?", "petko.slavov@dbsarc.com", "DBS-2022-001"),
   evalCase("gpt-08", "dbs-gpt", "Show Arnaud Zbinden the Fontanay Building - 3 apartments record.", "arnaud.zbinden@dbsarc.com", "DBS-2022-004"),
-  evalCase("gpt-09", "dbs-gpt", "Compare Natalia's notes with DBS-2021-001.", "natalia.rincon@dbsarc.com", "DBS-2021-001"),
-  evalCase("gpt-10", "dbs-gpt", "Retrieve Reynard House for florencia.schilling@dbsarc.com.", "florencia.schilling@dbsarc.com", "DBS-2021-002"),
+  ambiguousCase("gpt-09", "dbs-gpt", "Show Michele the Reynard House record.", "DBS-2021-002"),
+  negativeCase("gpt-10", "dbs-gpt"),
 
   evalCase("agent-01", "chat-agent", "Ask Juan Zamudio about Fortunau - 2 apartments.", "juan.zamudio@dbsarc.com", "DBS-2021-003"),
   evalCase("agent-02", "chat-agent", "Daniel Siado needs the Fersini House thread.", "daniel.siado@dbsarc.com", "DBS-2021-004"),
@@ -170,8 +299,8 @@ const EVAL_CASES: readonly EvalCase[] = [
   evalCase("agent-06", "chat-agent", "Shahran Rashid is reviewing DBS-2021-008.", "shahran.rashid@dbsarc.com", "DBS-2021-008"),
   evalCase("agent-07", "chat-agent", "Wasim Showkat needs the Poteu Building deadline.", "wasim.showkat@dbsarc.com", "DBS-2021-009"),
   evalCase("agent-08", "chat-agent", "Open Luisiana Building - 2 apartments for Moiz Behzad Khan.", "moiz.behzad.khan@dbsarc.com", "DBS-2020-001"),
-  evalCase("agent-09", "chat-agent", "Shahid Qayoom updated St-Leonard Houses.", "shahid.qayoom@dbsarc.com", "DBS-2020-003"),
-  evalCase("agent-10", "chat-agent", "Edoardo Bernasconi mentioned Tsanio Houses.", "edoardo.bernasconi@dbsarc.com", "DBS-2020-004"),
+  ambiguousCase("agent-09", "chat-agent", "Michele updated St-Leonard Houses.", "DBS-2020-003"),
+  negativeCase("agent-10", "chat-agent"),
 
   evalCase("translation-01", "translation", "Translate to French: Giulio Sovran approved Le Saillen.", "giulio.sovran@dbsarc.com", "DBS-2025-001"),
   evalCase("translation-02", "translation", "Translate: Luigi Di Berardino will visit Plan Conthey Udry.", "luigi.di.berardino@dbsarc.com", "DBS-2025-002"),
@@ -181,8 +310,8 @@ const EVAL_CASES: readonly EvalCase[] = [
   evalCase("translation-06", "translation", "Translate: Elodie G. Martins checked Tsampy Houses.", "elodie.g.martins@dbsarc.com", "DBS-2022-003"),
   evalCase("translation-07", "translation", "Tradurre: Adriana Bakalyar segue Monnat - 6 apartments.", "adriana.bakalyar@dbsarc.com", "DBS-2020-005"),
   evalCase("translation-08", "translation", "Traduire: Michèle Jemini travaille sur Corbaraye House.", "michele.jemini@dbsarc.com", "DBS-2020-006"),
-  evalCase("translation-09", "translation", "Translate: Sylvie Sarrassin filed Grimisuat Houses.", "sylvie.sarrassin@dbsarc.com", "DBS-2020-007"),
-  evalCase("translation-10", "translation", "Translate: Noemi Verga discussed Tsânio House.", "noemi.verga@dbsarc.com", "DBS-2020-008"),
+  ambiguousCase("translation-09", "translation", "Translate: Michele filed Grimisuat Houses.", "DBS-2020-007"),
+  negativeCase("translation-10", "translation"),
 
   evalCase("health-01", "project-health", "Assess DBS-2019-001 for Michele Moretti.", "michele.moretti@dbsarc.com", "DBS-2019-001"),
   evalCase("health-02", "project-health", "Check St. Romain (Houses) risk with Ali Reza Hakim.", "ali.reza.hakim@dbsarc.com", "DBS-2019-003"),
@@ -192,12 +321,14 @@ const EVAL_CASES: readonly EvalCase[] = [
   evalCase("health-06", "project-health", "Review Chalet in Villars-sur-Ollon for Nicolò Viozzi.", "nicolo.viozzi@dbsarc.com", "DBS-2017-004"),
   evalCase("health-07", "project-health", "Assess Brice's Garden - 11 apartments for Anaïs Morceau.", "anais.morceau@dbsarc.com", "DBS-2016-001"),
   evalCase("health-08", "project-health", "Check Transformation of a Historic Building - 7 apartments with Sergio Facchetti.", "sergio.facchetti@dbsarc.com", "DBS-2016-002"),
-  evalCase("health-09", "project-health", "Review Mayoraz house for Gianmarco Lapolla.", "gianmarco.lapolla@dbsarc.com", "DBS-2015-001"),
-  evalCase("health-10", "project-health", "Assess Solaris with Florencia Schilling.", "florencia.schilling@dbsarc.com", "DBS-2015-003"),
+  ambiguousCase("health-09", "project-health", "Review Mayoraz house for Michele.", "DBS-2015-001"),
+  negativeCase("health-10", "project-health"),
 ];
 
 interface SurfaceStats {
   prompts: number;
+  ambiguousPrompts: number;
+  negativePrompts: number;
   expectedUsers: number;
   correctUsers: number;
   unexpectedUsers: number;
@@ -220,6 +351,8 @@ const FIXED_NOW = new Date("2026-08-03T00:00:00.000Z");
 function emptyStats(): SurfaceStats {
   return {
     prompts: 0,
+    ambiguousPrompts: 0,
+    negativePrompts: 0,
     expectedUsers: 0,
     correctUsers: 0,
     unexpectedUsers: 0,
@@ -237,6 +370,35 @@ function resultCell(correct: number, expected: number): string {
   return `${(accuracy(correct, expected) * 100).toFixed(1)}% (${correct}/${expected})`;
 }
 
+const EVAL_SUBJECT = { userId: "fixture-user:evaluator", role: "admin" } as const;
+
+function buildEvalContract(item: EvalCase): GroundingContract {
+  if (item.surface === "meeting-summary") {
+    return buildMeetingSummaryGroundingContract({
+      subject: EVAL_SUBJECT,
+      input: item.prompt,
+      mode: item.projectCodes.length > 0 ? "detailed" : "simple",
+      projectId: item.projectCodes[0] ? projectFixtureId(item.projectCodes[0]) : null,
+    });
+  }
+  if (item.surface === "translation") {
+    return buildTranslationGroundingContract({ subject: EVAL_SUBJECT, input: item.prompt });
+  }
+  return buildAgentGroundingContract({
+    surface: item.surface,
+    subject: EVAL_SUBJECT,
+    input: item.prompt,
+  });
+}
+
+function setDifference(actual: ReadonlySet<string>, expected: ReadonlySet<string>): string[] {
+  return [...actual].filter((value) => !expected.has(value));
+}
+
+function missKey(miss: { kind: string; reference: string }): string {
+  return `${miss.kind}:${miss.reference.toLocaleLowerCase("en")}`;
+}
+
 async function main(): Promise<void> {
   if (EVAL_CASES.length !== 50) {
     throw new Error(`Grounding evaluation must contain exactly 50 prompts; found ${EVAL_CASES.length}.`);
@@ -247,55 +409,73 @@ async function main(): Promise<void> {
         `${SEEDED_PROJECTS.length} projects.`,
     );
   }
+  assertFixtureParity();
 
   const stats = new Map(SURFACES.map((surface) => [surface, emptyStats()]));
   const failures: string[] = [];
 
   for (const item of EVAL_CASES) {
-    const contract: GroundingContract = {
-      surface: item.surface,
-      subject: { userId: "fixture-user:evaluator", role: "admin" },
-      input: item.prompt,
-      users: { scope: "mentions" },
-      projects: { scope: "mentions" },
-      phases: { scope: "none" },
-      dates: { scope: "none" },
-      recentMeetingDecisions: { scope: "none" },
-    };
+    const contract = buildEvalContract(item);
     const resolved = await resolveGrounding(contract, {
       dataSource: fixtureDataSource,
       now: FIXED_NOW,
     });
-    const expectedUserId = userFixtureId(item.userEmail);
-    const expectedProjectId = projectFixtureId(item.projectCode);
-    const actualUserIds = new Set(resolved.users.map((user) => user.id));
-    const actualProjectIds = new Set(resolved.projects.map((project) => project.id));
+    const expectedUserIds = new Set(item.userEmails.map(userFixtureId));
+    const expectedProjectIds = new Set(item.projectCodes.map(projectFixtureId));
+    // Workspace-scoped contracts intentionally carry the full accessible catalogue.
+    // Accuracy is measured only against the IDs detected in the prompt.
+    const actualUserIds = new Set(resolved.mentionedUserIds);
+    const actualProjectIds = new Set(resolved.mentionedProjectIds);
     const surfaceStats = stats.get(item.surface)!;
+    const correctUserIds = [...expectedUserIds].filter((id) => actualUserIds.has(id));
+    const correctProjectIds = [...expectedProjectIds].filter((id) => actualProjectIds.has(id));
+    const unexpectedUserIds = setDifference(actualUserIds, expectedUserIds);
+    const unexpectedProjectIds = setDifference(actualProjectIds, expectedProjectIds);
+    const expectedMisses = new Set(item.expectedMisses.map(missKey));
+    const actualMisses = new Set(
+      resolved.unresolved
+        .filter((miss) => miss.kind === "user" || miss.kind === "project")
+        .map(missKey),
+    );
 
     surfaceStats.prompts += 1;
-    surfaceStats.expectedUsers += 1;
-    surfaceStats.expectedProjects += 1;
-    if (actualUserIds.has(expectedUserId)) surfaceStats.correctUsers += 1;
-    if (actualProjectIds.has(expectedProjectId)) surfaceStats.correctProjects += 1;
-    surfaceStats.unexpectedUsers += [...actualUserIds].filter((id) => id !== expectedUserId).length;
-    surfaceStats.unexpectedProjects += [...actualProjectIds].filter((id) => id !== expectedProjectId).length;
+    if (item.kind === "ambiguous") surfaceStats.ambiguousPrompts += 1;
+    if (item.kind === "negative") surfaceStats.negativePrompts += 1;
+    surfaceStats.expectedUsers += expectedUserIds.size;
+    surfaceStats.expectedProjects += expectedProjectIds.size;
+    surfaceStats.correctUsers += correctUserIds.length;
+    surfaceStats.correctProjects += correctProjectIds.length;
+    surfaceStats.unexpectedUsers += unexpectedUserIds.length;
+    surfaceStats.unexpectedProjects += unexpectedProjectIds.length;
 
-    if (!actualUserIds.has(expectedUserId) || !actualProjectIds.has(expectedProjectId)) {
+    const missingUserIds = setDifference(expectedUserIds, actualUserIds);
+    const missingProjectIds = setDifference(expectedProjectIds, actualProjectIds);
+    const missingMisses = setDifference(expectedMisses, actualMisses);
+    const unexpectedMisses = setDifference(actualMisses, expectedMisses);
+    if (
+      missingUserIds.length > 0 ||
+      missingProjectIds.length > 0 ||
+      unexpectedUserIds.length > 0 ||
+      unexpectedProjectIds.length > 0 ||
+      missingMisses.length > 0 ||
+      unexpectedMisses.length > 0
+    ) {
       failures.push(
-        `${item.id}: expected ${expectedUserId} and ${expectedProjectId}; got ` +
-          `${[...actualUserIds].join(", ") || "no user"} / ` +
-          `${[...actualProjectIds].join(", ") || "no project"}`,
+        `${item.id} (${item.kind}): users ${[...actualUserIds].join(", ") || "none"}; ` +
+          `projects ${[...actualProjectIds].join(", ") || "none"}; ` +
+          `misses ${[...actualMisses].join(", ") || "none"}`,
       );
     }
   }
 
-  console.log("Grounding evaluation — offline DBS seed fixture");
-  console.log("| Surface | Prompts | User-ID resolution | Project-ID resolution |");
-  console.log("| --- | ---: | ---: | ---: |");
+  console.log("Grounding evaluation — verified DBS seed fixture and production contracts");
+  console.log("| Surface | Prompts | Controls (ambiguous / invalid) | User-ID resolution | Project-ID resolution |");
+  console.log("| --- | ---: | ---: | ---: | ---: |");
   for (const surface of SURFACES) {
     const row = stats.get(surface)!;
     console.log(
-      `| ${surface} | ${row.prompts} | ${resultCell(row.correctUsers, row.expectedUsers)} | ` +
+      `| ${surface} | ${row.prompts} | ${row.ambiguousPrompts} / ${row.negativePrompts} | ` +
+        `${resultCell(row.correctUsers, row.expectedUsers)} | ` +
         `${resultCell(row.correctProjects, row.expectedProjects)} |`,
     );
     if (accuracy(row.correctUsers, row.expectedUsers) < USER_TARGET) {
@@ -314,6 +494,8 @@ async function main(): Promise<void> {
 
   const overall = [...stats.values()].reduce<SurfaceStats>((total, row) => ({
     prompts: total.prompts + row.prompts,
+    ambiguousPrompts: total.ambiguousPrompts + row.ambiguousPrompts,
+    negativePrompts: total.negativePrompts + row.negativePrompts,
     expectedUsers: total.expectedUsers + row.expectedUsers,
     correctUsers: total.correctUsers + row.correctUsers,
     unexpectedUsers: total.unexpectedUsers + row.unexpectedUsers,
@@ -322,7 +504,8 @@ async function main(): Promise<void> {
     unexpectedProjects: total.unexpectedProjects + row.unexpectedProjects,
   }), emptyStats());
   console.log(
-    `| overall | ${overall.prompts} | ${resultCell(overall.correctUsers, overall.expectedUsers)} | ` +
+    `| overall | ${overall.prompts} | ${overall.ambiguousPrompts} / ${overall.negativePrompts} | ` +
+      `${resultCell(overall.correctUsers, overall.expectedUsers)} | ` +
       `${resultCell(overall.correctProjects, overall.expectedProjects)} |`,
   );
 

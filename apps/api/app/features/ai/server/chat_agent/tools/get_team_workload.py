@@ -10,6 +10,8 @@ import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from .access import require_tool_subject
+
 logger = structlog.get_logger(__name__)
 
 
@@ -22,6 +24,7 @@ async def get_team_workload() -> str:
     """
     from app.platform.db.database import AsyncSessionLocal
 
+    user_id, is_admin = require_tool_subject()
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             text(
@@ -36,13 +39,25 @@ async def get_team_workload() -> str:
                     COUNT(CASE WHEN p."workStatus" = 'stuck' THEN 1 END) AS stuck_count,
                     COUNT(CASE WHEN p."workStatus" = 'completed' THEN 1 END) AS completed_count
                 FROM "User" u
-                LEFT JOIN "ProjectAssignment" pa ON pa."userId" = u.id
+                LEFT JOIN "ProjectAssignment" pa
+                  ON pa."userId" = u.id
+                 AND EXISTS (
+                     SELECT 1 FROM "Project" access_project
+                     WHERE access_project.id = pa."projectId"
+                       AND access_project.status != 'deleted'
+                       AND (:is_admin OR EXISTS (
+                           SELECT 1 FROM "ProjectAssignment" access_pa
+                           WHERE access_pa."projectId" = access_project.id
+                             AND access_pa."userId" = :user_id
+                       ))
+                 )
                 LEFT JOIN "Project" p ON p.id = pa."projectId" AND p.status = 'active'
                 WHERE u."isActive" = true
                 GROUP BY u.id, u.name, u.role
                 ORDER BY total_assigned DESC
                 """
-            )
+            ),
+            {"user_id": user_id, "is_admin": is_admin},
         )
         rows = [dict(r) for r in result.mappings().all()]
 

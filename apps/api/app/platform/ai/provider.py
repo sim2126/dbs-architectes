@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, Literal, TypedDict
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from langchain_openai import ChatOpenAI
 
 MAX_FACTUAL_TEMPERATURE = 0.2
 
@@ -24,6 +27,14 @@ ProviderFailureKind = Literal[
     "invalid_output",
     "provider_error",
 ]
+
+
+class SafeProviderFailure(TypedDict):
+    surface: str
+    kind: ProviderFailureKind
+    message: str
+    http_status: Literal[429, 502, 503]
+    retryable: bool
 
 _FAILURE_MESSAGES: dict[ProviderFailureKind, str] = {
     "rate_limited": "AI Assistant is temporarily busy. Please try again shortly.",
@@ -65,6 +76,7 @@ class OpenAIResponseFormat(TypedDict):
 class OpenAIStructuredPolicy(TypedDict):
     model: str
     temperature: float
+    store: Literal[False]
     response_format: OpenAIResponseFormat
 
 
@@ -105,6 +117,7 @@ def build_openai_structured_policy(
     return {
         "model": model,
         "temperature": clamp_factual_temperature(temperature),
+        "store": False,
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -143,6 +156,43 @@ def build_anthropic_structured_policy(
     }
 
 
+def create_openai_structured_chat_model(
+    *,
+    model: str,
+    temperature: float,
+    schema_name: str,
+    schema: JsonObjectSchema,
+    api_key: str | None = None,
+    max_tokens: int | None = None,
+    streaming: bool = False,
+) -> ChatOpenAI:
+    """Construct LangChain's OpenAI client with the shared strict policy."""
+
+    from langchain_openai import ChatOpenAI
+    from pydantic import SecretStr
+
+    policy = build_openai_structured_policy(
+        model=model,
+        temperature=temperature,
+        schema_name=schema_name,
+        schema=schema,
+    )
+    try:
+        return ChatOpenAI(
+            model=policy["model"],
+            api_key=SecretStr(api_key) if api_key else None,
+            temperature=policy["temperature"],
+            max_completion_tokens=max_tokens,
+            streaming=streaming,
+            model_kwargs={
+                "response_format": policy["response_format"],
+                "store": policy["store"],
+            },
+        )
+    except Exception as error:
+        raise classify_provider_error(error) from error
+
+
 async def create_openai_structured_completion[T](
     create: Callable[..., Awaitable[T]],
     request: Mapping[str, object],
@@ -160,8 +210,37 @@ async def create_openai_structured_completion[T](
         schema_name=schema_name,
         schema=schema,
     )
+    protected_fields = {"model", "temperature", "response_format", "store", "stream"}
+    sanitised_request = {
+        key: value for key, value in request.items() if key not in protected_fields
+    }
     try:
-        return await create(**dict(request), **policy)
+        return await create(**sanitised_request, **policy)
+    except Exception as error:
+        raise classify_provider_error(error) from error
+
+
+async def invoke_openai_structured_chat[T](
+    invoke: Callable[[object], Awaitable[T]],
+    messages: object,
+) -> T:
+    """Invoke a structured LangChain client and normalise provider failures."""
+
+    try:
+        return await invoke(messages)
+    except Exception as error:
+        raise classify_provider_error(error) from error
+
+
+async def stream_openai_structured_chat[T](
+    stream: Callable[[object], AsyncIterator[T]],
+    messages: object,
+) -> AsyncIterator[T]:
+    """Stream from a structured LangChain client and normalise provider failures."""
+
+    try:
+        async for chunk in stream(messages):
+            yield chunk
     except Exception as error:
         raise classify_provider_error(error) from error
 
@@ -192,6 +271,26 @@ def classify_provider_error(error: BaseException) -> ProviderFailure:
     if status_code is not None and status_code >= 500:
         return ProviderFailure("unavailable", status_code=status_code, cause=error)
     return ProviderFailure("provider_error", status_code=status_code, cause=error)
+
+
+def to_safe_provider_failure(surface: str, error: BaseException) -> SafeProviderFailure:
+    """Return the only provider-failure fields allowed across an API boundary."""
+
+    failure = classify_provider_error(error)
+    http_status: Literal[429, 502, 503]
+    if failure.kind == "rate_limited":
+        http_status = 429
+    elif failure.kind == "invalid_output":
+        http_status = 502
+    else:
+        http_status = 503
+    return {
+        "surface": surface,
+        "kind": failure.kind,
+        "message": str(failure),
+        "http_status": http_status,
+        "retryable": failure.retryable,
+    }
 
 
 def _assert_policy_input(model: str, schema_name: str, schema: JsonObjectSchema) -> None:

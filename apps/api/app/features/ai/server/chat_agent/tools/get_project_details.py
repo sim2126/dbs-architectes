@@ -10,6 +10,8 @@ import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from .access import require_tool_subject
+
 logger = structlog.get_logger(__name__)
 
 
@@ -24,6 +26,8 @@ async def get_project_details(project_id: str) -> str:
     """
     from app.platform.db.database import AsyncSessionLocal
 
+    user_id, is_admin = require_tool_subject()
+    params = {"id": project_id, "user_id": user_id, "is_admin": is_admin}
     async with AsyncSessionLocal() as db:
         # Core project data
         proj = await db.execute(
@@ -32,10 +36,17 @@ async def get_project_details(project_id: str) -> str:
                 SELECT id, code, title, phase, "workStatus", category, client,
                        commune, year, billing, description, notes, status,
                        "createdAt", "updatedAt"
-                FROM "Project" WHERE id = :id
+                FROM "Project" p
+                WHERE p.id = :id
+                  AND p.status != 'deleted'
+                  AND (:is_admin OR EXISTS (
+                      SELECT 1 FROM "ProjectAssignment" access_pa
+                      WHERE access_pa."projectId" = p.id
+                        AND access_pa."userId" = :user_id
+                  ))
                 """
             ),
-            {"id": project_id},
+            params,
         )
         row = proj.mappings().first()
         if not row:

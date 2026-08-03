@@ -10,6 +10,7 @@ from app.platform.ai.provider import (
     build_openai_structured_policy,
     clamp_factual_temperature,
     classify_provider_error,
+    create_openai_structured_chat_model,
     create_openai_structured_completion,
     parse_structured_output,
 )
@@ -40,6 +41,7 @@ def test_builds_strict_openai_json_schema_policy_without_changing_model() -> Non
 
     assert policy["model"] == "gpt-4o-mini"
     assert policy["temperature"] == 0.2
+    assert policy["store"] is False
     assert policy["response_format"] == {
         "type": "json_schema",
         "json_schema": {
@@ -65,6 +67,23 @@ def test_builds_forced_anthropic_tool_use_policy_without_provider_sdk() -> None:
     assert policy["tools"][0]["input_schema"] == OUTPUT_SCHEMA
 
 
+def test_langchain_openai_model_inherits_shared_structured_policy() -> None:
+    model = create_openai_structured_chat_model(
+        model="gpt-4o",
+        temperature=0.8,
+        schema_name="GroundedAnswer",
+        schema=OUTPUT_SCHEMA,
+        api_key="test-key",
+        max_tokens=250,
+    )
+
+    assert model.model_name == "gpt-4o"
+    assert model.temperature == 0.2
+    assert model.max_tokens == 250
+    assert model.model_kwargs["response_format"]["type"] == "json_schema"
+    assert model.model_kwargs["store"] is False
+
+
 async def test_openai_client_wrapper_always_applies_strict_policy() -> None:
     captured: dict[str, object] = {}
 
@@ -74,7 +93,12 @@ async def test_openai_client_wrapper_always_applies_strict_policy() -> None:
 
     await create_openai_structured_completion(
         create,
-        {"messages": [{"role": "user", "content": "Ground this"}]},
+        {
+            "messages": [{"role": "user", "content": "Ground this"}],
+            "model": "caller-model",
+            "temperature": 1.0,
+            "store": True,
+        },
         model="gpt-4o-mini",
         temperature=1,
         schema_name="GroundedAnswer",
@@ -83,6 +107,7 @@ async def test_openai_client_wrapper_always_applies_strict_policy() -> None:
 
     assert captured["model"] == "gpt-4o-mini"
     assert captured["temperature"] == 0.2
+    assert captured["store"] is False
     assert captured["response_format"] == {
         "type": "json_schema",
         "json_schema": {

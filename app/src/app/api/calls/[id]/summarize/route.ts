@@ -3,7 +3,6 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import {
   generateSummary,
-  loadCallContext,
   newShareToken,
   updateProjectMemory,
   type SummaryMode,
@@ -17,6 +16,7 @@ import {
 } from "@/platform/integrations/daily";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 import { canAccessCall } from "@/features/calls/server/call-access";
+import { toSafeAiFailure } from "@/platform/ai/provider";
 
 export const maxDuration = 120;
 
@@ -85,7 +85,11 @@ export async function POST(
   }
 
   try {
-    const summary = await generateSummary(id, mode, transcript);
+    const generated = await generateSummary(id, mode, transcript, {
+      userId: session.user.id,
+      role: session.user.role,
+    });
+    const { summary } = generated;
     const shareToken = call.shareToken ?? newShareToken();
 
     await prisma.call.update({
@@ -106,7 +110,7 @@ export async function POST(
     });
 
     // Roll project memory forward on detailed summaries
-    if (mode === "detailed" && call.projectId) {
+    if (mode === "detailed" && call.projectId && generated.canUpdateProjectMemory) {
       try {
         await updateProjectMemory(call.projectId, summary as DetailedSummary);
       } catch {
@@ -116,12 +120,12 @@ export async function POST(
 
     return Response.json({ summary, shareToken });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Summarization failed";
+    const failure = toSafeAiFailure("meeting-summary", err);
     await prisma.call.update({
       where: { id },
-      data: { summaryError: msg },
+      data: { summaryError: failure.message },
     });
-    return Response.json({ error: msg }, { status: 500 });
+    return Response.json({ error: failure.message }, { status: failure.httpStatus });
   }
 }
 
@@ -156,6 +160,3 @@ export async function GET(
 
   return Response.json(call);
 }
-
-// Unused import guard
-void loadCallContext;

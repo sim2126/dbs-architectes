@@ -8,6 +8,7 @@ from typing import Any, cast
 from app.platform.ai.grounding import (
     GroundingContract,
     GroundingMemoryRow,
+    GroundingMiss,
     GroundingProjectRow,
     GroundingSubject,
     GroundingUserRow,
@@ -20,10 +21,13 @@ from app.platform.ai.grounding import (
     NoMeetingDecisionNeed,
     NoPhaseResolutionNeed,
     RecentMeetingDecisionNeed,
+    ResolvedContext,
+    ResolvedDate,
     SqlGroundingDataSource,
     ValueDateResolutionNeed,
     ValuePhaseResolutionNeed,
     WorkspaceEntityResolutionNeed,
+    extend_grounding_with_trusted_tool_result,
     resolve_grounding,
     serialise_resolved_context,
 )
@@ -146,6 +150,7 @@ async def test_resolves_mentions_phases_dates_and_recent_decisions() -> None:
         ("next week", "2026-08-10", "week"),
     ]
     assert resolved.recent_meeting_decisions[0].text == "Retain the stone facade"
+    assert resolved.recent_meeting_decisions[0].decided_by == "user-giulio"
     assert data_source.user_subjects == [subject]
     assert data_source.project_subjects == [subject]
     assert data_source.memory_project_ids == [("project-saillen",)]
@@ -229,6 +234,82 @@ async def test_recent_decisions_without_ids_use_mentions_not_workspace_scope() -
     assert data_source.memory_project_ids == [("project-saillen",)]
 
 
+async def test_broad_recent_decision_intent_uses_all_accessible_projects() -> None:
+    data_source = FakeGroundingDataSource(
+        projects=[
+            GroundingProjectRow(
+                id="project-saillen",
+                code="DBS-2025-001",
+                title="Le Saillen",
+                phase="ETUDE/AP",
+                client=None,
+                commune="Salins",
+            ),
+            GroundingProjectRow(
+                id="project-solaris",
+                code="DBS-2015-048",
+                title="Solaris",
+                phase="TERMINATO",
+                client=None,
+                commune="Sion",
+            ),
+        ],
+        memories=[
+            GroundingMemoryRow(
+                id="memory-saillen",
+                project_id="project-saillen",
+                key_decisions=[{"what": "Retain the stone facade"}],
+                updated_at=datetime(2026, 8, 2, tzinfo=UTC),
+            ),
+            GroundingMemoryRow(
+                id="memory-solaris",
+                project_id="project-solaris",
+                key_decisions=[{"what": "Issue the final dossier"}],
+                updated_at=datetime(2026, 8, 1, tzinfo=UTC),
+            ),
+        ],
+    )
+    contract = no_grounding_contract(
+        input="Show me the latest meeting decisions.",
+        projects=WorkspaceEntityResolutionNeed(),
+        recent_meeting_decisions=RecentMeetingDecisionNeed(project_ids=None, limit=5),
+    )
+
+    resolved = await resolve_grounding(contract, data_source=data_source)
+
+    assert data_source.memory_project_ids == [
+        ("project-saillen", "project-solaris")
+    ]
+    assert [decision.memory_id for decision in resolved.recent_meeting_decisions] == [
+        "memory-saillen",
+        "memory-solaris",
+    ]
+
+
+async def test_generic_prompt_does_not_load_portfolio_meeting_memory() -> None:
+    data_source = FakeGroundingDataSource(
+        projects=[
+            GroundingProjectRow(
+                id="project-saillen",
+                code="DBS-2025-001",
+                title="Le Saillen",
+                phase="ETUDE/AP",
+                client=None,
+                commune="Salins",
+            )
+        ]
+    )
+    contract = no_grounding_contract(
+        input="How is the portfolio doing?",
+        projects=WorkspaceEntityResolutionNeed(),
+        recent_meeting_decisions=RecentMeetingDecisionNeed(project_ids=None, limit=5),
+    )
+
+    await resolve_grounding(contract, data_source=data_source)
+
+    assert data_source.memory_project_ids == [()]
+
+
 async def test_ids_and_invalid_phase_and_date_values_are_reported() -> None:
     data_source = FakeGroundingDataSource(
         users=[
@@ -296,6 +377,153 @@ async def test_ambiguous_first_names_are_not_used_as_aliases() -> None:
     resolved = await resolve_grounding(contract, data_source=data_source)
 
     assert resolved.users == ()
+    assert [(miss.kind, miss.reference, miss.reason) for miss in resolved.unresolved] == [
+        ("user", "Michele", "invalid")
+    ]
+
+
+async def test_duplicate_initials_and_project_titles_are_not_resolved() -> None:
+    data_source = FakeGroundingDataSource(
+        users=[
+            GroundingUserRow(
+                id="ali-1",
+                name="Ali Reza Hakim",
+                email="ali.hakim@dbsarc.com",
+                initials="AR",
+            ),
+            GroundingUserRow(
+                id="anna-1",
+                name="Anna Rossi",
+                email="anna.rossi@dbsarc.com",
+                initials="AR",
+            ),
+        ],
+        projects=[
+            GroundingProjectRow(
+                id="tower-1",
+                code="DBS-2025-001",
+                title="Garden Tower",
+                phase="ETUDE/AP",
+                client=None,
+                commune="Sion",
+            ),
+            GroundingProjectRow(
+                id="tower-2",
+                code="DBS-2025-002",
+                title="Garden Tower",
+                phase="CHANTIER",
+                client=None,
+                commune="Milan",
+            ),
+        ],
+    )
+    contract = no_grounding_contract(
+        input="Ask AR about Garden Tower",
+        users=MentionEntityResolutionNeed(),
+        projects=MentionEntityResolutionNeed(),
+    )
+
+    resolved = await resolve_grounding(contract, data_source=data_source)
+
+    assert resolved.users == ()
+    assert resolved.projects == ()
+    assert {(miss.kind, miss.reference, miss.reason) for miss in resolved.unresolved} == {
+        ("user", "AR", "invalid"),
+        ("project", "Garden Tower", "invalid"),
+    }
+
+
+async def test_recognisable_unknown_mentions_are_reported() -> None:
+    data_source = FakeGroundingDataSource(
+        users=[
+            GroundingUserRow(
+                id="known-user",
+                name="Giulio Sovran",
+                email="giulio.sovran@dbsarc.com",
+                initials="GS",
+            )
+        ],
+        projects=[
+            GroundingProjectRow(
+                id="known-project",
+                code="DBS-2025-001",
+                title="Le Saillen",
+                phase="ETUDE/AP",
+                client=None,
+                commune="Salins",
+            )
+        ],
+    )
+    contract = no_grounding_contract(
+        input=(
+            "Ask user_id:known-user and missing.person@dbsarc.com about "
+            "project_id:known-project, project_id:missing-project and DBS-2099-999."
+        ),
+        users=MentionEntityResolutionNeed(),
+        projects=MentionEntityResolutionNeed(),
+    )
+
+    resolved = await resolve_grounding(contract, data_source=data_source)
+
+    assert [user.id for user in resolved.users] == ["known-user"]
+    assert [project.id for project in resolved.projects] == ["known-project"]
+    assert {(miss.kind, miss.reference, miss.reason) for miss in resolved.unresolved} == {
+        ("user", "missing.person@dbsarc.com", "not-found"),
+        ("project", "missing-project", "not-found"),
+        ("project", "DBS-2099-999", "not-found"),
+    }
+
+
+async def test_workspace_scope_still_reports_recognisable_unknown_mentions() -> None:
+    contract = no_grounding_contract(
+        input="Contact missing.person@dbsarc.com about DBS-2099-999.",
+        users=WorkspaceEntityResolutionNeed(),
+        projects=WorkspaceEntityResolutionNeed(),
+    )
+
+    resolved = await resolve_grounding(
+        contract,
+        data_source=FakeGroundingDataSource(),
+    )
+
+    assert {(miss.kind, miss.reference, miss.reason) for miss in resolved.unresolved} == {
+        ("user", "missing.person@dbsarc.com", "not-found"),
+        ("project", "DBS-2099-999", "not-found"),
+    }
+
+
+def test_trusted_tool_result_extends_dates_without_mutating_context() -> None:
+    context = ResolvedContext(
+        surface="chat-agent",
+        resolved_at="2026-08-03T12:00:00Z",
+        users=(),
+        projects=(),
+        phases=(),
+        dates=(ResolvedDate(source="2026-08-04", iso_date="2026-08-04", precision="day"),),
+        recent_meeting_decisions=(),
+        unresolved=(GroundingMiss(kind="user", reference="unknown", reason="not-found"),),
+    )
+
+    extended = extend_grounding_with_trusted_tool_result(
+        context,
+        {
+            "deadline": "04/08/2026",
+            "events": ["Review on 2026-08-05", {"invalid": "31/02/2026"}],
+        },
+        now=datetime(2026, 8, 3, tzinfo=UTC),
+    )
+
+    assert extended is not context
+    assert context.dates[0].source == "2026-08-04"
+    assert [(item.source, item.iso_date) for item in extended.dates] == [
+        ("2026-08-04", "2026-08-04"),
+        ("04/08/2026", "2026-08-04"),
+        ("2026-08-05", "2026-08-05"),
+    ]
+    assert [(miss.kind, miss.reference) for miss in extended.unresolved] == [
+        ("user", "unknown"),
+        ("date", "31/02/2026"),
+    ]
 
 
 async def test_workspace_scope_and_serialisation_match_the_typescript_shape() -> None:
@@ -392,7 +620,7 @@ async def test_sql_datasource_scopes_collaborator_projects_by_assignment() -> No
     assert params == {"user_id": "collaborator-1"}
 
 
-async def test_sql_datasource_allows_workspace_roles_without_assignment_filter() -> None:
+async def test_sql_datasource_keeps_manager_projects_assignment_scoped() -> None:
     session = FakeSqlSession([])
 
     def session_factory() -> FakeSqlSessionContext:
@@ -400,6 +628,21 @@ async def test_sql_datasource_allows_workspace_roles_without_assignment_filter()
 
     data_source = SqlGroundingDataSource(session_factory=cast(Any, session_factory))
     await data_source.list_projects(GroundingSubject(user_id="manager-1", role="manager"))
+
+    query, params = session.calls[0]
+    assert "p.status != 'deleted'" in query
+    assert 'FROM "ProjectAssignment"' in query
+    assert params == {"user_id": "manager-1"}
+
+
+async def test_sql_datasource_allows_only_admins_without_assignment_filter() -> None:
+    session = FakeSqlSession([])
+
+    def session_factory() -> FakeSqlSessionContext:
+        return FakeSqlSessionContext(session)
+
+    data_source = SqlGroundingDataSource(session_factory=cast(Any, session_factory))
+    await data_source.list_projects(GroundingSubject(user_id="admin-1", role="admin"))
 
     query, params = session.calls[0]
     assert 'FROM "ProjectAssignment"' not in query

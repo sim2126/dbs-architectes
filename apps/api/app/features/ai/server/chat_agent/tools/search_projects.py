@@ -10,6 +10,8 @@ import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from .access import require_tool_subject
+
 logger = structlog.get_logger(__name__)
 
 
@@ -46,32 +48,44 @@ async def search_projects(
     """
     from app.platform.db.database import AsyncSessionLocal
 
+    user_id, is_admin = require_tool_subject()
     limit = min(limit, 50)
-    conditions = ['"status" = :status']
-    params: dict = {"status": status, "limit": limit}
+    conditions = [
+        'p."status" = :status',
+        "(:is_admin OR EXISTS ("
+        'SELECT 1 FROM "ProjectAssignment" access_pa '
+        'WHERE access_pa."projectId" = p.id AND access_pa."userId" = :user_id))',
+    ]
+    params: dict = {
+        "status": status,
+        "limit": limit,
+        "user_id": user_id,
+        "is_admin": is_admin,
+    }
 
     if query:
         conditions.append(
-            '(title ILIKE :query OR code ILIKE :query OR client ILIKE :query OR commune ILIKE :query)'
+            "(p.title ILIKE :query OR p.code ILIKE :query OR "
+            "p.client ILIKE :query OR p.commune ILIKE :query)"
         )
         params["query"] = f"%{query}%"
     if phase:
-        conditions.append('"phase" = :phase')
+        conditions.append('p."phase" = :phase')
         params["phase"] = _normalize_phase(phase)
     if work_status:
-        conditions.append('"workStatus" = :work_status')
+        conditions.append('p."workStatus" = :work_status')
         params["work_status"] = work_status
     if category:
-        conditions.append('"category" ILIKE :category')
+        conditions.append('p."category" ILIKE :category')
         params["category"] = f"%{category}%"
     if client:
-        conditions.append('"client" ILIKE :client')
+        conditions.append('p."client" ILIKE :client')
         params["client"] = f"%{client}%"
     if commune:
-        conditions.append('"commune" ILIKE :commune')
+        conditions.append('p."commune" ILIKE :commune')
         params["commune"] = f"%{commune}%"
     if year:
-        conditions.append('"year" = :year')
+        conditions.append('p."year" = :year')
         params["year"] = year
 
     where = " AND ".join(conditions)

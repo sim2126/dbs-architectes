@@ -7,7 +7,28 @@ import { AGENT_TOOLS, executeTool } from "@/features/ai/server/agent/tools";
 import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifacts";
 import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/features/ai/server/agent/blocks";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
-import { reconstructHistory } from "@/features/ai/server/agent/context-reconstruction";
+import {
+  filterHistoryForGrounding,
+  reconstructHistory,
+  sanitiseLegacyHistory,
+} from "@/features/ai/server/agent/context-reconstruction";
+import {
+  extendGroundingWithTrustedToolResult,
+  resolveGrounding,
+  serialiseResolvedContext,
+  type ResolvedContext,
+} from "@/platform/ai/grounding";
+import {
+  buildAgentGroundingContract,
+  surfaceForAgentRequest,
+} from "@/platform/ai/contracts";
+import {
+  AiProviderFailure,
+  createOpenAIStructuredStream,
+  parseStructuredOutput,
+  toSafeAiFailure,
+} from "@/platform/ai/provider";
+import { validateGrounding } from "@/platform/ai/validation";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
@@ -21,8 +42,6 @@ export async function POST(req: NextRequest) {
   // Cost-control window: short-circuit before constructing the OpenAI
   // client so a missing/removed key never produces a cryptic 401.
   if (isAiDisabled()) return aiDisabledResponse();
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // New contract: client sends just the new user message + sessionId.
   // Server reconstructs the full prior conversation (including past tool
@@ -50,8 +69,8 @@ export async function POST(req: NextRequest) {
     latestUserPrompt = body.message;
     priorHistory.push({ role: "user", content: body.message });
   } else if (Array.isArray(body.messages)) {
-    priorHistory = body.messages;
-    const latest = [...body.messages]
+    priorHistory = sanitiseLegacyHistory(body.messages);
+    const latest = [...priorHistory]
       .reverse()
       .find((m) => m.role === "user" && m.content);
     latestUserPrompt =
@@ -66,12 +85,37 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Missing message or sessionId" }, { status: 400 });
   }
 
+  const userRole = (session.user as { role?: string }).role ?? "viewer";
+  const surface = surfaceForAgentRequest(latestUserPrompt, Boolean(body.sessionId));
+  let resolvedContext: ResolvedContext;
+  try {
+    resolvedContext = await resolveGrounding(buildAgentGroundingContract({
+      surface,
+      subject: { userId: session.user.id, role: userRole },
+      input: latestUserPrompt,
+    }));
+  } catch {
+    return Response.json(
+      { error: "AI Assistant could not verify the workspace context. Please try again." },
+      { status: 503 },
+    );
+  }
+  priorHistory = filterHistoryForGrounding(priorHistory, resolvedContext);
+
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
     "{today_date}",
     new Date().toISOString().split("T")[0],
   )
     .replace("{user_name}", session.user.name ?? "User")
-    .replace("{user_role}", (session.user as { role?: string }).role ?? "viewer");
+    .replace("{user_role}", userRole);
+  const buildGroundingPrompt = (context: ResolvedContext) => [
+      "Authoritative, access-scoped grounding context follows as JSON.",
+      "Use only resolved entity identifiers and values. Do not invent users, projects, phases, dates, or meeting decisions.",
+      "Every final response must include userIds, projectIds, phases, and dates arrays alongside blocks.",
+      "List the exact resolved IDs or values for every entity referenced in the blocks; use empty arrays when none are referenced.",
+      serialiseResolvedContext(context),
+    ].join("\n");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -83,6 +127,7 @@ export async function POST(req: NextRequest) {
       try {
         const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
           { role: "system", content: systemPrompt },
+          { role: "system", content: buildGroundingPrompt(resolvedContext) },
           ...priorHistory,
         ];
 
@@ -96,26 +141,22 @@ export async function POST(req: NextRequest) {
 
           // Every call asks for either (a) a tool call or (b) JSON matching
           // the block schema. The model cannot emit free Markdown.
-          const response = await openai.chat.completions.create({
-            // gpt-4.1-mini: ~2.5x the cost of 4o-mini but markedly stronger
-            // reasoning + structured-output compliance. Within Tier 1 quota
-            // on this account (verified).
-            model: "gpt-4.1-mini",
-            messages: history,
-            tools: AGENT_TOOLS,
-            tool_choice: "auto",
-            temperature: 0.2,
-            max_tokens: 4096,
-            stream: true,
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: "AgentResponse",
-                strict: true,
-                schema: AGENT_RESPONSE_SCHEMA as Record<string, unknown>,
-              },
+          const response = await createOpenAIStructuredStream(
+            openai,
+            {
+              messages: history,
+              tools: AGENT_TOOLS,
+              tool_choice: "auto",
+              max_tokens: 4096,
             },
-          });
+            {
+              // Keep the route's established model and factual temperature.
+              model: "gpt-4.1-mini",
+              temperature: 0.2,
+              schemaName: "AgentResponse",
+              schema: AGENT_RESPONSE_SCHEMA,
+            },
+          );
 
           let assistantContent = "";
           const toolCalls: Array<{
@@ -179,7 +220,7 @@ export async function POST(req: NextRequest) {
           if (toolCalls.length > 0) {
             send({ type: "tool_start", tools: toolCalls.map((tc) => tc.function.name) });
 
-            const toolResults = await Promise.all(
+            const toolExecutions = await Promise.all(
               toolCalls.map(async (tc) => {
                 let args: Record<string, unknown> = {};
                 try {
@@ -199,10 +240,14 @@ export async function POST(req: NextRequest) {
                 try {
                   result = await executeTool(tc.function.name, args, {
                     userId: session.user.id,
-                    role: session.user.role,
+                    role: userRole,
                   });
                 } catch (err) {
-                  result = { error: `Tool execution failed: ${String(err)}` };
+                  console.error("DBS AI tool execution failed", {
+                    tool: tc.function.name,
+                    errorType: err instanceof Error ? err.name : "unknown",
+                  });
+                  result = { error: "Tool execution failed" };
                 }
 
                 const artifacts = buildArtifactsFromToolResult(
@@ -228,44 +273,50 @@ export async function POST(req: NextRequest) {
                 });
 
                 return {
-                  role: "tool" as const,
-                  tool_call_id: tc.id,
-                  content: resultStr,
+                  message: {
+                    role: "tool" as const,
+                    tool_call_id: tc.id,
+                    content: resultStr,
+                  },
+                  trustedResult: result,
                 };
               }),
             );
 
-            history.push(...toolResults);
+            for (const execution of toolExecutions) {
+              resolvedContext = extendGroundingWithTrustedToolResult(
+                resolvedContext,
+                execution.trustedResult,
+              );
+            }
+            history[1] = { role: "system", content: buildGroundingPrompt(resolvedContext) };
+            history.push(...toolExecutions.map((execution) => execution.message));
           }
         }
 
-        // Parse the final JSON envelope. If parsing fails (schema drift or
-        // truncation), fall back to rendering the raw text as a single prose
-        // block so the user always sees something.
-        const parsed = parseAgentResponse(finalContent);
-        if (parsed) {
-          send({ type: "blocks", blocks: parsed.blocks });
-        } else if (finalContent) {
+        const parsed = parseStructuredOutput(finalContent, (value) => {
+          const response = parseAgentResponse(JSON.stringify(value));
+          if (!response) throw new TypeError("Agent response does not match its block envelope.");
+          return response;
+        });
+        const validated = validateGrounding(parsed, resolvedContext, { mode: "strip" });
+        if (!validated.valid) {
+          throw new AiProviderFailure("invalid_output");
+        }
+        if (validated.issues.length > 0) {
+          console.warn("DBS GPT grounding issues", { surface, issues: validated.issues });
           send({
-            type: "blocks",
-            blocks: [{ type: "prose", text: finalContent }],
-          });
-        } else {
-          send({
-            type: "blocks",
-            blocks: [
-              {
-                type: "prose",
-                text: "I couldn't produce an answer for that. Please rephrase or try a narrower question.",
-              },
-            ],
+            type: "grounding_issues",
+            surface,
+            issues: validated.issues,
           });
         }
+        send({ type: "blocks", blocks: validated.output.blocks });
 
         send({ type: "done" });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        send({ type: "error", message });
+        const failure = toSafeAiFailure(surface, err);
+        send({ type: "error", kind: failure.kind, message: failure.message });
       } finally {
         controller.close();
       }

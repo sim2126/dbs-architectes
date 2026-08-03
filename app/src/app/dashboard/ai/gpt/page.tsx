@@ -77,6 +77,7 @@ interface SSEEvent {
     | "tool_call"
     | "tool_result"
     | "artifact"
+    | "grounding_issues"
     | "blocks"
     | "done"
     | "error";
@@ -87,6 +88,7 @@ interface SSEEvent {
   message?: string;
   artifact?: AiArtifact;
   blocks?: Block[];
+  issues?: Array<{ kind: string; severity: "warning" | "error"; value: string }>;
   // v3 — surfaced so the client can persist tool calls + their results
   // for cross-turn context reconstruction.
   toolCallId?: string;
@@ -728,6 +730,7 @@ export default function DBSGPTPage() {
   const pendingAssistantArtifacts = useRef<AiArtifact[]>([]);
   const pendingAssistantSteps = useRef<ToolStep[]>([]);
   const pendingAssistantBlocks = useRef<Block[]>([]);
+  const pendingGroundingWarning = useRef(false);
 
   const makeId = (role: string) => `${role}-${++seqRef.current}`;
 
@@ -1048,6 +1051,7 @@ export default function DBSGPTPage() {
     pendingAssistantArtifacts.current = [];
     pendingAssistantSteps.current = [];
     pendingAssistantBlocks.current = [];
+    pendingGroundingWarning.current = false;
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
@@ -1151,10 +1155,22 @@ export default function DBSGPTPage() {
                 });
                 return { ...m, steps };
               }));
+            } else if (event.type === "grounding_issues" && event.issues?.length) {
+              pendingGroundingWarning.current = true;
             } else if (event.type === "blocks" && event.blocks) {
-              pendingAssistantBlocks.current = event.blocks;
+              const blocks = pendingGroundingWarning.current
+                ? [
+                    ...event.blocks,
+                    {
+                      type: "callout" as const,
+                      tone: "warning" as const,
+                      text: "AI Assistant could not verify every entity in this response. Check names and dates before relying on it.",
+                    },
+                  ]
+                : event.blocks;
+              pendingAssistantBlocks.current = blocks;
               setMessages((prev) => prev.map((m) =>
-                m.id === assistantId ? { ...m, blocks: event.blocks } : m
+                m.id === assistantId ? { ...m, blocks } : m
               ));
             } else if (event.type === "done") {
               setMessages((prev) => prev.map((m) =>

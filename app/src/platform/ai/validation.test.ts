@@ -23,6 +23,8 @@ const resolved: ResolvedContext = {
     commune: "Sion",
     aliases: ["DBS-2025-001", "Le Saillen"],
   }],
+  mentionedUserIds: ["user-giulio"],
+  mentionedProjectIds: ["project-saillen"],
   phases: [{ kind: "phase", value: "ETUDE/AP", aliases: ["ETUDE / AP"] }],
   dates: [{ kind: "date", source: "tomorrow", isoDate: "2026-08-04", precision: "day" }],
   recentMeetingDecisions: [],
@@ -118,4 +120,109 @@ test("uses table column semantics when cells have no field names", () => {
 
   assert.equal(result.issues.length, 3);
   assert.deepEqual(result.issues.map(({ kind }) => kind), ["project", "phase", "user"]);
+});
+
+test("rejects known entity mentions omitted from structured citation arrays", () => {
+  const result = validateGrounding({
+    blocks: [{ type: "prose", text: "Giulio Sovran is reviewing Le Saillen." }],
+    userIds: [],
+    projectIds: [],
+    phases: [],
+    dates: [],
+  }, resolved);
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.issues.map(({ kind, value, reason }) => ({ kind, value, reason })), [
+    { kind: "user", value: "user-giulio", reason: "missing-entity-citation" },
+    { kind: "project", value: "project-saillen", reason: "missing-entity-citation" },
+  ]);
+});
+
+test("rejects known phase and date mentions omitted from citation arrays", () => {
+  const result = validateGrounding({
+    blocks: [{ type: "prose", text: "ETUDE / AP is due tomorrow (2026-08-04)." }],
+    userIds: [],
+    projectIds: [],
+    phases: [],
+    dates: [],
+  }, resolved);
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.issues.map(({ kind, value, reason }) => ({ kind, value, reason })), [
+    { kind: "phase", value: "ETUDE/AP", reason: "missing-entity-citation" },
+    { kind: "date", value: "2026-08-04", reason: "missing-entity-citation" },
+  ]);
+});
+
+test("accepts canonical phase and date citations", () => {
+  const result = validateGrounding({
+    text: "ETUDE / AP is due tomorrow (2026-08-04).",
+    userIds: [],
+    projectIds: [],
+    phases: ["ETUDE/AP"],
+    dates: ["2026-08-04"],
+  }, resolved);
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.issues, []);
+});
+
+test("rejects inconsistent fields within structured entities", () => {
+  const context: ResolvedContext = {
+    ...resolved,
+    users: [...resolved.users, {
+      kind: "user",
+      id: "user-luigi",
+      name: "Luigi Di Berardino",
+      email: "luigi.di.berardino@dbsarc.com",
+      aliases: ["Luigi Di Berardino", "Luigi", "LD"],
+    }],
+    projects: [...resolved.projects, {
+      kind: "project",
+      id: "project-solaris",
+      code: "DBS-2015-003",
+      title: "Solaris",
+      phase: "TERMINATO",
+      client: null,
+      commune: "Sion",
+      aliases: ["DBS-2015-003", "Solaris"],
+    }],
+  };
+  const result = validateGrounding({
+    people: [{ userId: "user-giulio", name: "Luigi" }],
+    action_items: [{ owner_user_id: "user-giulio", owner_name: "Luigi" }],
+    projects: [{ projectId: "project-saillen", title: "Solaris" }],
+  }, context);
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.issues.map(({ kind, path, reason }) => ({ kind, path, reason })), [
+    { kind: "user", path: "$.people[0].name", reason: "inconsistent-entity-reference" },
+    { kind: "user", path: "$.action_items[0].owner_name", reason: "inconsistent-entity-reference" },
+    { kind: "project", path: "$.projects[0].title", reason: "inconsistent-entity-reference" },
+  ]);
+});
+
+test("flags unknown dates embedded in prose", () => {
+  const result = validateGrounding(
+    { summary: "The review is planned for 2027-01-01." },
+    resolved,
+  );
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.issues.map(({ kind, value, severity }) => ({ kind, value, severity })), [
+    { kind: "date", value: "2027-01-01", severity: "warning" },
+  ]);
+});
+
+test("flags unknown natural entity names embedded in prose", () => {
+  const result = validateGrounding(
+    { summary: "John Smith proposed the Alpine Tower option." },
+    resolved,
+  );
+
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.issues.map(({ kind, value, severity }) => ({ kind, value, severity })), [
+    { kind: "entity", value: "John Smith", severity: "warning" },
+    { kind: "entity", value: "Alpine Tower", severity: "warning" },
+  ]);
 });

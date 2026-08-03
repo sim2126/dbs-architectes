@@ -10,6 +10,8 @@ import structlog
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from .access import require_tool_subject
+
 logger = structlog.get_logger(__name__)
 
 
@@ -29,9 +31,24 @@ async def get_activity_log(
     """
     from app.platform.db.database import AsyncSessionLocal
 
+    user_id, is_admin = require_tool_subject()
     limit = min(limit, 100)
-    conditions = []
-    params: dict = {"limit": limit}
+    conditions = [
+        "((a.\"projectId\" IS NULL AND (:is_admin OR a.\"userId\" = :user_id)) "
+        "OR EXISTS ("
+        'SELECT 1 FROM "Project" access_project '
+        'WHERE access_project.id = a."projectId" '
+        "AND access_project.status != 'deleted' "
+        "AND (:is_admin OR EXISTS ("
+        'SELECT 1 FROM "ProjectAssignment" access_pa '
+        'WHERE access_pa."projectId" = access_project.id '
+        'AND access_pa."userId" = :user_id))))',
+    ]
+    params: dict = {
+        "limit": limit,
+        "user_id": user_id,
+        "is_admin": is_admin,
+    }
 
     if project_id:
         conditions.append('a."projectId" = :project_id')

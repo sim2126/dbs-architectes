@@ -11,6 +11,8 @@
  * the model's output parses as one of these types.
  */
 
+import { z } from "zod";
+
 // ── TypeScript block types ────────────────────────────────────────────────
 
 export type ProseBlock = {
@@ -25,9 +27,9 @@ export type StatCardsBlock = {
     label: string;
     value: string;
     /** Optional subtitle like "70% of portfolio". */
-    sublabel?: string;
+    sublabel?: string | null;
     /** Visual accent: "default" | "positive" | "warning" | "danger" | "info". */
-    tone?: "default" | "positive" | "warning" | "danger" | "info";
+    tone?: "default" | "positive" | "warning" | "danger" | "info" | null;
   }>;
 };
 
@@ -41,7 +43,7 @@ export type ProjectListBlock = {
     /** Team initials e.g. ["GS", "LDB"]. Empty array if none assigned. */
     teamInitials: string[];
     /** Optional inline note — next deadline, stuck reason, etc. */
-    note?: string;
+    note?: string | null;
   }>;
 };
 
@@ -50,10 +52,10 @@ export type PeopleBlock = {
   people: Array<{
     name: string;
     initials: string;
-    role?: string;
-    email?: string;
+    role?: string | null;
+    email?: string | null;
     /** Optional caption — e.g. "Architect on [DBS-2025-001]". */
-    caption?: string;
+    caption?: string | null;
   }>;
 };
 
@@ -65,7 +67,7 @@ export type AgendaBlock = {
     date: string;
     priority: "critical" | "high" | "medium" | "low";
     status: "pending" | "in_progress" | "completed";
-    projectCode?: string;
+    projectCode?: string | null;
   }>;
 };
 
@@ -74,7 +76,7 @@ export type TableBlock = {
   columns: string[];
   /** Each row is an array of cell strings matching columns length. */
   rows: string[][];
-  caption?: string;
+  caption?: string | null;
 };
 
 export type CalloutBlock = {
@@ -94,7 +96,76 @@ export type Block =
 
 export type AgentResponse = {
   blocks: Block[];
+  userIds: string[];
+  projectIds: string[];
+  phases: string[];
+  dates: string[];
 };
+
+const nullableOptionalString = z.string().nullable().optional();
+
+const agentResponseRuntimeSchema = z.object({
+  blocks: z.array(z.discriminatedUnion("type", [
+    z.object({ type: z.literal("prose"), text: z.string() }).strict(),
+    z.object({
+      type: z.literal("stat_cards"),
+      stats: z.array(z.object({
+        label: z.string(),
+        value: z.string(),
+        sublabel: nullableOptionalString,
+        tone: z.enum(["default", "positive", "warning", "danger", "info"])
+          .nullable()
+          .optional(),
+      }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal("project_list"),
+      projects: z.array(z.object({
+        code: z.string(),
+        title: z.string(),
+        phase: z.string(),
+        workStatus: z.string(),
+        teamInitials: z.array(z.string()),
+        note: nullableOptionalString,
+      }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal("people"),
+      people: z.array(z.object({
+        name: z.string(),
+        initials: z.string(),
+        role: nullableOptionalString,
+        email: nullableOptionalString,
+        caption: nullableOptionalString,
+      }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal("agenda"),
+      items: z.array(z.object({
+        title: z.string(),
+        date: z.string(),
+        priority: z.enum(["critical", "high", "medium", "low"]),
+        status: z.enum(["pending", "in_progress", "completed"]),
+        projectCode: nullableOptionalString,
+      }).strict()),
+    }).strict(),
+    z.object({
+      type: z.literal("table"),
+      columns: z.array(z.string()),
+      rows: z.array(z.array(z.string())),
+      caption: nullableOptionalString,
+    }).strict(),
+    z.object({
+      type: z.literal("callout"),
+      tone: z.enum(["info", "warning", "danger", "success"]),
+      text: z.string(),
+    }).strict(),
+  ])),
+  userIds: z.array(z.string()),
+  projectIds: z.array(z.string()),
+  phases: z.array(z.string()),
+  dates: z.array(z.string()),
+}).strict();
 
 // ── JSON Schema for OpenAI Structured Outputs ──────────────────────────────
 // Hand-written rather than generated because OpenAI's strict mode has
@@ -104,7 +175,7 @@ export type AgentResponse = {
 export const AGENT_RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["blocks"],
+  required: ["blocks", "userIds", "projectIds", "phases", "dates"],
   properties: {
     blocks: {
       type: "array",
@@ -247,6 +318,10 @@ export const AGENT_RESPONSE_SCHEMA = {
         ],
       },
     },
+    userIds: { type: "array", items: { type: "string" } },
+    projectIds: { type: "array", items: { type: "string" } },
+    phases: { type: "array", items: { type: "string" } },
+    dates: { type: "array", items: { type: "string" } },
   },
 } as const;
 
@@ -254,15 +329,8 @@ export const AGENT_RESPONSE_SCHEMA = {
 export function parseAgentResponse(jsonText: string): AgentResponse | null {
   try {
     const parsed = JSON.parse(jsonText) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "blocks" in parsed &&
-      Array.isArray((parsed as { blocks: unknown }).blocks)
-    ) {
-      return parsed as AgentResponse;
-    }
-    return null;
+    const result = agentResponseRuntimeSchema.safeParse(parsed);
+    return result.success ? result.data : null;
   } catch {
     return null;
   }

@@ -13,7 +13,7 @@ import type {
   ChatCompletionCreateParamsStreaming,
   ChatCompletionChunk,
 } from "openai/resources/chat/completions";
-import type { Stream } from "openai/streaming";
+import type { AiSurface } from "./grounding";
 
 export const MAX_FACTUAL_TEMPERATURE = 0.2;
 
@@ -54,6 +54,14 @@ export class AiProviderFailure extends Error {
   }
 }
 
+export interface SafeAiFailure {
+  readonly surface: AiSurface;
+  readonly kind: AiProviderFailureKind;
+  readonly message: string;
+  readonly httpStatus: 429 | 502 | 503;
+  readonly retryable: boolean;
+}
+
 export interface OpenAIStructuredPolicyInput {
   model: string;
   temperature: number;
@@ -64,6 +72,7 @@ export interface OpenAIStructuredPolicyInput {
 export interface OpenAIStructuredPolicy {
   model: string;
   temperature: number;
+  store: false;
   response_format: {
     type: "json_schema";
     json_schema: {
@@ -100,12 +109,12 @@ export interface AnthropicStructuredPolicy {
 
 type OpenAINonStreamingRequest = Omit<
   ChatCompletionCreateParamsNonStreaming,
-  "model" | "temperature" | "response_format" | "stream"
+  "model" | "temperature" | "response_format" | "store" | "stream"
 >;
 
 type OpenAIStreamingRequest = Omit<
   ChatCompletionCreateParamsStreaming,
-  "model" | "temperature" | "response_format" | "stream"
+  "model" | "temperature" | "response_format" | "store" | "stream"
 >;
 
 export function clampFactualTemperature(temperature: number): number {
@@ -122,6 +131,7 @@ export function buildOpenAIStructuredPolicy(
   return {
     model: input.model,
     temperature: clampFactualTemperature(input.temperature),
+    store: false,
     response_format: {
       type: "json_schema",
       json_schema: {
@@ -179,13 +189,22 @@ export async function createOpenAIStructuredStream(
   client: OpenAI,
   request: OpenAIStreamingRequest,
   policyInput: OpenAIStructuredPolicyInput,
-): Promise<Stream<ChatCompletionChunk>> {
+): Promise<AsyncIterable<ChatCompletionChunk>> {
   try {
-    return await client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       ...request,
       ...buildOpenAIStructuredPolicy(policyInput),
       stream: true,
     });
+    return {
+      async *[Symbol.asyncIterator]() {
+        try {
+          for await (const chunk of stream) yield chunk;
+        } catch (error) {
+          throw classifyProviderError(error);
+        }
+      },
+    };
   } catch (error) {
     throw classifyProviderError(error);
   }
@@ -226,6 +245,27 @@ export function classifyProviderError(error: unknown): AiProviderFailure {
     return new AiProviderFailure("unavailable", { status, cause: error });
   }
   return new AiProviderFailure("provider_error", { status, cause: error });
+}
+
+/**
+ * Reduce any provider failure to the only fields an AI surface may expose.
+ * Provider causes can contain partial generations, request bodies, or the
+ * serialised grounding context, so they must never cross an API boundary.
+ */
+export function toSafeAiFailure(surface: AiSurface, error: unknown): SafeAiFailure {
+  const failure = classifyProviderError(error);
+  const httpStatus = failure.kind === "rate_limited"
+    ? 429
+    : failure.kind === "invalid_output"
+      ? 502
+      : 503;
+  return Object.freeze({
+    surface,
+    kind: failure.kind,
+    message: failure.message,
+    httpStatus,
+    retryable: failure.retryable,
+  });
 }
 
 function assertPolicyInput(model: string, schemaName: string, schema: JsonObjectSchema): void {
