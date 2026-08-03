@@ -1,0 +1,7 @@
+{
+  "name": "dbs-architectes-friday",
+  "private": true,
+  "scripts": {
+    "eval:grounding": "npm --prefix app run eval:grounding"
+  }
+}

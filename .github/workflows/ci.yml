@@ -8,34 +8,47 @@ on:
 
 jobs:
   build:
-    name: Typecheck & Build
+    name: Typecheck, Grounding Eval & Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
+        working-directory: app
         run: npm ci
 
       - name: Generate Prisma client
+        working-directory: app
         run: npx prisma generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder' }}
 
       - name: TypeScript check
+        working-directory: app
         run: npx tsc --noEmit
 
+      - name: Grounding evaluation
+        run: pnpm eval:grounding
+
       - name: Build
+        working-directory: app
         run: npm run build
         env:
-          # Required at build time — use dummy values for CI
           DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/ci' }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'ci-secret-placeholder' }}
           NEXTAUTH_URL: http://localhost:3000
