@@ -124,7 +124,7 @@ export default function PlanningAIPage() {
             <div className="bg-[linear-gradient(135deg,#0f172a_0%,#155e75_54%,#0f766e_100%)] px-6 py-8 text-white">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <Badge className="bg-white/12 text-[11px] text-white">Planning intelligence</Badge>
+                  <Badge className="bg-white/12 text-[11px] text-white">AI Assistant · Planning intelligence</Badge>
                   <h1 className="mt-4 text-4xl font-semibold tracking-tight">Planning AI</h1>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-white/74">
                     A precedent and recommendation engine for floor plans, layout archetypes, site strategies, and apartment mix decisions.

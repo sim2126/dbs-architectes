@@ -136,7 +136,7 @@ function UpdateItem({
 
           {(translating || translated || translationError) && (
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
-              Translation · {targetLang.toUpperCase()}
+              AI Assistant · Translation · {targetLang.toUpperCase()}
             </p>
           )}
           {translationError && (

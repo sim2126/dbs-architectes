@@ -1338,6 +1338,9 @@ export default function DBSGPTPage() {
             )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
+            <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em]">
+              AI Assistant
+            </span>
             <span className="hidden sm:flex items-center gap-1 text-[10.5px] text-friday-fg-subtle">
               <kbd className="px-1.5 py-0.5 font-mono text-[10px] border border-friday-border-soft rounded bg-friday-surface">⌘K</kbd>
             </span>

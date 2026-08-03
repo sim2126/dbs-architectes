@@ -55,8 +55,18 @@ export function SummaryRenderer({
   summary: AnySummary;
   recordingUrl?: string | null;
 }) {
-  if (summary.mode === "simple") return <SimpleRenderer s={summary} recordingUrl={recordingUrl ?? null} />;
-  return <DetailedRenderer s={summary} recordingUrl={recordingUrl ?? null} />;
+  return (
+    <>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        AI Assistant
+      </p>
+      {summary.mode === "simple" ? (
+        <SimpleRenderer s={summary} recordingUrl={recordingUrl ?? null} />
+      ) : (
+        <DetailedRenderer s={summary} recordingUrl={recordingUrl ?? null} />
+      )}
+    </>
+  );
 }
 
 function SimpleRenderer({ s, recordingUrl }: { s: SimpleSummary; recordingUrl: string | null }) {

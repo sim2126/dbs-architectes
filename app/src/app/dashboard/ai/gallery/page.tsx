@@ -175,7 +175,7 @@ export default function VisualGalleryPage() {
               <div className="bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#0f766e_100%)] px-6 py-8 text-white">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <Badge className="bg-white/12 text-[11px] text-white">Visual intelligence</Badge>
+                    <Badge className="bg-white/12 text-[11px] text-white">AI Assistant · Visual intelligence</Badge>
                     <h1 className="mt-4 text-4xl font-semibold tracking-tight">Visual Gallery AI</h1>
                     <p className="mt-3 max-w-3xl text-sm leading-7 text-white/74">
                       An AI-powered repository for renders, facades, materials, and architectural references produced by DBS.

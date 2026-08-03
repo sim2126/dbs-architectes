@@ -262,7 +262,7 @@ function MessageItem({
                   <div className="flex items-center gap-1.5">
                     <Languages className="w-3 h-3 text-blue-500 shrink-0" />
                     <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                      Translation · {translationLang.toUpperCase()}
+                      AI Assistant · Translation · {translationLang.toUpperCase()}
                     </span>
                   </div>
                   <button
