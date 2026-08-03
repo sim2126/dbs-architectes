@@ -64,6 +64,7 @@ function UpdateItem({
   );
   const [showReplies, setShowReplies] = useState(false);
   const [translated, setTranslated] = useState<string | null>(null);
+  const [translationError, setTranslationError] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
@@ -85,14 +86,24 @@ function UpdateItem({
       return;
     }
     setTranslating(true);
+    setTranslationError(null);
     try {
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: message.content, targetLang }),
       });
-      const data = (await res.json()) as { translated?: string };
-      if (data.translated) setTranslated(data.translated);
+      const data = (await res.json()) as { translated?: string; error?: string };
+      if (!res.ok || !data.translated) {
+        throw new Error(data.error ?? "AI Assistant could not translate this update. Please try again.");
+      }
+      setTranslated(data.translated);
+    } catch (error) {
+      setTranslationError(
+        error instanceof Error
+          ? error.message
+          : "AI Assistant could not translate this update. Please try again.",
+      );
     } finally {
       setTranslating(false);
     }
@@ -123,6 +134,14 @@ function UpdateItem({
             </button>
           </div>
 
+          {(translating || translated || translationError) && (
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+              Translation · {targetLang.toUpperCase()}
+            </p>
+          )}
+          {translationError && (
+            <p className="mb-1 text-xs text-destructive">{translationError}</p>
+          )}
           <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
             {displayText}
           </p>

@@ -10,6 +10,7 @@ import asyncio
 from celery import Task
 from celery.utils.log import get_task_logger
 
+from app.platform.ai.provider import to_safe_provider_failure
 from app.platform.cache.redis import publish_task_update
 from app.tasks.celery_app import celery_app
 
@@ -25,20 +26,25 @@ def _run_agent_task(
     project_context: dict | None = None,
     thread_id: str | None = None,
 ) -> dict:
-    from app.features.ai.server.dbs_gpt.graph import run_agent
+    from app.features.ai.server.dbs_gpt.graph import run_agent_with_trace
 
-    response = asyncio.run(
-        run_agent(
+    response, trace = asyncio.run(
+        run_agent_with_trace(
             message=message,
             user_id=user_id,
             user_role=user_role,
             project_id=project_id,
             project_context=project_context,
-            thread_id=thread_id or user_id,
+            thread_id=thread_id or task_id,
         )
     )
 
-    result = {"status": "completed", "response": response, "task_id": task_id}
+    result = {
+        "status": "completed",
+        "response": response,
+        "grounding_issues": trace.get("grounding_issues", []),
+        "task_id": task_id,
+    }
     asyncio.run(publish_task_update(task_id, result))
     return result
 
@@ -49,15 +55,17 @@ class AgentTask(Task):
     max_retries = 3
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):
-        logger.error(f"Task {task_id} failed: {exc}")
+        failure = to_safe_provider_failure("dbs-gpt", exc)
+        logger.error("Agent task %s failed (%s)", task_id, failure["kind"])
         asyncio.run(publish_task_update(task_id, {
             "status": "failed",
-            "error": str(exc),
+            "error": failure["message"],
             "task_id": task_id,
         }))
 
     def on_retry(self, exc, task_id, args, kwargs, einfo):
-        logger.warning(f"Task {task_id} retrying due to: {exc}")
+        failure = to_safe_provider_failure("dbs-gpt", exc)
+        logger.warning("Agent task %s retrying (%s)", task_id, failure["kind"])
 
 
 @celery_app.task(
@@ -96,13 +104,14 @@ def run_dbs_gpt_task(
         )
 
     except Exception as exc:
-        logger.error(f"Agent task error: {exc}", exc_info=True)
+        failure = to_safe_provider_failure("dbs-gpt", exc)
+        logger.error("Agent task failed (%s)", failure["kind"], exc_info=True)
         try:
             raise self.retry(exc=exc, countdown=2 ** self.request.retries * 10)
         except self.MaxRetriesExceededError:
             return {
                 "status": "failed",
-                "error": "Agent failed after maximum retries. Please try again.",
+                "error": failure["message"],
                 "task_id": task_id,
             }
 

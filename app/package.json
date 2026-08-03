@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "eval:grounding": "tsx src/platform/ai/grounding-eval.ts",
+    "test:ai": "tsx --test src/platform/ai/*.test.ts src/features/ai/server/agent/*.test.ts",
     "test:work-items": "tsx --test src/features/work-items/domain/compat.test.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",

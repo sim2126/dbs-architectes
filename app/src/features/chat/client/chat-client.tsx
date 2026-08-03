@@ -129,6 +129,7 @@ function MessageItem({
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [translated, setTranslated] = useState<string | null>(null);
+  const [translationError, setTranslationError] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const isDeleted = !!message.deletedAt;
@@ -138,14 +139,24 @@ function MessageItem({
     if (translated) { setShowTranslation((v) => !v); return; }
     setTranslating(true);
     setShowTranslation(true);
+    setTranslationError(null);
     try {
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: message.content, targetLang: translationLang }),
       });
-      const data = await res.json() as { translated?: string };
-      if (data.translated) setTranslated(data.translated);
+      const data = await res.json() as { translated?: string; error?: string };
+      if (!res.ok || !data.translated) {
+        throw new Error(data.error ?? "AI Assistant could not translate this message. Please try again.");
+      }
+      setTranslated(data.translated);
+    } catch (error) {
+      setTranslationError(
+        error instanceof Error
+          ? error.message
+          : "AI Assistant could not translate this message. Please try again.",
+      );
     } finally {
       setTranslating(false);
     }
@@ -245,13 +256,13 @@ function MessageItem({
                 <Loader2 className="w-3 h-3 animate-spin" /> Translating…
               </div>
             )}
-            {showTranslation && translated && (
+            {showTranslation && (translated || translationError) && (
               <div className="mt-2 rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-950/20 px-3 py-2.5">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <Languages className="w-3 h-3 text-blue-500 shrink-0" />
                     <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
-                      Translated · {translationLang.toUpperCase()}
+                      Translation · {translationLang.toUpperCase()}
                     </span>
                   </div>
                   <button
@@ -261,7 +272,9 @@ function MessageItem({
                     Hide
                   </button>
                 </div>
-                <p className="text-sm text-foreground/85 leading-relaxed whitespace-pre-wrap">{translated}</p>
+                <p className="text-sm text-foreground/85 leading-relaxed whitespace-pre-wrap">
+                  {translationError ?? translated}
+                </p>
               </div>
             )}
           </>

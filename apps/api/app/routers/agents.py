@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from app.platform.ai.provider import to_safe_provider_failure
 from app.platform.auth.auth import TokenData, get_current_user
 from app.platform.cache.redis import cache_get, cache_set, get_redis
 from app.platform.cache.redis import check_rate_limit as redis_rate_limit
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     project_id: str | None = None
-    thread_id: str | None = None
+    thread_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class ChatResponse(BaseModel):
@@ -43,6 +44,7 @@ class TaskResult(BaseModel):
     status: str         # queued | running | completed | failed
     response: str | None = None
     error: str | None = None
+    grounding_issues: list[dict] = Field(default_factory=list)
 
 
 class ToolCallTrace(BaseModel):
@@ -57,6 +59,7 @@ class SyncChatResponse(BaseModel):
     visited_nodes: list[str]
     tool_calls: list[ToolCallTrace]
     iteration_count: int
+    grounding_issues: list[dict] = Field(default_factory=list)
 
 
 async def require_project_access(project_id: str | None, current_user: TokenData) -> None:
@@ -142,14 +145,26 @@ async def submit_chat_sync(
 
     logger.info("agent.chat_sync_submitted", user_id=current_user.user_id, message_len=len(body.message))
     start = time.perf_counter()
-    response_text, trace = await run_agent_with_trace(
-        message=body.message,
-        user_id=current_user.user_id,
-        user_role=current_user.role,
-        project_id=body.project_id,
-        project_context=None,
-        thread_id=body.thread_id,
-    )
+    try:
+        response_text, trace = await run_agent_with_trace(
+            message=body.message,
+            user_id=current_user.user_id,
+            user_role=current_user.role,
+            project_id=body.project_id,
+            project_context=None,
+            thread_id=body.thread_id,
+        )
+    except Exception as error:
+        failure = to_safe_provider_failure("dbs-gpt", error)
+        logger.warning(
+            "agent.chat_sync_failed",
+            user_id=current_user.user_id,
+            kind=failure["kind"],
+        )
+        raise HTTPException(
+            status_code=failure["http_status"],
+            detail=failure["message"],
+        ) from None
     duration_ms = (time.perf_counter() - start) * 1000
     logger.info(
         "agent.chat_sync_completed",
@@ -167,6 +182,7 @@ async def submit_chat_sync(
             for tc in trace.get("tool_calls", [])
         ],
         iteration_count=trace.get("iteration_count", 0),
+        grounding_issues=trace.get("grounding_issues", []),
     )
 
 
@@ -192,9 +208,16 @@ async def get_task_result(
             task_id=task_id,
             status=data.get("status", "completed"),
             response=data.get("response"),
+            grounding_issues=data.get("grounding_issues", []),
         )
     if result.state == "FAILURE":
-        return TaskResult(task_id=task_id, status="failed", error=str(result.result))
+        task_error = (
+            result.result
+            if isinstance(result.result, BaseException)
+            else RuntimeError("Agent task failed")
+        )
+        failure = to_safe_provider_failure("dbs-gpt", task_error)
+        return TaskResult(task_id=task_id, status="failed", error=failure["message"])
 
     return TaskResult(task_id=task_id, status=result.state.lower())
 

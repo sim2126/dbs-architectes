@@ -45,6 +45,10 @@ jobs:
       - name: Grounding evaluation
         run: pnpm eval:grounding
 
+      - name: AI contract tests
+        working-directory: app
+        run: npm run test:ai
+
       - name: Build
         working-directory: app
         run: npm run build
@@ -53,3 +57,33 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'ci-secret-placeholder' }}
           NEXTAUTH_URL: http://localhost:3000
           NEXT_PUBLIC_API_URL: ''
+
+  python-ai:
+    name: Python AI Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Ruff
+        run: uv run ruff check app tests
+
+      - name: Mypy
+        run: uv run mypy .
+
+      - name: Tests
+        run: uv run pytest -q

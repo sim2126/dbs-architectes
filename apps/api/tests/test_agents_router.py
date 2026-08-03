@@ -7,6 +7,10 @@ or OpenAI being real — all external edges are stubbed in conftest.
 """
 from __future__ import annotations
 
+import pytest
+
+from app.platform.ai.provider import ProviderFailure
+
 
 async def test_health_endpoint_returns_ok(app_client):
     resp = await app_client.get("/health")
@@ -76,6 +80,49 @@ async def test_chat_sync_runs_agent_inline(app_client, monkeypatch):
     assert len(body["tool_calls"]) == 1
     assert body["tool_calls"][0]["name"] == "get_projects"
     assert body["iteration_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("failure", "status_code", "message"),
+    [
+        (
+            ProviderFailure("unavailable", cause=RuntimeError("secret 500 payload")),
+            503,
+            "AI Assistant is temporarily unavailable. Please try again shortly.",
+        ),
+        (
+            ProviderFailure("timeout", cause=RuntimeError("secret timeout payload")),
+            503,
+            "AI Assistant did not receive a response in time. Please try again.",
+        ),
+        (
+            ProviderFailure("rate_limited", cause=RuntimeError("secret quota payload")),
+            429,
+            "AI Assistant is temporarily busy. Please try again shortly.",
+        ),
+    ],
+)
+async def test_chat_sync_returns_safe_provider_failures(
+    app_client,
+    monkeypatch,
+    failure: ProviderFailure,
+    status_code: int,
+    message: str,
+):
+    async def _fail(**_kwargs):
+        raise failure
+
+    import app.features.ai.server.dbs_gpt.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "run_agent_with_trace", _fail)
+    response = await app_client.post(
+        "/api/agents/chat/sync",
+        json={"message": "Show project health"},
+    )
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": message}
+    assert "secret" not in response.text
 
 
 async def test_chat_sync_rate_limited_after_threshold(app_client, patched_redis, monkeypatch):
