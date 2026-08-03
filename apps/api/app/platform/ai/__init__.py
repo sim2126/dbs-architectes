@@ -31,6 +31,11 @@ from app.platform.ai.grounding import (
     serialise_resolved_context,
     sql_grounding_data_source,
 )
+from app.platform.ai.validation import (
+    GroundingValidationIssue,
+    GroundingValidationResult,
+    validate_grounding,
+)
 
 __all__ = [
     "CANONICAL_PHASES",
@@ -64,4 +69,7 @@ __all__ = [
     "resolve_grounding",
     "serialise_resolved_context",
     "sql_grounding_data_source",
+    "GroundingValidationIssue",
+    "GroundingValidationResult",
+    "validate_grounding",
 ]
