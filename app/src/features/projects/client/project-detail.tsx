@@ -20,7 +20,8 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import { cn, PHASE_COLORS } from "@/ui/utils";
+import { cn, PHASES } from "@/ui/utils";
+import { getPhaseColor, getStatusColor } from "@/ui/tokens";
 import { showToast } from "@/ui/components/toast";
 import { translatePhase, useT } from "@/i18n/translations";
 import type { ProjectDetailData } from "../domain/types";
@@ -44,11 +45,11 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 // Work-status display
-const STATUS_META: Record<string, { label: string; dot: string }> = {
-  todo:      { label: "Not started",   dot: "#a8a59d" },
-  doing:     { label: "On track",      dot: "#22a06b" },
-  stuck:     { label: "Stuck",         dot: "#e2445c" },
-  completed: { label: "Done",          dot: "#1e3a8a" },
+const STATUS_META: Record<string, { label: string }> = {
+  todo:      { label: "Not started" },
+  doing:     { label: "On track" },
+  stuck:     { label: "Stuck" },
+  completed: { label: "Done" },
 };
 
 // Phase canonical → short label + qualifier for the hero badge
@@ -67,8 +68,9 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
   const t = useT();
   const router = useRouter();
   const { project } = data;
-  const phaseColor = PHASE_COLORS[project.phase] ?? "#a8a59d";
+  const phaseColor = getPhaseColor(project.phase);
   const status = STATUS_META[project.workStatus] ?? STATUS_META.todo;
+  const statusColor = getStatusColor(project.workStatus);
   const { short: phaseShort, qualifier: phaseQual } = splitPhase(project.phase);
 
   // Scroll-spy: track which section is currently visible
@@ -161,7 +163,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
   // Move phase — admin/director only
   const [phaseMenu, setPhaseMenu] = useState(false);
   const phaseOptions = useMemo(
-    () => Object.keys(PHASE_COLORS),
+    () => [...PHASES],
     [],
   );
   const [movingPhase, setMovingPhase] = useState(false);
@@ -283,7 +285,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
                     {phaseShort}{phaseQual ? ` — ${phaseQual}` : ""}
                   </span>
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/55 backdrop-blur-sm text-white text-[10.5px] tracking-wide">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: status.dot }} />
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
                     {status.label}
                   </span>
                 </div>
@@ -356,7 +358,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
                 </Stat>
                 <Stat label="Status">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: status.dot }} />
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
                     {status.label}
                   </span>
                 </Stat>
@@ -687,7 +689,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
                         >
                           <span
                             className="w-1.5 h-1.5 rounded-full"
-                            style={{ background: PHASE_COLORS[p] ?? "#a8a59d" }}
+                            style={{ background: getPhaseColor(p) }}
                           />
                           <span className="flex-1">{translatePhase(p, t)}</span>
                           {p === project.phase && (

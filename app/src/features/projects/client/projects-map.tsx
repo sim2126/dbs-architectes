@@ -8,8 +8,8 @@ import {
   Compass, Sparkles, Coffee, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
-import { PHASE_COLORS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
+import { getPhaseColor } from "@/ui/tokens";
 import { Project3DModal } from "@/features/projects/client/project-3d-modal";
 import { showToast } from "@/ui/components/toast";
 
@@ -136,7 +136,7 @@ export function ProjectsMapView({
 
     pinned.forEach((project) => {
       if (project.latitude == null || project.longitude == null) return;
-      const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
+      const phaseColor = getPhaseColor(project.phase);
       const marker = new gm.Marker({
         position: { lat: project.latitude, lng: project.longitude },
         map: mapInstance.current,
@@ -450,7 +450,7 @@ export function ProjectsMapView({
               <div className="absolute bottom-2 left-3">
                 <span
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                  style={{ background: PHASE_COLORS[selected.phase] || "#94a3b8" }}
+                  style={{ background: getPhaseColor(selected.phase) }}
                 >
                   {selected.phase}
                 </span>
@@ -579,7 +579,7 @@ export function ProjectsMapView({
           </div>
           <div className="flex gap-2 overflow-x-auto scrollbar-none pb-0.5">
             {unpinned.map((p) => {
-              const color = PHASE_COLORS[p.phase] || "#94a3b8";
+              const color = getPhaseColor(p.phase);
               return (
                 <button
                   key={p.id}

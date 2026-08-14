@@ -24,8 +24,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/components/card";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { PHASE_COLORS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
+import { getPhaseColor } from "@/ui/tokens";
 
 interface ProjectLite {
   id: string;
@@ -139,7 +139,7 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
   const pieData = phaseDistribution.map((d) => ({
     name: d.phase,
     value: d.count,
-    color: PHASE_COLORS[d.phase] || "#94a3b8",
+    color: getPhaseColor(d.phase),
   }));
 
   const barData = userWorkload

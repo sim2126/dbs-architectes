@@ -9,7 +9,7 @@ import { AlertTriangle, ArrowRight, Check, Circle, Info, X } from "lucide-react"
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/ui/utils";
-import { PHASE_COLORS } from "@/ui/utils";
+import { getPhaseColor, getStatusColor } from "@/ui/tokens";
 import type {
   AgendaBlock,
   Block,
@@ -93,13 +93,6 @@ function StatCardsBlockView({ block }: { block: StatCardsBlock }) {
 
 // ── Project list ──────────────────────────────────────────────────────────
 
-const WORK_STATUS_DOT: Record<string, string> = {
-  todo: "bg-slate-400",
-  doing: "bg-amber-500",
-  stuck: "bg-red-500",
-  completed: "bg-emerald-500",
-};
-
 const WORK_STATUS_LABEL: Record<string, string> = {
   todo: "Not Started",
   doing: "Working on it",
@@ -117,7 +110,7 @@ function ProjectListBlockView({ block }: { block: ProjectListBlock }) {
         >
           <div
             className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: PHASE_COLORS[p.phase] ?? "#94a3b8" }}
+            style={{ background: getPhaseColor(p.phase) }}
             title={`Phase: ${p.phase}`}
           />
           <div className="min-w-0 flex-1">
@@ -131,7 +124,10 @@ function ProjectListBlockView({ block }: { block: ProjectListBlock }) {
             {p.phase}
           </span>
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className={cn("h-1.5 w-1.5 rounded-full", WORK_STATUS_DOT[p.workStatus] ?? "bg-muted")} />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: getStatusColor(p.workStatus) }}
+            />
             <span className="text-[11px] text-muted-foreground">
               {WORK_STATUS_LABEL[p.workStatus] ?? p.workStatus}
             </span>

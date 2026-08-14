@@ -24,6 +24,7 @@ import { cn, PHASES } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProjectThreadPanel } from "@/features/projects/client/project-thread-panel";
 import { buildProjectSyncUpdates } from "@/features/sheets";
+import { getStatusColor } from "@/ui/tokens";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -74,13 +75,6 @@ const WORK_STATUS_OPTIONS = ["todo", "doing", "stuck", "completed"];
 const PHASE_OPTIONS = [...PHASES];
 const BILLING_OPTIONS = ["Completo", "Parziale", "Nessuno", ""];
 
-const STATUS_COLORS: Record<string, string> = {
-  todo: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  doing: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  stuck: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  completed: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-};
-
 const WORKLOAD_COLORS: Record<number, string> = {
   0: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
   1: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
@@ -109,12 +103,12 @@ function DropdownCell({
   value,
   options,
   onChange,
-  colorMap,
+  getColor,
 }: {
   value: string;
   options: string[];
   onChange: (v: string) => void;
-  colorMap?: Record<string, string>;
+  getColor?: (value: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -133,8 +127,9 @@ function DropdownCell({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-colors hover:opacity-80",
-          colorMap?.[value] ?? "bg-muted text-muted-foreground"
+          getColor ? "text-white" : "bg-muted text-muted-foreground"
         )}
+        style={getColor ? { background: getColor(value) } : undefined}
       >
         {value || "—"}
         <ChevronDown className="h-3 w-3 opacity-60" />
@@ -157,8 +152,8 @@ function DropdownCell({
                   value === opt && "font-semibold"
                 )}
               >
-                {colorMap && (
-                  <span className={cn("h-2 w-2 rounded-full", colorMap[opt]?.split(" ")[0])} />
+                {getColor && (
+                  <span className="h-2 w-2 rounded-full" style={{ background: getColor(opt) }} />
                 )}
                 {opt || "—"}
                 {value === opt && <Check className="h-3 w-3 ml-auto text-primary" />}
@@ -857,7 +852,7 @@ function ProjectsTable({
               <EditableCell value={row.commune} onChange={(v) => onUpdate(row.id, "commune", v)} />
             </td>
             <td className="px-3 py-2">
-              <DropdownCell value={row.workStatus} options={WORK_STATUS_OPTIONS} onChange={(v) => onUpdate(row.id, "workStatus", v)} colorMap={STATUS_COLORS} />
+              <DropdownCell value={row.workStatus} options={WORK_STATUS_OPTIONS} onChange={(v) => onUpdate(row.id, "workStatus", v)} getColor={getStatusColor} />
             </td>
             <td className="px-3 py-2">
               <DropdownCell value={row.billing} options={BILLING_OPTIONS} onChange={(v) => onUpdate(row.id, "billing", v)} />

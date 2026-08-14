@@ -19,8 +19,9 @@ import { Badge } from "@/ui/components/badge";
 import { AddProjectModal } from "@/features/projects/client/add-project-modal";
 import { FavoriteStar } from "@/ui/components/favorite-star";
 import { showToast } from "@/ui/components/toast";
-import { PHASE_COLORS, CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
+import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
+import { getPhaseColor, getStatusColor } from "@/ui/tokens";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
@@ -82,18 +83,11 @@ interface ProjectsClientProps {
 // ─── Work Status Config — monday.com palette ─────────────────
 // Solid full-bleed colors, white text (just like monday.com)
 const WORK_STATUS = {
-  todo:      { tKey: "status.not_started",   solid: "#c4c4cf", text: "#fff" },
-  doing:     { tKey: "status.working_on_it", solid: "#fdab3d", text: "#fff" },
-  stuck:     { tKey: "status.stuck",         solid: "#e2445c", text: "#fff" },
-  completed: { tKey: "status.done",          solid: "#00c875", text: "#fff" },
+  todo:      { tKey: "status.not_started" },
+  doing:     { tKey: "status.working_on_it" },
+  stuck:     { tKey: "status.stuck" },
+  completed: { tKey: "status.done" },
 } as const;
-
-// Legacy compat — some components still read .color / .bg
-type WorkStatusEntry = typeof WORK_STATUS[WorkStatusKey] & { color: string; bg: string };
-function wsCompat(key: WorkStatusKey): WorkStatusEntry {
-  const e = WORK_STATUS[key];
-  return { ...e, color: e.solid, bg: e.solid };
-}
 
 type WorkStatusKey = keyof typeof WORK_STATUS;
 const WORK_STATUS_KEYS = Object.keys(WORK_STATUS) as WorkStatusKey[];
@@ -222,7 +216,7 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
   // Group projects by phase for table view
   const grouped = PHASE_ORDER.map((phase) => ({
     phase,
-    color: PHASE_COLORS[phase] || "#94a3b8",
+    color: getPhaseColor(phase),
     projects: filteredProjects.filter((p) => p.phase === phase),
   })).filter((g) => g.projects.length > 0);
 
@@ -262,7 +256,7 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
 
           {/* Row 2: filter chips — scrollable, never wraps */}
           <div className="flex items-center gap-1.5 px-5 pb-2.5 overflow-x-auto scrollbar-none">
-            <FilterPopover label={t("projects.filter.phase")} options={PHASES.map((p) => ({ value: p, label: p, color: PHASE_COLORS[p] }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
+            <FilterPopover label={t("projects.filter.phase")} options={PHASES.map((p) => ({ value: p, label: p, color: getPhaseColor(p) }))} selected={filters.phases} onToggle={(v) => toggleFilter("phases", v)} />
             <FilterPopover label={t("projects.filter.category")} options={CATEGORIES.map((c) => ({ value: c, label: c }))} selected={filters.categories} onToggle={(v) => toggleFilter("categories", v)} />
             <FilterPopover
               label="Country"
@@ -454,6 +448,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
   const statusDropdownRef = useRef<HTMLDivElement>(null);
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
   const ws = WORK_STATUS[wsKey];
+  const wsColor = getStatusColor(wsKey);
 
   const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
   const canUpdateStatus = canEdit || isAssignee;
@@ -550,11 +545,11 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
             setShowStatusMenu((v) => !v);
           }}
           className={cn(
-            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold transition-all",
+            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold text-white transition-all",
             canUpdateStatus && "hover:opacity-90 cursor-pointer",
             !canUpdateStatus && "cursor-default"
           )}
-          style={{ background: ws.solid, color: ws.text }}
+          style={{ background: wsColor }}
           disabled={updatingStatus}
         >
           {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : t(ws.tKey)}
@@ -578,7 +573,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                     "flex items-center justify-between w-full px-3 py-2.5 text-white text-sm font-bold transition-opacity",
                     wsKey === key ? "opacity-100" : "opacity-90 hover:opacity-100"
                   )}
-                  style={{ background: s.solid }}
+                  style={{ background: getStatusColor(key) }}
                 >
                   {t(s.tKey)}
                   {wsKey === key && <Check className="w-4 h-4 opacity-80" />}
@@ -701,9 +696,10 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
     });
     onUpdate({ id: project.id, latitude: null, longitude: null, address: null });
   };
-  const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
+  const phaseColor = getPhaseColor(project.phase);
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
   const ws = WORK_STATUS[wsKey];
+  const wsColor = getStatusColor(wsKey);
   const isAssignee = project.assignments.some((a) => a.userId === currentUserId);
   const canUpdateStatus = canEdit || isAssignee;
 
@@ -750,7 +746,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
           <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
             {translatePhase(project.phase, t)}
           </span>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: ws.solid }}>
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: wsColor }}>
             {t(ws.tKey)}
           </span>
         </div>
@@ -772,7 +768,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                       "flex items-center justify-center gap-1.5 px-2 py-2 rounded text-xs font-bold text-white transition-all",
                       isActive ? "ring-2 ring-offset-1 ring-offset-background" : "opacity-70 hover:opacity-100"
                     )}
-                    style={{ background: s.solid, ...(isActive ? { ringColor: s.solid } : {}) }}
+                    style={{ background: getStatusColor(key), ...(isActive ? { ringColor: getStatusColor(key) } : {}) }}
                   >
                     {isActive && updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                     {isActive && !updatingStatus ? <Check className="w-3 h-3" /> : null}
@@ -987,9 +983,10 @@ function ProjectCard({
   starred: boolean;
 }) {
   const t = useT();
-  const phaseColor = PHASE_COLORS[project.phase] || "#94a3b8";
+  const phaseColor = getPhaseColor(project.phase);
   const wsKey = (project.workStatus as WorkStatusKey) in WORK_STATUS ? project.workStatus as WorkStatusKey : "todo";
   const ws = WORK_STATUS[wsKey];
+  const wsColor = getStatusColor(wsKey);
   return (
     <motion.div
       layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
@@ -1018,7 +1015,7 @@ function ProjectCard({
         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
           {translatePhase(project.phase, t)}
         </div>
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ws.solid }}>
+        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: wsColor }}>
           {t(ws.tKey)}
         </div>
         {project.assignments.length > 0 && (

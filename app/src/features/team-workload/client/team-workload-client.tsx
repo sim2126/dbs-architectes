@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { cn, PHASE_COLORS } from "@/ui/utils";
+import { cn } from "@/ui/utils";
+import { getPhaseColor } from "@/ui/tokens";
 import type {
   TeamMemberWorkload,
   TeamWorkloadData,
@@ -279,7 +280,7 @@ function MemberCard({ m }: { m: TeamMemberWorkload }) {
                 >
                   <span
                     className="w-[5px] h-[5px] rounded-full"
-                    style={{ background: PHASE_COLORS[p.phase] ?? "#a8a59d" }}
+                    style={{ background: getPhaseColor(p.phase) }}
                   />
                   {p.code}
                 </Link>

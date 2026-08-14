@@ -5,7 +5,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { AlertTriangle, ArrowUpRight, CalendarClock, Clock3, Gauge, Sparkles, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { PHASE_COLORS } from "@/ui/utils";
+import { getPhaseColor } from "@/ui/tokens";
 import { translatePhase, useT } from "@/i18n/translations";
 import { formatDistanceToNow } from "date-fns";
 
@@ -328,7 +328,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
 
             <div className="flex gap-4 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin]">
               {data.starred.map((p) => {
-                const phaseColor = PHASE_COLORS[p.phase] || "#94a3b8";
+                const phaseColor = getPhaseColor(p.phase);
                 return (
                   <Link
                     key={p.id}

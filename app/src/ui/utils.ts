@@ -94,13 +94,4 @@ export const OPERATING_REGIONS: Record<string, { value: string; label: string; c
   ],
 };
 
-export const PHASE_COLORS: Record<string, string> = {
-  "ETUDE/AP": "#ef4444",
-  MAE: "#22c55e",
-  CHANTIER: "#3b82f6",
-  "EXE/DG/DV/3D": "#f97316",
-  TERMINATO: "#8b5cf6",
-  STUCK: "#6b7280",
-};
-
 export const BILLING_OPTIONS = ["Non", "Parziale", "Completo"] as const;
