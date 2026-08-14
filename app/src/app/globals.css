@@ -28,6 +28,10 @@
   --friday-accent-soft:   rgba(30, 58, 138, 0.08);
   --friday-accent-ring:   rgba(30, 58, 138, 0.30);
 
+  /* DBS brand mark — fixed artwork colour, never themed */
+  --friday-brand-mark: #c9a96e;
+  --friday-auth-feature-icon: #bfdbfe;
+
   /* Phase palette (locked — preserved from product spec, NOT replaced
      by Claude Design's SIA palette because the database stores phase
      names not numbers) */
@@ -50,6 +54,77 @@
   --friday-error-border: #e8d9b8;
   --friday-error-fg:     #7c5310;
   --friday-success-fg:   #15803d;
+  --friday-success-bg:   #e8efe6;
+  --friday-success-soft-fg: #3f6534;
+  --friday-denial-fg:    #b91c1c;
+  --friday-warning-fill: #c4994a;
+
+  /* Project health */
+  --friday-health-on-track:       #22a06b;
+  --friday-health-on-track-bg:    #e8efe6;
+  --friday-health-on-track-fg:    #3f6534;
+  --friday-health-at-risk:        #c4994a;
+  --friday-health-at-risk-bg:     #f5ecd9;
+  --friday-health-at-risk-fg:     #7a5a14;
+  --friday-health-off-track:      #e2445c;
+  --friday-health-off-track-bg:   rgba(226, 68, 92, 0.10);
+  --friday-health-off-track-fg:   #a82038;
+
+  /* Team workload */
+  --friday-workload-balanced:     #22a06b;
+  --friday-workload-balanced-bg:  #e8efe6;
+  --friday-workload-balanced-fg:  #3f6534;
+  --friday-workload-heavy:        #c4994a;
+  --friday-workload-heavy-bg:     #f5ecd9;
+  --friday-workload-heavy-fg:     #7a5a14;
+  --friday-workload-overloaded:   #e2445c;
+  --friday-workload-overloaded-bg: rgba(226, 68, 92, 0.10);
+  --friday-workload-overloaded-fg: #a82038;
+
+  /* Activity categories */
+  --friday-activity-project-created: #22c55e;
+  --friday-activity-project-updated: #3b82f6;
+  --friday-activity-project-deleted: #ef4444;
+  --friday-activity-user-joined:     #8b5cf6;
+  --friday-activity-user-updated:    #6366f1;
+  --friday-activity-file-uploaded:   #f59e0b;
+  --friday-activity-fallback:        #94a3b8;
+
+  /* Agenda presentation. Persisted agenda colour values remain raw data. */
+  --friday-agenda-task:      #3b82f6;
+  --friday-agenda-deadline:  #ef4444;
+  --friday-agenda-milestone: #22c55e;
+  --friday-agenda-meeting:   #f59e0b;
+  --friday-agenda-fallback:  #94a3b8;
+
+  /* User-selectable workspace brand presets — invariant stored colours */
+  --friday-brand-preset-1: #1e3a8a;
+  --friday-brand-preset-2: #7a8b6f;
+  --friday-brand-preset-3: #c4994a;
+  --friday-brand-preset-4: #5a3a3a;
+  --friday-brand-preset-5: #2a3a3a;
+  --friday-brand-preset-6: #1a1a18;
+
+  /* Chart series — shadcn naming plus one semantic sixth DBS category */
+  --chart-1: #3b82f6;
+  --chart-2: #f59e0b;
+  --chart-3: #8b5cf6;
+  --chart-4: #10b981;
+  --chart-5: #ec4899;
+  --friday-chart-renovation: #f97316;
+  --friday-chart-completed: #e5e7eb;
+  --friday-chart-fallback:  #94a3b8;
+
+  /* Named gradients replace component-local design-comp measurements */
+  --friday-gradient-auth-page: linear-gradient(180deg, var(--friday-surface-2) 0%, var(--friday-surface) 32%, var(--friday-surface-2) 100%);
+  --friday-gradient-gallery-page: linear-gradient(180deg, var(--friday-bg) 0%, var(--friday-surface) 34%, var(--friday-bg) 100%);
+  --friday-gradient-planning-page: linear-gradient(180deg, var(--friday-bg) 0%, var(--friday-surface) 36%, var(--friday-bg) 100%);
+  --friday-gradient-auth-hero: linear-gradient(135deg, #0f172a 0%, var(--friday-accent) 54%, #155e75 100%);
+  --friday-gradient-gallery-hero: linear-gradient(135deg, #0f172a 0%, var(--friday-accent) 56%, #0f766e 100%);
+  --friday-gradient-planning-hero: linear-gradient(135deg, #0f172a 0%, #155e75 54%, #0f766e 100%);
+  --friday-gradient-gallery-placeholder: linear-gradient(135deg, #eef2ff 0%, var(--friday-bg) 42%, #edf7f1 100%);
+  --friday-gradient-planning-placeholder: linear-gradient(135deg, #eef2ff 0%, var(--friday-bg) 50%, #edf7f1 100%);
+  --friday-gradient-plan: linear-gradient(135deg, #1a1a18 0%, #2a2a26 100%);
 
   /* shadcn/ui mappings — every existing component picks up the new
      palette through these. Do NOT remove these names; the whole UI
@@ -109,11 +184,86 @@
   --friday-accent-soft:   rgba(30, 58, 138, 0.18);
   --friday-accent-ring:   rgba(30, 58, 138, 0.45);
 
+  /* DBS brand mark stays locked across themes */
+  --friday-brand-mark: #c9a96e;
+  --friday-auth-feature-icon: #bfdbfe;
+
   /* Status — semantic, with the bg/border tuned for dark contrast */
   --friday-error-bg:     #2a1f10;
   --friday-error-border: #4d3a1a;
   --friday-error-fg:     #e8c374;
   --friday-success-fg:   #4ade80;
+  --friday-success-bg:   #1b2a18;
+  --friday-success-soft-fg: #9fc58f;
+  --friday-denial-fg:    #fca5a5;
+  --friday-warning-fill: #e8c374;
+
+  /* Project health */
+  --friday-health-on-track:       #4ade80;
+  --friday-health-on-track-bg:    #17291f;
+  --friday-health-on-track-fg:    #9bd4b7;
+  --friday-health-at-risk:        #e8c374;
+  --friday-health-at-risk-bg:     #2a2418;
+  --friday-health-at-risk-fg:     #f0cf84;
+  --friday-health-off-track:      #fb7185;
+  --friday-health-off-track-bg:   rgba(251, 113, 133, 0.14);
+  --friday-health-off-track-fg:   #fda4af;
+
+  /* Team workload */
+  --friday-workload-balanced:      #4ade80;
+  --friday-workload-balanced-bg:   #17291f;
+  --friday-workload-balanced-fg:   #9bd4b7;
+  --friday-workload-heavy:         #e8c374;
+  --friday-workload-heavy-bg:      #2a2418;
+  --friday-workload-heavy-fg:      #f0cf84;
+  --friday-workload-overloaded:    #fb7185;
+  --friday-workload-overloaded-bg: rgba(251, 113, 133, 0.14);
+  --friday-workload-overloaded-fg: #fda4af;
+
+  /* Activity categories */
+  --friday-activity-project-created: #4ade80;
+  --friday-activity-project-updated: #60a5fa;
+  --friday-activity-project-deleted: #f87171;
+  --friday-activity-user-joined:     #a78bfa;
+  --friday-activity-user-updated:    #818cf8;
+  --friday-activity-file-uploaded:   #fbbf24;
+  --friday-activity-fallback:        #cbd5e1;
+
+  /* Agenda presentation */
+  --friday-agenda-task:      #60a5fa;
+  --friday-agenda-deadline:  #f87171;
+  --friday-agenda-milestone: #4ade80;
+  --friday-agenda-meeting:   #fbbf24;
+  --friday-agenda-fallback:  #cbd5e1;
+
+  /* Stored workspace brand choices remain invariant */
+  --friday-brand-preset-1: #1e3a8a;
+  --friday-brand-preset-2: #7a8b6f;
+  --friday-brand-preset-3: #c4994a;
+  --friday-brand-preset-4: #5a3a3a;
+  --friday-brand-preset-5: #2a3a3a;
+  --friday-brand-preset-6: #1a1a18;
+
+  /* Dark-tuned chart series */
+  --chart-1: #60a5fa;
+  --chart-2: #fbbf24;
+  --chart-3: #a78bfa;
+  --chart-4: #34d399;
+  --chart-5: #f472b6;
+  --friday-chart-renovation: #fb923c;
+  --friday-chart-completed: #4b5563;
+  --friday-chart-fallback:  #64748b;
+
+  /* Every named gradient has an explicit dark definition */
+  --friday-gradient-auth-page: linear-gradient(180deg, var(--friday-surface-2) 0%, var(--friday-surface) 32%, var(--friday-surface-2) 100%);
+  --friday-gradient-gallery-page: linear-gradient(180deg, var(--friday-bg) 0%, var(--friday-surface) 34%, var(--friday-bg) 100%);
+  --friday-gradient-planning-page: linear-gradient(180deg, var(--friday-bg) 0%, var(--friday-surface) 36%, var(--friday-bg) 100%);
+  --friday-gradient-auth-hero: linear-gradient(135deg, #0f172a 0%, var(--friday-accent) 54%, #155e75 100%);
+  --friday-gradient-gallery-hero: linear-gradient(135deg, #0f172a 0%, var(--friday-accent) 56%, #0f766e 100%);
+  --friday-gradient-planning-hero: linear-gradient(135deg, #0f172a 0%, #155e75 54%, #0f766e 100%);
+  --friday-gradient-gallery-placeholder: linear-gradient(135deg, var(--friday-surface-2) 0%, var(--friday-surface-3) 42%, var(--friday-surface-2) 100%);
+  --friday-gradient-planning-placeholder: linear-gradient(135deg, var(--friday-surface-2) 0%, var(--friday-surface-3) 50%, var(--friday-surface-2) 100%);
+  --friday-gradient-plan: linear-gradient(135deg, #1a1a18 0%, #2a2a26 100%);
 
   /* shadcn bridge — identical mapping to :root, but bound to dark tokens */
   --background:          var(--friday-bg);
@@ -170,6 +320,58 @@
   --color-friday-accent: var(--friday-accent);
   --color-friday-accent-fg: var(--friday-accent-fg);
   --color-friday-accent-soft: var(--friday-accent-soft);
+  --color-friday-brand-mark: var(--friday-brand-mark);
+  --color-friday-auth-feature-icon: var(--friday-auth-feature-icon);
+  --color-friday-success-bg: var(--friday-success-bg);
+  --color-friday-success-soft-fg: var(--friday-success-soft-fg);
+  --color-friday-denial-fg: var(--friday-denial-fg);
+  --color-friday-warning-fill: var(--friday-warning-fill);
+
+  /* Project health */
+  --color-friday-health-on-track: var(--friday-health-on-track);
+  --color-friday-health-on-track-bg: var(--friday-health-on-track-bg);
+  --color-friday-health-on-track-fg: var(--friday-health-on-track-fg);
+  --color-friday-health-at-risk: var(--friday-health-at-risk);
+  --color-friday-health-at-risk-bg: var(--friday-health-at-risk-bg);
+  --color-friday-health-at-risk-fg: var(--friday-health-at-risk-fg);
+  --color-friday-health-off-track: var(--friday-health-off-track);
+  --color-friday-health-off-track-bg: var(--friday-health-off-track-bg);
+  --color-friday-health-off-track-fg: var(--friday-health-off-track-fg);
+
+  /* Team workload */
+  --color-friday-workload-balanced: var(--friday-workload-balanced);
+  --color-friday-workload-balanced-bg: var(--friday-workload-balanced-bg);
+  --color-friday-workload-balanced-fg: var(--friday-workload-balanced-fg);
+  --color-friday-workload-heavy: var(--friday-workload-heavy);
+  --color-friday-workload-heavy-bg: var(--friday-workload-heavy-bg);
+  --color-friday-workload-heavy-fg: var(--friday-workload-heavy-fg);
+  --color-friday-workload-overloaded: var(--friday-workload-overloaded);
+  --color-friday-workload-overloaded-bg: var(--friday-workload-overloaded-bg);
+  --color-friday-workload-overloaded-fg: var(--friday-workload-overloaded-fg);
+
+  /* Activity and agenda */
+  --color-friday-activity-project-created: var(--friday-activity-project-created);
+  --color-friday-activity-project-updated: var(--friday-activity-project-updated);
+  --color-friday-activity-project-deleted: var(--friday-activity-project-deleted);
+  --color-friday-activity-user-joined: var(--friday-activity-user-joined);
+  --color-friday-activity-user-updated: var(--friday-activity-user-updated);
+  --color-friday-activity-file-uploaded: var(--friday-activity-file-uploaded);
+  --color-friday-activity-fallback: var(--friday-activity-fallback);
+  --color-friday-agenda-task: var(--friday-agenda-task);
+  --color-friday-agenda-deadline: var(--friday-agenda-deadline);
+  --color-friday-agenda-milestone: var(--friday-agenda-milestone);
+  --color-friday-agenda-meeting: var(--friday-agenda-meeting);
+  --color-friday-agenda-fallback: var(--friday-agenda-fallback);
+
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-friday-chart-renovation: var(--friday-chart-renovation);
+  --color-friday-chart-completed: var(--friday-chart-completed);
+  --color-friday-chart-fallback: var(--friday-chart-fallback);
 
   /* Phase / status colors as Tailwind utilities */
   --color-phase-etude-ap: var(--phase-etude-ap);

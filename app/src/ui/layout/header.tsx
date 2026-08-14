@@ -10,6 +10,7 @@ import { useT } from "@/i18n/translations";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/ui/utils";
+import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -34,12 +35,12 @@ interface MentionItem {
 type TabId = "all" | "mentions" | "updates";
 
 const ACTIVITY_COLORS: Record<string, string> = {
-  PROJECT_CREATED: "#22c55e",
-  PROJECT_UPDATED: "#3b82f6",
-  PROJECT_DELETED: "#ef4444",
-  USER_JOINED: "#8b5cf6",
-  USER_UPDATED: "#6366f1",
-  FILE_UPLOADED: "#f59e0b",
+  PROJECT_CREATED: FRIDAY_TOKENS.activity.projectCreated,
+  PROJECT_UPDATED: FRIDAY_TOKENS.activity.projectUpdated,
+  PROJECT_DELETED: FRIDAY_TOKENS.activity.projectDeleted,
+  USER_JOINED: FRIDAY_TOKENS.activity.userJoined,
+  USER_UPDATED: FRIDAY_TOKENS.activity.userUpdated,
+  FILE_UPLOADED: FRIDAY_TOKENS.activity.fileUploaded,
 };
 
 // ─── Header ────────────────────────────────────────────────────
@@ -333,7 +334,7 @@ export function Header({ title }: { title?: string }) {
                       {/* Activities */}
                       {visibleActivities.map((activity) => {
                         const isUnread = !readActivityIds.has(activity.id);
-                        const color = ACTIVITY_COLORS[activity.type] || "#94a3b8";
+                        const color = ACTIVITY_COLORS[activity.type] || FRIDAY_TOKENS.activity.fallback;
                         return (
                           <div
                             key={`a-${activity.id}`}

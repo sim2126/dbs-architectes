@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 export function LandingPage({ hasSession }: { hasSession: boolean }) {
   return (
-    <div className="min-h-screen bg-[#fafaf8] text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 flex flex-col">
+    <div className="min-h-screen bg-friday-bg text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 flex flex-col">
       {/* ─── Top bar ─── */}
       <header className="flex items-center justify-between px-8 md:px-12 py-6">
         <Link href="/" className="flex items-center gap-3">
@@ -17,8 +18,8 @@ export function LandingPage({ hasSession }: { hasSession: boolean }) {
             className="w-8 h-8"
           >
             <rect x="2" y="2" width="28" height="28" stroke="currentColor" strokeWidth="2.8" />
-            <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e" />
-            <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e" />
+            <rect x="23.5" y="2" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark} />
+            <rect x="2" y="23.5" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark} />
             <text
               x="16"
               y="20.5"

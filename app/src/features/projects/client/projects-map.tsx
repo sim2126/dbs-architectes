@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/ui/utils";
-import { getPhaseColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor, resolveFridayColor } from "@/ui/tokens";
 import { Project3DModal } from "@/features/projects/client/project-3d-modal";
 import { showToast } from "@/ui/components/toast";
 
@@ -136,7 +136,8 @@ export function ProjectsMapView({
 
     pinned.forEach((project) => {
       if (project.latitude == null || project.longitude == null) return;
-      const phaseColor = getPhaseColor(project.phase);
+      const phaseColor = resolveFridayColor(getPhaseColor(project.phase));
+      const markerContrastColor = resolveFridayColor(FRIDAY_TOKENS.accentFg);
       const marker = new gm.Marker({
         position: { lat: project.latitude, lng: project.longitude },
         map: mapInstance.current,
@@ -145,13 +146,13 @@ export function ProjectsMapView({
           path: gm.SymbolPath.CIRCLE,
           fillColor: phaseColor,
           fillOpacity: 1,
-          strokeColor: "#ffffff",
+          strokeColor: markerContrastColor,
           strokeWeight: 2.5,
           scale: 13,
         },
         label: {
           text: project.code.slice(-3),
-          color: "#ffffff",
+          color: markerContrastColor,
           fontSize: "8px",
           fontWeight: "bold",
         },

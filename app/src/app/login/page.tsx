@@ -17,6 +17,7 @@ import { Button } from "@/ui/components/button";
 import { Card, CardContent } from "@/ui/components/card";
 import { Input } from "@/ui/components/input";
 import { Label } from "@/ui/components/label";
+import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -93,12 +94,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f8fa_0%,#ffffff_32%,#f7f4ef_100%)] px-6 py-8">
+    <div className="min-h-screen px-6 py-8" style={{ background: FRIDAY_TOKENS.gradient.authPage }}>
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl gap-6 lg:grid-cols-[1.05fr_0.95fr]">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-[36px] bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_54%,#155e75_100%)] p-8 text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] sm:p-10"
+          className="relative overflow-hidden rounded-[36px] p-8 text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] sm:p-10"
+          style={{ background: FRIDAY_TOKENS.gradient.authHero }}
         >
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_28%)]" />
           <div className="relative flex h-full flex-col">
@@ -106,8 +108,8 @@ export default function LoginPage() {
               {/* DBS | Friday logo mark — white version for dark bg */}
               <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-11 h-11 shrink-0">
                 <rect x="2" y="2" width="28" height="28" stroke="white" strokeWidth="2.8"/>
-                <rect x="23.5" y="2" width="6.5" height="6.5" fill="#c9a96e"/>
-                <rect x="2" y="23.5" width="6.5" height="6.5" fill="#c9a96e"/>
+                <rect x="23.5" y="2" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark}/>
+                <rect x="2" y="23.5" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark}/>
                 <text x="16" y="20.5" textAnchor="middle" fontSize="9.5" fontWeight="800" fill="white" fontFamily="system-ui, -apple-system, sans-serif">DBS</text>
               </svg>
               <div>
@@ -133,7 +135,7 @@ export default function LoginPage() {
                 { icon: Lock, title: "Secure access", text: "Centralized permissions and ownership" },
               ].map((item) => (
                 <div key={item.title} className="rounded-2xl border border-white/10 bg-white/6 p-4 backdrop-blur-sm">
-                  <item.icon className="h-4 w-4 text-[#bfdbfe]" />
+                  <item.icon className="h-4 w-4 text-friday-auth-feature-icon" />
                   <p className="mt-3 text-sm font-semibold">{item.title}</p>
                   <p className="mt-2 text-xs leading-6 text-white/70">{item.text}</p>
                 </div>

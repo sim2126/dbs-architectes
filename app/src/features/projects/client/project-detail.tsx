@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { cn, PHASES } from "@/ui/utils";
-import { getPhaseColor, getStatusColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor, getStatusColor } from "@/ui/tokens";
 import { showToast } from "@/ui/components/toast";
 import { translatePhase, useT } from "@/i18n/translations";
 import type { ProjectDetailData } from "../domain/types";
@@ -1270,9 +1270,9 @@ const HEALTH_META: Record<
   StatusUpdateRow["health"],
   { label: string; dotColor: string; bg: string; fg: string }
 > = {
-  on_track:  { label: "On track",  dotColor: "#22a06b", bg: "#e8efe6", fg: "#3f6534" },
-  at_risk:   { label: "At risk",   dotColor: "#c4994a", bg: "#f5ecd9", fg: "#7a5a14" },
-  off_track: { label: "Off track", dotColor: "#e2445c", bg: "rgba(226, 68, 92, 0.10)", fg: "#a82038" },
+  on_track:  { label: "On track",  dotColor: FRIDAY_TOKENS.health.onTrack.color, bg: FRIDAY_TOKENS.health.onTrack.bg, fg: FRIDAY_TOKENS.health.onTrack.fg },
+  at_risk:   { label: "At risk",   dotColor: FRIDAY_TOKENS.health.atRisk.color, bg: FRIDAY_TOKENS.health.atRisk.bg, fg: FRIDAY_TOKENS.health.atRisk.fg },
+  off_track: { label: "Off track", dotColor: FRIDAY_TOKENS.health.offTrack.color, bg: FRIDAY_TOKENS.health.offTrack.bg, fg: FRIDAY_TOKENS.health.offTrack.fg },
 };
 
 function StatusSection({
@@ -1772,12 +1772,12 @@ function AgendaRow({
   const isDone = item.status === "done";
   const dotColor =
     item.priority === "critical" || item.priority === "high"
-      ? "#e2445c"
+      ? FRIDAY_TOKENS.health.offTrack.color
       : item.priority === "medium"
-        ? "#fdab3d"
+        ? FRIDAY_TOKENS.status.doing
         : isDone
-          ? "var(--friday-fg-subtle)"
-          : "#22a06b";
+          ? FRIDAY_TOKENS.fgSubtle
+          : FRIDAY_TOKENS.health.onTrack.color;
   return (
     <div
       className={cn(
@@ -1788,7 +1788,7 @@ function AgendaRow({
     >
       <span
         className="w-1.5 h-1.5 rounded-full"
-        style={{ background: isDone ? "var(--friday-fg-subtle)" : dotColor }}
+        style={{ background: isDone ? FRIDAY_TOKENS.fgSubtle : dotColor }}
       />
       <span className="font-mono text-[11px] text-friday-fg-muted">
         {date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}

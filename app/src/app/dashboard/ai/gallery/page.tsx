@@ -17,6 +17,7 @@ import { Badge } from "@/ui/components/badge";
 import { Button } from "@/ui/components/button";
 import { Card, CardContent } from "@/ui/components/card";
 import { Input } from "@/ui/components/input";
+import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 const SAMPLE_IMAGES = [
   {
@@ -115,7 +116,7 @@ export default function VisualGalleryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f9fbff_0%,#ffffff_34%,#f8f8f8_100%)] p-6">
+    <div className="min-h-screen p-6" style={{ background: FRIDAY_TOKENS.gradient.galleryPage }}>
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-4">
           <Card className="border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
@@ -172,7 +173,7 @@ export default function VisualGalleryPage() {
         <div className="space-y-6">
           <Card className="overflow-hidden border-border bg-card shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
             <CardContent className="p-0">
-              <div className="bg-[linear-gradient(135deg,#0f172a_0%,#1e3a8a_56%,#0f766e_100%)] px-6 py-8 text-white">
+              <div className="px-6 py-8 text-white" style={{ background: FRIDAY_TOKENS.gradient.galleryHero }}>
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <Badge className="bg-white/12 text-[11px] text-white">AI Assistant · Visual intelligence</Badge>
@@ -266,7 +267,10 @@ export default function VisualGalleryPage() {
               >
                 <Card className="overflow-hidden border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                   <CardContent className="p-0">
-                    <div className="relative aspect-[4/3] border-b border-border bg-[linear-gradient(135deg,#eef2ff_0%,#f5f7fb_42%,#edf7f1_100%)]">
+                    <div
+                      className="relative aspect-[4/3] border-b border-border"
+                      style={{ background: FRIDAY_TOKENS.gradient.galleryPlaceholder }}
+                    >
                       <div className="absolute left-4 top-4 flex gap-2">
                         <Badge className="bg-black/60 text-[10px] text-white">{image.type}</Badge>
                         <Badge className="bg-black/60 text-[10px] text-white">{image.floors} floors</Badge>

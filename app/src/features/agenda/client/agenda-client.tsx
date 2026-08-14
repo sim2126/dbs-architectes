@@ -43,6 +43,8 @@ import {
   SelectValue,
 } from "@/ui/components/select";
 import { cn } from "@/ui/utils";
+import { FRIDAY_TOKENS, getAgendaTypeColor } from "@/ui/tokens";
+import { DEFAULT_AGENDA_COLOUR } from "../domain/agenda-colours";
 
 interface AgendaItem {
   id: string;
@@ -65,13 +67,6 @@ interface AgendaClientProps {
   projects: { id: string; title: string; code: string }[];
   currentUserId: string;
 }
-
-const TYPE_COLORS = {
-  task: "#3b82f6",
-  deadline: "#ef4444",
-  milestone: "#22c55e",
-  meeting: "#f59e0b",
-};
 
 const TYPE_ICONS = {
   task: Circle,
@@ -103,7 +98,7 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
     type: "task",
     priority: "medium",
     projectId: "",
-    color: "#3b82f6",
+    color: DEFAULT_AGENDA_COLOUR,
   });
 
   // Check Google Calendar connection on mount
@@ -189,7 +184,7 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
           type: "task",
           priority: "medium",
           projectId: "",
-          color: "#3b82f6",
+          color: DEFAULT_AGENDA_COLOUR,
         });
       }
     } finally {
@@ -302,7 +297,11 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
                           <div
                             key={i}
                             className="w-1 h-1 rounded-full"
-                            style={{ background: isSelected ? "white" : (TYPE_COLORS[item.type as keyof typeof TYPE_COLORS] || "#94a3b8") }}
+                            style={{
+                              background: isSelected
+                                ? FRIDAY_TOKENS.accentFg
+                                : getAgendaTypeColor(item.type),
+                            }}
                           />
                         ))}
                       </div>
@@ -340,7 +339,7 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
                             <div key={item.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40">
                               <Icon
                                 className="w-4 h-4 mt-0.5 shrink-0"
-                                style={{ color: TYPE_COLORS[item.type as keyof typeof TYPE_COLORS] }}
+                                style={{ color: getAgendaTypeColor(item.type) }}
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium">{item.title}</p>
@@ -427,7 +426,7 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
                       >
                         <div
                           className="w-0.5 h-full rounded-full min-h-[40px]"
-                          style={{ background: item.color || TYPE_COLORS[item.type as keyof typeof TYPE_COLORS] || "#94a3b8" }}
+                          style={{ background: item.color || getAgendaTypeColor(item.type) }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold line-clamp-1">{item.title}</p>
@@ -476,14 +475,17 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
           {/* Quick stats */}
           <div className="grid grid-cols-2 gap-3 mt-4">
             {[
-              { label: "Task", type: "task", color: "#3b82f6" },
-              { label: "Deadline", type: "deadline", color: "#ef4444" },
-              { label: "Milestone", type: "milestone", color: "#22c55e" },
-              { label: "Meeting", type: "meeting", color: "#f59e0b" },
+              { label: "Task", type: "task" },
+              { label: "Deadline", type: "deadline" },
+              { label: "Milestone", type: "milestone" },
+              { label: "Meeting", type: "meeting" },
             ].map((t) => (
               <div key={t.type} className="p-3 rounded-xl border border-border bg-card">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2 h-2 rounded-full" style={{ background: t.color }} />
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: getAgendaTypeColor(t.type) }}
+                  />
                   <span className="text-xs text-muted-foreground">{t.label}</span>
                 </div>
                 <p className="text-xl font-bold">

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { AlertTriangle, ArrowUpRight, CalendarClock, Clock3, Gauge, Sparkles, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { getPhaseColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor } from "@/ui/tokens";
 import { translatePhase, useT } from "@/i18n/translations";
 import { formatDistanceToNow } from "date-fns";
 
@@ -427,10 +427,10 @@ const SEVERITY_META: Record<
   AttentionSeverity,
   { label: string; tone: "rose" | "amber" | "slate"; dot: string }
 > = {
-  off_track: { label: "Off track", tone: "rose",  dot: "#e2445c" },
-  at_risk:   { label: "At risk",   tone: "amber", dot: "#c4994a" },
-  stale:     { label: "Stale",     tone: "slate", dot: "#a8a59d" },
-  silent:    { label: "No status", tone: "slate", dot: "#a8a59d" },
+  off_track: { label: "Off track", tone: "rose",  dot: FRIDAY_TOKENS.health.offTrack.color },
+  at_risk:   { label: "At risk",   tone: "amber", dot: FRIDAY_TOKENS.health.atRisk.color },
+  stale:     { label: "Stale",     tone: "slate", dot: FRIDAY_TOKENS.fgSubtle },
+  silent:    { label: "No status", tone: "slate", dot: FRIDAY_TOKENS.fgSubtle },
 };
 
 const SEVERITY_PILL_CLASS: Record<"rose" | "amber" | "slate", string> = {

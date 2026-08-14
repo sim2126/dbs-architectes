@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/ui/utils";
-import { getPhaseColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor } from "@/ui/tokens";
 import type {
   TeamMemberWorkload,
   TeamWorkloadData,
@@ -17,16 +17,16 @@ const LOAD_META: Record<
   WorkloadLoadLevel,
   { label: string; bg: string; fg: string; dot: string }
 > = {
-  light:      { label: "Light",      bg: "var(--friday-surface-2)", fg: "var(--friday-fg-muted)", dot: "#a8a59d" },
-  balanced:   { label: "Balanced",   bg: "#e8efe6",                  fg: "#3f6534",                  dot: "#22a06b" },
-  heavy:      { label: "Heavy",      bg: "#f5ecd9",                  fg: "#7a5a14",                  dot: "#c4994a" },
-  overloaded: { label: "Overloaded", bg: "rgba(226, 68, 92, 0.10)",  fg: "#a82038",                  dot: "#e2445c" },
+  light:      { label: "Light",      bg: FRIDAY_TOKENS.surface2, fg: FRIDAY_TOKENS.fgMuted, dot: FRIDAY_TOKENS.fgSubtle },
+  balanced:   { label: "Balanced",   bg: FRIDAY_TOKENS.workload.balanced.bg, fg: FRIDAY_TOKENS.workload.balanced.fg, dot: FRIDAY_TOKENS.workload.balanced.color },
+  heavy:      { label: "Heavy",      bg: FRIDAY_TOKENS.workload.heavy.bg, fg: FRIDAY_TOKENS.workload.heavy.fg, dot: FRIDAY_TOKENS.workload.heavy.color },
+  overloaded: { label: "Overloaded", bg: FRIDAY_TOKENS.workload.overloaded.bg, fg: FRIDAY_TOKENS.workload.overloaded.fg, dot: FRIDAY_TOKENS.workload.overloaded.color },
 };
 
 const HEALTH_DOT: Record<string, string> = {
-  on_track: "#22a06b",
-  at_risk: "#c4994a",
-  off_track: "#e2445c",
+  on_track: FRIDAY_TOKENS.health.onTrack.color,
+  at_risk: FRIDAY_TOKENS.health.atRisk.color,
+  off_track: FRIDAY_TOKENS.health.offTrack.color,
 };
 
 function InitialsAvatar({ initials, size = 32 }: { initials: string; size?: number }) {
@@ -310,7 +310,7 @@ function MemberCard({ m }: { m: TeamMemberWorkload }) {
             <span className="inline-flex items-center gap-1.5 text-[10.5px] text-friday-fg-subtle font-mono">
               <span
                 className="w-[5px] h-[5px] rounded-full"
-                style={{ background: HEALTH_DOT[m.latestStatus.health] ?? "#a8a59d" }}
+                style={{ background: HEALTH_DOT[m.latestStatus.health] ?? FRIDAY_TOKENS.fgSubtle }}
               />
               {m.latestStatus.projectCode}
               <span className="text-friday-fg-subtle/70">
@@ -348,10 +348,8 @@ function Stat({
         {primary}
       </p>
       <p
-        className={cn(
-          "text-[10.5px] m-0 mt-1 truncate",
-          tone === "warn" ? "text-[#a82038]" : "text-friday-fg-subtle",
-        )}
+        className="text-[10.5px] m-0 mt-1 truncate text-friday-fg-subtle"
+        style={tone === "warn" ? { color: FRIDAY_TOKENS.workload.overloaded.fg } : undefined}
       >
         {secondary}
       </p>

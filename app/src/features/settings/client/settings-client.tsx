@@ -16,6 +16,8 @@ import { useLanguageStore, type Language } from "@/i18n/language-store";
 import { ACTIONS, type Action } from "@/platform/authz/actions";
 import { authorize, type Resource, type Subject } from "@/platform/authz/authorize";
 import { productSurfaceFlags } from "@/platform/feature-flags";
+import { FRIDAY_BRAND_PRESETS, FRIDAY_TOKENS } from "@/ui/tokens";
+import { VENDOR_BRAND } from "@/ui/vendor-brand";
 
 // ─── Sub-nav data ─────────────────────────────────────────────────
 const NAV_GROUPS: { label: string; items: { id: string; label: string; admin?: boolean }[] }[] = [
@@ -580,11 +582,11 @@ function SecurityPanel() {
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className="inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10.5px] font-medium tracking-wide"
-                  style={{ background: "#e8efe6", color: "#3f6534" }}
+                  style={{ background: FRIDAY_TOKENS.success.bg, color: FRIDAY_TOKENS.success.softFg }}
                 >
                   <span
                     className="w-[5px] h-[5px] rounded-full"
-                    style={{ background: "#3f6534" }}
+                    style={{ background: FRIDAY_TOKENS.success.softFg }}
                   />
                   Enabled
                 </span>
@@ -818,8 +820,8 @@ function GeneralPanel() {
 
 // ─── Workspace > Branding ─────────────────────────────────────────
 function BrandingPanel() {
-  const palette = ["#1e3a8a", "#7a8b6f", "#c4994a", "#5a3a3a", "#2a3a3a", "#1a1a18"];
-  const [color, setColor] = useState(palette[0]);
+  const palette = FRIDAY_BRAND_PRESETS;
+  const [color, setColor] = useState<string>(palette[0].value);
   const [orig, setOrig] = useState(color);
   const dirty = color !== orig;
 
@@ -855,15 +857,15 @@ function BrandingPanel() {
           <div className="flex gap-2 flex-wrap items-center">
             {palette.map((c) => (
               <button
-                key={c}
+                key={c.value}
                 type="button"
-                onClick={() => setColor(c)}
+                onClick={() => setColor(c.value)}
                 className="w-[30px] h-[30px] rounded-[3px] cursor-pointer p-0"
                 style={{
-                  background: c,
-                  border: `2px solid ${color === c ? "var(--friday-fg)" : "transparent"}`,
+                  background: c.color,
+                  border: `2px solid ${color === c.value ? FRIDAY_TOKENS.fg : "transparent"}`,
                 }}
-                aria-label={`Color ${c}`}
+                aria-label={`Color ${c.value}`}
               />
             ))}
             <span className="font-mono text-[11px] text-friday-fg-muted py-1 px-2 bg-friday-surface rounded-[3px] ml-1.5">
@@ -1034,7 +1036,7 @@ function PermissionsPanel() {
                             height="11"
                             viewBox="0 0 24 24"
                             fill="none"
-                            stroke="#fff"
+                            stroke={FRIDAY_TOKENS.accentFg}
                             strokeWidth="3.4"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -1215,8 +1217,8 @@ function AuditPanel() {
                   className="inline-flex items-center px-1.5 py-px rounded-full font-mono text-[10px] tracking-wider uppercase"
                   style={
                     r.decision === "allow"
-                      ? { background: "#e8efe6", color: "#3f6534" }
-                      : { background: "rgba(220, 38, 38, 0.10)", color: "#b91c1c" }
+                      ? { background: FRIDAY_TOKENS.success.bg, color: FRIDAY_TOKENS.success.softFg }
+                      : { background: "rgba(220, 38, 38, 0.10)", color: FRIDAY_TOKENS.denialFg }
                   }
                 >
                   {r.decision}
@@ -1265,7 +1267,7 @@ function UsageBar({
           className="h-full transition-[width] duration-300 ease-out"
           style={{
             width: `${pct}%`,
-            background: warn ? "#c4994a" : "var(--friday-accent)",
+            background: warn ? FRIDAY_TOKENS.warningFill : FRIDAY_TOKENS.accent,
           }}
         />
       </div>
@@ -1279,7 +1281,7 @@ function PlanPanel() {
       <div className="grid gap-4" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
         <div
           className="px-[22px] py-5 rounded text-white"
-          style={{ background: "linear-gradient(135deg, #1a1a18 0%, #2a2a26 100%)" }}
+          style={{ background: FRIDAY_TOKENS.gradient.plan }}
         >
           <div
             className="text-[9.5px] uppercase tracking-[0.22em] mb-2 font-semibold"
@@ -1352,11 +1354,11 @@ function InvoicesPanel() {
             <span>
               <span
                 className="inline-flex items-center gap-1.5 px-2 py-px rounded-full text-[10.5px] font-medium"
-                style={{ background: "#e8efe6", color: "#3f6534" }}
+                style={{ background: FRIDAY_TOKENS.success.bg, color: FRIDAY_TOKENS.success.softFg }}
               >
                 <span
                   className="w-[5px] h-[5px] rounded-full"
-                  style={{ background: "#3f6534" }}
+                  style={{ background: FRIDAY_TOKENS.success.softFg }}
                 />
                 {r.s}
               </span>
@@ -1467,12 +1469,12 @@ const INTEGRATIONS: Integration[] = [
 
 function IntegrationGlyph({ k }: { k: string }) {
   const map: Record<string, { bg: string; fg: string; label: string; bordered?: boolean }> = {
-    google: { bg: "#fff", fg: "#1a1a18", label: "G", bordered: true },
-    pusher: { bg: "#1a1a18", fg: "#fff", label: "P" },
-    daily: { bg: "#22c55e", fg: "#fff", label: "D" },
-    openai: { bg: "#0e1f15", fg: "#fff", label: "◉" },
+    google: { bg: VENDOR_BRAND.FIXED.WHITE, fg: VENDOR_BRAND.FIXED.BLACK, label: "G", bordered: true },
+    pusher: { bg: VENDOR_BRAND.FIXED.BLACK, fg: VENDOR_BRAND.FIXED.WHITE, label: "P" },
+    daily: { bg: VENDOR_BRAND.DAILY.GREEN, fg: VENDOR_BRAND.FIXED.WHITE, label: "D" },
+    openai: { bg: VENDOR_BRAND.OPENAI.DARK_GREEN, fg: VENDOR_BRAND.FIXED.WHITE, label: "◉" },
   };
-  const m = map[k] ?? { bg: "var(--friday-surface-2)", fg: "var(--friday-fg)", label: "·" };
+  const m = map[k] ?? { bg: FRIDAY_TOKENS.surface2, fg: FRIDAY_TOKENS.fg, label: "·" };
   return (
     <div
       className="w-[38px] h-[38px] rounded shrink-0 flex items-center justify-center font-display italic font-medium text-[18px]"
@@ -1520,13 +1522,17 @@ function IntegrationsPanel() {
                     it.connected ? "" : "bg-friday-surface-2 text-friday-fg-muted",
                   )}
                   style={
-                    it.connected ? { background: "#e8efe6", color: "#3f6534" } : undefined
+                    it.connected
+                      ? { background: FRIDAY_TOKENS.success.bg, color: FRIDAY_TOKENS.success.softFg }
+                      : undefined
                   }
                 >
                   <span
                     className="w-[5px] h-[5px] rounded-full"
                     style={{
-                      background: it.connected ? "#3f6534" : "var(--friday-fg-subtle)",
+                      background: it.connected
+                        ? FRIDAY_TOKENS.success.softFg
+                        : FRIDAY_TOKENS.fgSubtle,
                     }}
                   />
                   {it.connected ? "Connected" : "Not connected"}

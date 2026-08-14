@@ -3,6 +3,11 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import boundaries from "eslint-plugin-boundaries";
 
+const noRawHexMessage =
+  "No raw hex in components. Use a Friday token " +
+  "(src/ui/tokens.ts) or a Tailwind utility. If no token " +
+  "fits, add one to globals.css first.";
+
 /**
  * The "boundaries" block enforces the visibility rules from
  * CLAUDE.md §8.1. Each top-level src/ package is an "element type"
@@ -84,6 +89,32 @@ const eslintConfig = defineConfig([
           },
         ],
       }],
+    },
+  },
+
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/app/globals.css",
+      "src/ui/tokens.ts",
+      "src/ui/vendor-brand.ts",
+      // Agenda colour hex values are persisted data; CSS variables must not be stored in the database.
+      "src/features/agenda/domain/agenda-colours.ts",
+      "**/*.{test,spec}.{ts,tsx}",
+      "**/__tests__/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/#[0-9a-fA-F]{3,8}/]",
+          message: noRawHexMessage,
+        },
+        {
+          selector: "TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}/]",
+          message: noRawHexMessage,
+        },
+      ],
     },
   },
 

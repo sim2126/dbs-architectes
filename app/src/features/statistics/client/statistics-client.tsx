@@ -25,7 +25,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/components/card";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { cn } from "@/ui/utils";
-import { getPhaseColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor } from "@/ui/tokens";
 
 interface ProjectLite {
   id: string;
@@ -47,12 +47,12 @@ interface StatisticsClientProps {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Residenziale: "#3b82f6",
-  Commerciale: "#f59e0b",
-  Industriale: "#8b5cf6",
-  Mista: "#10b981",
-  Hospitality: "#ec4899",
-  Ristrutturazione: "#f97316",
+  Residenziale: FRIDAY_TOKENS.chart.category.residential,
+  Commerciale: FRIDAY_TOKENS.chart.category.commercial,
+  Industriale: FRIDAY_TOKENS.chart.category.industrial,
+  Mista: FRIDAY_TOKENS.chart.category.mixed,
+  Hospitality: FRIDAY_TOKENS.chart.category.hospitality,
+  Ristrutturazione: FRIDAY_TOKENS.chart.category.renovation,
 };
 
 const COUNTRY_LABEL: Record<string, string> = {
@@ -296,9 +296,9 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
                       iconType="circle"
                       iconSize={8}
                     />
-                    <Bar dataKey="active" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="stuck" stackId="a" fill="#f59e0b" />
-                    <Bar dataKey="completed" stackId="a" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="active" stackId="a" fill={FRIDAY_TOKENS.chart.active} />
+                    <Bar dataKey="stuck" stackId="a" fill={FRIDAY_TOKENS.chart.stuck} />
+                    <Bar dataKey="completed" stackId="a" fill={FRIDAY_TOKENS.chart.completed} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -385,7 +385,7 @@ export function StatisticsClient({ projects, users }: StatisticsClientProps) {
                     <div
                       className="w-3 h-3 rounded-full"
                       style={{
-                        background: CATEGORY_COLORS[cat.name] || "#94a3b8",
+                        background: CATEGORY_COLORS[cat.name] || FRIDAY_TOKENS.chart.fallback,
                       }}
                     />
                     <div>

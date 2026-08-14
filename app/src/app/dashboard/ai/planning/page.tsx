@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/components/select";
+import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 const ARCHETYPES = [
   {
@@ -117,11 +118,11 @@ export default function PlanningAIPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f9fbff_0%,#ffffff_36%,#f7f7f8_100%)] p-6">
+    <div className="min-h-screen p-6" style={{ background: FRIDAY_TOKENS.gradient.planningPage }}>
       <div className="space-y-6">
         <Card className="overflow-hidden border-border bg-card shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
           <CardContent className="p-0">
-            <div className="bg-[linear-gradient(135deg,#0f172a_0%,#155e75_54%,#0f766e_100%)] px-6 py-8 text-white">
+            <div className="px-6 py-8 text-white" style={{ background: FRIDAY_TOKENS.gradient.planningHero }}>
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <Badge className="bg-white/12 text-[11px] text-white">AI Assistant · Planning intelligence</Badge>
@@ -335,7 +336,10 @@ export default function PlanningAIPage() {
               >
                 <Card className="overflow-hidden border-border bg-card shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                   <CardContent className="p-0">
-                    <div className="flex aspect-[4/3] items-center justify-center border-b border-border bg-[linear-gradient(135deg,#eef2ff_0%,#f7fafc_50%,#edf7f1_100%)]">
+                    <div
+                      className="flex aspect-[4/3] items-center justify-center border-b border-border"
+                      style={{ background: FRIDAY_TOKENS.gradient.planningPlaceholder }}
+                    >
                       <Grid3X3 className="h-10 w-10 text-slate-400" />
                     </div>
 
