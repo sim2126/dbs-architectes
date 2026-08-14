@@ -59,6 +59,8 @@ model User {
   manager          User?               @relation("UserManager", fields: [managerId], references: [id])
   reports          User[]              @relation("UserManager")
   regionAccess     UserRegionAccess[]
+  permissionGrants PermissionGrant[]  @relation("PermissionGrantSubject")
+  grantsAuthored   PermissionGrant[]  @relation("PermissionGrantAuthor")
   roleChangesFrom  RoleChangeLog[]     @relation("RoleChangeTarget")
   roleChangesBy    RoleChangeLog[]     @relation("RoleChangeActor")
   favorites        Favorite[]
@@ -613,6 +615,45 @@ model UserRegionAccess {
 
   @@unique([userId, country, operatingRegion])
   @@index([country, operatingRegion])
+}
+
+/// Per-user override of the role-derived permission default.
+///
+/// Loaded once per request into the authorization Subject, never carried in
+/// the JWT — a token-lifetime permission snapshot means a revocation does not
+/// take effect until the token expires.
+///
+/// `effect` is "allow" or "deny". Deny always wins. Allow only applies to
+/// actions in OVERRIDABLE_ACTIONS (see platform/authz/authorize.ts): actions
+/// with resource-level logic cannot be widened this way, because bypassing
+/// their branch would also bypass region and assignment scoping.
+model PermissionGrant {
+  id     String @id @default(cuid())
+  userId String
+  /// An Action from platform/authz/actions.ts. Not an enum: the vocabulary
+  /// is owned by TypeScript and mirrored to Python, so a DB enum would be a
+  /// third place to keep in sync.
+  action String
+  effect String // allow | deny
+
+  /// Who granted it and why. A permission change without an accountable
+  /// author is not auditable.
+  grantedById String
+  reason      String?
+
+  /// Optional expiry. Grants without one are permanent, which is how a
+  /// permission system silently accumulates exceptions — prefer a date.
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User @relation("PermissionGrantSubject", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User @relation("PermissionGrantAuthor", fields: [grantedById], references: [id])
+
+  @@unique([userId, action])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model RoleChangeLog {

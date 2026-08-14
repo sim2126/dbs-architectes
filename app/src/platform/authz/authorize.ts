@@ -25,11 +25,30 @@ export type RegionAccess = {
   accessLevel: "view" | "manage";
 };
 
+/**
+ * A per-user override of the role-derived default, loaded once per request.
+ *
+ * Deliberately NOT carried in the JWT. Token-lifetime permission snapshots
+ * are a documented anti-pattern: an admin revoking access has no effect
+ * until the token expires. Grants are read where the Subject is built, so
+ * they are at most one request stale and a revocation lands immediately.
+ *
+ * Keeping them on the Subject is what lets authorize() stay pure and
+ * synchronous — the alternative (an async DB lookup inside authorize)
+ * would make every one of its ~139 call sites async.
+ */
+export type PermissionGrant = {
+  action: Action;
+  effect: "allow" | "deny";
+};
+
 export type Subject = {
   userId: string;
   /** Global workspace role, normalised. May be a legacy alias — keep raw. */
   role: string;
   regions: RegionAccess[];
+  /** Per-user overrides. Absent means "role defaults only". */
+  grants?: readonly PermissionGrant[];
 };
 
 // ─── Resource — discriminated union per resource kind ─────────────
@@ -161,12 +180,64 @@ const ALLOW: Decision = { allow: true };
 
 // ─── The decision function ────────────────────────────────────────
 
+/**
+ * Actions whose decision is purely role-derived — no region, assignment or
+ * ownership logic in their branch. Only these may be granted by an override.
+ *
+ * Resource-scoped actions (project:read, agenda:update, chat:message.delete…)
+ * are deliberately excluded: an allow-override on project:read would bypass
+ * region scoping and hand a user the whole portfolio. Widening those is a
+ * change to their branch, not something an admin toggles.
+ *
+ * A DENY override applies to every action regardless of this set — removing
+ * access is always safe to honour.
+ */
+/// NO-ESCALATION INVARIANT
+///
+/// `settings:permissions.update` is deliberately absent from this set and
+/// must never be added. If an allow-grant could confer it, any holder of a
+/// single grant could grant themselves every other grantable action — the
+/// permission system would become self-modifying by anyone who touched it.
+///
+/// Enforced by a test in features/dashboard/domain/widgets.test.ts.
+/// Changing this set is a security decision, not a convenience one.
+const OVERRIDABLE_ACTIONS: ReadonlySet<Action> = new Set<Action>([
+  "project:create",
+  "project:health.read",
+  "team:workload.read",
+  "user:invite",
+  "billing:read",
+  "ai:invoke",
+  "settings:workspace.read",
+  "settings:permissions.read",
+]);
+
+/** Actions an admin may grant with effect "allow". Deny applies to any action. */
+export function isOverridableAction(action: Action): boolean {
+  return OVERRIDABLE_ACTIONS.has(action);
+}
+
+/** The grantable set, sorted — drives the Settings → Permissions UI. */
+export const GRANTABLE_ACTIONS: readonly Action[] = Object.freeze(
+  [...OVERRIDABLE_ACTIONS].sort(),
+);
+
 export function authorize(
   subject: Subject,
   action: Action,
   resource: Resource,
   _context?: AuthContext,
 ): Decision {
+  // ── Per-user overrides, consulted before role defaults ──────────
+  // Deny always wins — over an allow-override and over any role.
+  const override = subject.grants?.find((g) => g.action === action);
+  if (override?.effect === "deny") {
+    return deny("Access to this action has been revoked for your account.");
+  }
+  if (override?.effect === "allow" && OVERRIDABLE_ACTIONS.has(action)) {
+    return ALLOW;
+  }
+
   // Universal admin bypass (kept narrow — admin still can't impersonate
   // self-only actions targeted at other users; handled per-branch).
   // We don't auto-allow here; each branch decides.
@@ -261,6 +332,16 @@ export function authorize(
     case "user:read":
       // Any signed-in user can read the team directory
       return ALLOW;
+
+    // ── Oversight ─────────────────────────────────────────────
+    // Aggregate views over other people's work. Deliberately NOT
+    // gated on user:read — that permits the whole workspace, which
+    // is right for a directory and wrong for workload oversight.
+    case "project:health.read":
+    case "team:workload.read":
+      return isManager(subject.role)
+        ? ALLOW
+        : deny("Only managers or above can view aggregate team and project health.");
 
     case "user:invite":
     case "user:update":

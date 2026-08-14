@@ -29,6 +29,10 @@ export const ACTIONS = {
   "thread:read":            "Read a project-scoped thread",
   "thread:post":            "Post in a project-scoped thread",
 
+  // ── Oversight (aggregate views across people/projects) ────
+  "project:health.read":    "View cross-project health and attention flags",
+  "team:workload.read":     "View aggregate team workload",
+
   // ── Users / team ──────────────────────────────────────────
   "user:read":              "Read user records",
   "user:invite":            "Invite a new user",

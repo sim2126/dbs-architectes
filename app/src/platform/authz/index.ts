@@ -8,6 +8,11 @@
  */
 
 export { ACTIONS, ALL_ACTIONS, isAction, type Action } from "./actions";
+export {
+  GRANTABLE_ACTIONS,
+  isOverridableAction,
+  type PermissionGrant,
+} from "./authorize";
 
 export {
   authorize,
@@ -36,6 +41,7 @@ export {
   requirePermission,
   permissionResponse,
   loadProjectForAuth,
+  loadSubject,
   PermissionError,
   type RequireOptions,
 } from "./require-permission";

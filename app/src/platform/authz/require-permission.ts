@@ -23,11 +23,12 @@
 import type { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import type { Action } from "./actions";
+import { isAction, type Action } from "./actions";
 import {
   authorize,
   type AuthContext,
   type Decision,
+  type PermissionGrant,
   type Resource,
   type Subject,
 } from "./authorize";
@@ -50,7 +51,15 @@ export function permissionResponse(err: PermissionError): Response {
 }
 
 /** Build a Subject from the signed-in session, loading region access. */
-async function loadSubject(): Promise<Subject | null> {
+/**
+ * Builds the authorization Subject for the current session.
+ *
+ * Exported because server components need the same Subject the API routes
+ * use — notably the dashboard, which composes its widgets from authorize()
+ * decisions. Duplicating this would risk a second, staler answer to "who is
+ * this and what regions do they hold".
+ */
+export async function loadSubject(): Promise<Subject | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -102,10 +111,36 @@ async function loadSubject(): Promise<Subject | null> {
     accessLevel: string;
   };
 
-  const regions = (await prisma.userRegionAccess.findMany({
-    where: { userId: session.user.id },
-    select: { country: true, operatingRegion: true, accessLevel: true },
-  })) as RegionRow[];
+  type GrantRow = { action: string; effect: string };
+
+  const now = new Date();
+  const [regions, grantRows] = await Promise.all([
+    prisma.userRegionAccess.findMany({
+      where: { userId: session.user.id },
+      select: { country: true, operatingRegion: true, accessLevel: true },
+    }) as Promise<RegionRow[]>,
+    // Expired grants are filtered in the query, not in memory — an expired
+    // grant must never reach authorize().
+    prisma.permissionGrant.findMany({
+      where: {
+        userId: session.user.id,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: { action: true, effect: true },
+    }) as Promise<GrantRow[]>,
+  ]);
+
+  // Rows are validated, not trusted. A row naming an action that no longer
+  // exists in the vocabulary — or carrying an effect outside allow/deny —
+  // is dropped rather than passed through. Closed-world default: an
+  // unrecognised grant grants nothing.
+  const grants: PermissionGrant[] = [];
+  for (const row of grantRows) {
+    if (!isAction(row.action)) continue;
+    if (row.effect !== "allow" && row.effect !== "deny") continue;
+    grants.push({ action: row.action, effect: row.effect });
+  }
+
   return {
     userId: session.user.id,
     // Source role from DB, not the JWT — the JWT can be stale after a
@@ -116,6 +151,7 @@ async function loadSubject(): Promise<Subject | null> {
       operatingRegion: r.operatingRegion,
       accessLevel: r.accessLevel as "view" | "manage",
     })),
+    grants,
   };
 }
 
