@@ -1,6 +1,12 @@
 import { auth } from "@/platform/auth";
+import { loadSubject } from "@/platform/authz";
 import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
+import {
+  resolveDashboardWidgets,
+  type DashboardSlot,
+  type WidgetId,
+} from "@/features/dashboard/domain/widgets";
 import { loadProjectsNeedingAttention } from "@/features/dashboard/server/load-projects-needing-attention";
 import { loadTeamWorkload } from "@/features/team-workload/server/load-team-workload";
 import {
@@ -37,8 +43,21 @@ export default async function DashboardPage() {
   });
   const myProjectIds = myProjectIdsRaw.map((a) => a.projectId);
 
+  // Widget visibility is derived from authorize(), not from the tier.
+  // `tier` survives only as a presentation device — the page label and
+  // strapline — and no longer decides what anyone is allowed to see.
+  //
+  // A null subject means the session was revoked mid-request. Degrade
+  // closed: render the shell with nothing in it rather than falling back
+  // to role defaults.
+  const subject = await loadSubject();
+  const widgets: Record<DashboardSlot, WidgetId[]> = subject
+    ? resolveDashboardWidgets(subject)
+    : { kpi: [], primary: [], secondary: [] };
+
   const data = await buildDashboardData({
     tier,
+    widgets,
     userId,
     myProjectIds,
     startOfDay,
@@ -51,13 +70,19 @@ export default async function DashboardPage() {
 
 async function buildDashboardData(args: {
   tier: RoleTier;
+  widgets: Record<DashboardSlot, WidgetId[]>;
   userId: string;
   myProjectIds: string[];
   startOfDay: Date;
   endOfDay: Date;
   sevenDaysOut: Date;
 }): Promise<DashboardData> {
-  const { tier, userId, myProjectIds, startOfDay, endOfDay, sevenDaysOut } = args;
+  const { tier, widgets, userId, myProjectIds, startOfDay, endOfDay, sevenDaysOut } = args;
+
+  const canSee = (id: WidgetId) =>
+    widgets.kpi.includes(id) ||
+    widgets.primary.includes(id) ||
+    widgets.secondary.includes(id);
 
   // ── KPIs per tier ──────────────────────────────────────────
   let kpis: DashboardData["kpis"];
@@ -219,7 +244,7 @@ async function buildDashboardData(args: {
   let needsAttention: DashboardData["needsAttention"];
   let teamLoad: DashboardData["teamLoad"];
 
-  if (tier === "admin" || tier === "lead") {
+  if (canSee("needs-attention")) {
     const attentionRows = await loadProjectsNeedingAttention({
       scopedProjectIds: tier === "admin" ? null : myProjectIds,
       limit: 6,
@@ -235,7 +260,12 @@ async function buildDashboardData(args: {
       lastAuthor: r.lastAuthor,
       lastSummary: r.lastSummary,
     }));
+  }
 
+  // Gated independently of needs-attention: the two are separate actions
+  // (project:health.read vs team:workload.read), so a grant for one must
+  // not silently enable the other.
+  if (canSee("team-load")) {
     // Compact team-load: top 5 by score from the full snapshot.
     // We call the same server function the /team-workload page does so
     // there's only one definition of "score" in the codebase.
