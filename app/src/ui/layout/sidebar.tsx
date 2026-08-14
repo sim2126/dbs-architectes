@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,7 +12,6 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  LogOut,
   Sparkles,
   MessageSquare,
   Activity,
@@ -20,12 +20,15 @@ import {
   Target,
   Gauge,
 } from "lucide-react";
-import { signOut } from "next-auth/react";
 import { cn } from "@/ui/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { CommandPalette } from "@/ui/components/command-palette";
 import { useT } from "@/i18n/translations";
-import { useUserPrefs } from "@/ui/stores/user-prefs-store";
+import {
+  SIDEBAR_COLLAPSED_WIDTH,
+  useUserPrefs,
+} from "@/ui/stores/user-prefs-store";
+import { AccountMenu } from "@/ui/layout/account-menu";
+import { SidebarResizeHandle } from "@/ui/layout/sidebar-resize-handle";
 import { StarredSidebarSection } from "@/ui/layout/starred-sidebar-section";
 import { productSurfaceFlags } from "@/platform/feature-flags";
 
@@ -63,8 +66,31 @@ interface SidebarProps {
 
 export function Sidebar({ user }: SidebarProps) {
   const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } = useUserPrefs();
+  const sidebarWidth = useUserPrefs((s) => s.sidebarWidth);
   const pathname = usePathname();
   const t = useT();
+
+  // Ctrl/Cmd+B toggles the sidebar. Ignored while the user is typing, so it
+  // never swallows a bold shortcut in the message composer or a text field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "b" && e.key !== "B") return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setCollapsed(!collapsed);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [collapsed, setCollapsed]);
 
   const isAdmin = user?.role === "super_admin" || user?.role === "admin";
   const isManager =
@@ -88,10 +114,13 @@ export function Sidebar({ user }: SidebarProps) {
        */}
       <div className="relative flex shrink-0 h-full">
         <motion.aside
-          animate={{ width: collapsed ? 72 : 260 }}
+          animate={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }}
+          // Snap during a drag rather than easing to each intermediate width,
+          // which would make the handle feel like it lags the pointer.
           transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-          className="flex flex-col h-full bg-card overflow-hidden border-r border-border shadow-[1px_0_0_0_hsl(var(--border))]"
+          className="relative flex flex-col h-full bg-card overflow-hidden border-r border-border shadow-[1px_0_0_0_hsl(var(--border))]"
         >
+          <SidebarResizeHandle disabled={collapsed} />
           {/* ── Logo — height matches the top header (h-14 = 56px) ── */}
           <div className="flex items-center h-14 px-4 border-b border-border shrink-0">
             <Link
@@ -287,45 +316,9 @@ export function Sidebar({ user }: SidebarProps) {
             </div>
           </nav>
 
-          {/* ── User section ── */}
+          {/* ── Account ── */}
           <div className="px-2.5 py-3 border-t border-border shrink-0">
-            <div className={cn("flex items-center gap-2.5", collapsed && "justify-center")}>
-              <Avatar className="h-7 w-7 shrink-0">
-                <AvatarImage src={user?.image || ""} />
-                <AvatarFallback className="bg-foreground text-background text-[10px] font-bold">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <AnimatePresence>
-                {!collapsed && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex-1 min-w-0"
-                  >
-                    <p className="text-xs font-semibold truncate leading-tight">{user?.name || "User"}</p>
-                    <p className="text-[10px] text-muted-foreground truncate capitalize leading-tight mt-0.5">
-                      {user?.role?.replace("_", " ") || "viewer"}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <AnimatePresence>
-                {!collapsed && (
-                  <motion.button
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => signOut({ callbackUrl: "/login" })}
-                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
-                    title="Sign out"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                  </motion.button>
-                )}
-              </AnimatePresence>
-            </div>
+            <AccountMenu user={user} initials={initials} collapsed={collapsed} />
           </div>
         </motion.aside>
 
