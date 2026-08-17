@@ -17,6 +17,7 @@ import { Input } from "@/ui/components/input";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Badge } from "@/ui/components/badge";
 import { AddProjectModal } from "@/features/projects/client/add-project-modal";
+import { ProjectCellEditor } from "@/features/projects/client/project-cell-editor";
 import { FavoriteStar } from "@/ui/components/favorite-star";
 import { showToast } from "@/ui/components/toast";
 import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
@@ -593,7 +594,15 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
 
       {/* Category */}
       <div className="py-2.5 pr-3">
-        <span className="text-[11px] text-muted-foreground truncate">{project.category}</span>
+        <div onClick={(e) => e.stopPropagation()}>
+          <ProjectCellEditor
+            projectId={project.id}
+            field="category"
+            value={project.category}
+            editable={canEdit}
+            onOptimistic={onUpdate}
+          />
+        </div>
       </div>
 
       {/* Billing */}
