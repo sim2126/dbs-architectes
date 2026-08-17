@@ -22,7 +22,7 @@ export function ProjectCellEditor({
 }: {
   projectId: string;
   field: string;
-  value: string | number | null;
+  value: string | number | null | undefined;
   editable: boolean;
   /** Applies the change to local state before the server confirms. */
   onOptimistic: (patch: Record<string, unknown>) => void;

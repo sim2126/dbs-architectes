@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Moon, Sun, Search, CheckCheck, AtSign, Activity, MessageSquare, Settings as SettingsIcon } from "lucide-react";
+import { Bell, Moon, Sun, Search, CheckCheck, AtSign, Activity, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/ui/components/button";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -208,15 +208,6 @@ export function Header({ title }: { title?: string }) {
         <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-8 w-8" title="Toggle theme">
           {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
-
-        <Link
-          href="/dashboard/settings"
-          aria-label="Settings"
-          title="Settings"
-          className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-100"
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </Link>
 
         {/* Notification bell */}
         <div className="relative" ref={notifRef}>

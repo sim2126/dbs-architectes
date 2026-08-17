@@ -25,6 +25,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { useLanguageStore, type Language } from "@/i18n/language-store";
 import { cn } from "@/ui/utils";
+import { useHelpStore } from "@/ui/stores/help-store";
 
 /** UI languages only. TRANSLATION_LANGUAGES is a wider list used for
  *  message translation targets; those have no interface strings. */
@@ -52,6 +53,7 @@ export function AccountMenu({
   collapsed: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const openHelp = useHelpStore((s) => s.setOpen);
   const language = useLanguageStore((s) => s.language);
   const setLanguage = useLanguageStore((s) => s.setLanguage);
 
@@ -142,11 +144,9 @@ export function AccountMenu({
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem asChild>
-          <Link href="/dashboard/contact">
-            <HelpCircle className="h-4 w-4 mr-2" />
-            Get help
-          </Link>
+        <DropdownMenuItem onSelect={() => openHelp(true)}>
+          <HelpCircle className="h-4 w-4 mr-2" />
+          Get help
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />

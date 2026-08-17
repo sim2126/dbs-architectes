@@ -607,14 +607,15 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
 
       {/* Billing */}
       <div className="py-2.5 pr-3">
-        <span className={cn(
-          "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
-          project.billing === "Completo" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-          project.billing === "Parziale" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-          "text-muted-foreground"
-        )}>
-          {project.billing || "—"}
-        </span>
+        <div onClick={(e) => e.stopPropagation()}>
+          <ProjectCellEditor
+            projectId={project.id}
+            field="billing"
+            value={project.billing ?? null}
+            editable={canEdit}
+            onOptimistic={onUpdate}
+          />
+        </div>
       </div>
 
       {/* Actions */}
@@ -827,16 +828,28 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
             <FileText className="w-3 h-3" /> {t("projects.details")}
           </p>
           {[
-            { icon: Tag, label: t("projects.detail.category"), value: project.category },
-            { icon: MapPin, label: t("projects.detail.commune"), value: project.commune },
-            { icon: Users, label: t("projects.detail.client"), value: project.client },
-            { icon: Clock, label: t("projects.detail.year"), value: project.year },
-            { icon: CreditCard, label: t("projects.detail.billing"), value: project.billing },
-          ].filter((r) => r.value).map((row) => (
+            { icon: Tag, label: t("projects.detail.category"), value: project.category, field: null },
+            { icon: MapPin, label: t("projects.detail.commune"), value: project.commune, field: "commune" },
+            { icon: Users, label: t("projects.detail.client"), value: project.client, field: "client" },
+            { icon: Clock, label: t("projects.detail.year"), value: project.year, field: "year" },
+            { icon: CreditCard, label: t("projects.detail.billing"), value: project.billing, field: null },
+          ].filter((r) => r.field !== null || r.value).map((row) => (
             <div key={row.label} className="flex items-center gap-2.5">
               <row.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <span className="text-[11px] text-muted-foreground w-16 shrink-0">{row.label}</span>
-              <span className="text-xs font-medium truncate">{String(row.value)}</span>
+              {row.field ? (
+                <div className="min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
+                  <ProjectCellEditor
+                    projectId={project.id}
+                    field={row.field}
+                    value={row.value ?? null}
+                    editable={canEdit}
+                    onOptimistic={onUpdate}
+                  />
+                </div>
+              ) : (
+                <span className="text-xs font-medium truncate">{String(row.value)}</span>
+              )}
             </div>
           ))}
         </div>
@@ -934,12 +947,18 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
         </div>
 
         {/* Notes */}
-        {project.notes && (
-          <div className="px-5 py-4 border-b border-border">
-            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.notes")}</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">{project.notes}</p>
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">{t("projects.notes")}</p>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ProjectCellEditor
+              projectId={project.id}
+              field="notes"
+              value={project.notes ?? null}
+              editable={canEdit}
+              onOptimistic={onUpdate}
+            />
           </div>
-        )}
+        </div>
 
         {/* Description */}
         {project.description && (

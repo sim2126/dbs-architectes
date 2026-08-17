@@ -29,11 +29,22 @@
 
 import nodemailer from "nodemailer";
 
+export type EmailAttachment = {
+  filename: string;
+  /** Base64-encoded content, without a data: URL prefix. */
+  content: string;
+  contentType: string;
+};
+
 export type SendEmailInput = {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  /** Optional attachments. Kept small — see the support route's caps. */
+  attachments?: EmailAttachment[];
+  /** Where a reply should go, when it differs from the sending account. */
+  replyTo?: string;
 };
 
 export type SendEmailResult = {
@@ -82,9 +93,16 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     await transporter.sendMail({
       from: EMAIL_FROM,
       to: input.to,
+      replyTo: input.replyTo,
       subject: input.subject,
       text: input.text,
       html: input.html,
+      attachments: input.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        encoding: "base64" as const,
+        contentType: a.contentType,
+      })),
     });
     return { ok: true, deliveredVia: "gmail-smtp" };
   } catch (err) {
