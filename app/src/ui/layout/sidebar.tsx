@@ -19,6 +19,7 @@ import {
   Table2,
   Target,
   Gauge,
+  CircleCheck,
 } from "lucide-react";
 import { cn } from "@/ui/utils";
 import { CommandPalette } from "@/ui/components/command-palette";
@@ -35,6 +36,7 @@ import { productSurfaceFlags } from "@/platform/feature-flags";
 const navItems = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
   { labelKey: "nav.projects", href: "/dashboard/projects", icon: FolderOpen },
+  { labelKey: "nav.my_work", href: "/dashboard/my-work", icon: CircleCheck },
   { labelKey: "nav.tasks", href: "/dashboard/tasks", icon: Target },
   { labelKey: "nav.agenda", href: "/dashboard/agenda", icon: Calendar },
   { labelKey: "nav.statistics", href: "/dashboard/statistics", icon: BarChart3 },

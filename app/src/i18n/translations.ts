@@ -5,6 +5,7 @@ const T: Record<Language, Record<string, string>> = {
     // ── Navigation ──────────────────────────────────────────────────────────
     "nav.dashboard": "Dashboard",
     "nav.projects": "Projects",
+    "nav.my_work": "My work",
     "nav.tasks": "Tasks",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistics",
@@ -233,6 +234,7 @@ const T: Record<Language, Record<string, string>> = {
   it: {
     "nav.dashboard": "Dashboard",
     "nav.projects": "Progetti",
+    "nav.my_work": "Il mio lavoro",
     "nav.tasks": "Attività",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiche",
@@ -446,6 +448,7 @@ const T: Record<Language, Record<string, string>> = {
   fr: {
     "nav.dashboard": "Tableau de bord",
     "nav.projects": "Projets",
+    "nav.my_work": "Mon travail",
     "nav.tasks": "Tâches",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiques",
@@ -659,6 +662,7 @@ const T: Record<Language, Record<string, string>> = {
   de: {
     "nav.dashboard": "Dashboard",
     "nav.projects": "Projekte",
+    "nav.my_work": "Meine Arbeit",
     "nav.tasks": "Aufgaben",
     "nav.agenda": "Agenda",
     "nav.statistics": "Statistiken",
