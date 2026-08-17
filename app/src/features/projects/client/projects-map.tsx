@@ -8,6 +8,7 @@ import {
   Compass, Sparkles, Coffee, RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/ui/utils";
 import { FRIDAY_TOKENS, getPhaseColor, resolveFridayColor } from "@/ui/tokens";
 import { Project3DModal } from "@/features/projects/client/project-3d-modal";
@@ -54,6 +55,7 @@ export function ProjectsMapView({
   onUpdateLocation: (id: string, lat: number, lng: number, address: string) => Promise<void>;
   focusProjectId?: string | null;
 }) {
+  const router = useRouter();
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstance = useRef<any>(null);
@@ -326,7 +328,7 @@ export function ProjectsMapView({
             second. Give it a nudge below.
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => router.refresh()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-foreground text-background text-xs font-medium hover:opacity-90 transition"
           >
             <RefreshCw className="w-3.5 h-3.5" />
