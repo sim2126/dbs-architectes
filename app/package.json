@@ -11,6 +11,8 @@
     "test:ai": "tsx --test src/platform/ai/*.test.ts src/features/ai/server/agent/*.test.ts",
     "test:work-items": "tsx --test src/features/work-items/domain/compat.test.ts",
     "test:dashboard": "tsx --test src/features/dashboard/domain/widgets.test.ts",
+    "test:projects": "tsx --test src/features/projects/domain/editable-columns.test.ts",
+    "test:work-grouping": "tsx --test src/features/work-items/domain/grouping.test.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
