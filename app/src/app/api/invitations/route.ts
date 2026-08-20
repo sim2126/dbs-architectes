@@ -24,6 +24,8 @@ import {
 } from "@/platform/authz";
 import { issueToken, INVITATION_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
+import { authorize } from "@/platform/authz";
+import { isExternalAddress, WORKSPACE_DOMAIN } from "@/features/users/domain/guests";
 
 const PICKABLE_ROLES = new Set(["admin", "director", "manager", "employee", "intern"]);
 
@@ -35,10 +37,12 @@ function inviteUrl(req: NextRequest, token: string): string {
 export async function POST(request: NextRequest) {
   let actorUserId: string;
   let actorName: string | null = null;
+  let actorSubject: Awaited<ReturnType<typeof requirePermission>>["subject"];
   try {
     const { subject } = await requirePermission(request, "user:invite", {
       context: { route: "POST /api/invitations" },
     });
+    actorSubject = subject;
     actorUserId = subject.userId;
     const inviter = await prisma.user.findUnique({
       where: { id: actorUserId },
@@ -51,7 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { email?: string; role?: string }
+    | { email?: string; role?: string; isExternal?: boolean }
     | null;
   if (!body || typeof body.email !== "string" || !body.email.includes("@")) {
     return Response.json({ error: "Valid email is required" }, { status: 400 });
@@ -60,6 +64,25 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Invalid role" }, { status: 400 });
   }
   const email = body.email.trim().toLowerCase();
+
+  // Guest admission is a separate, admin-only capability. Two checks, not
+  // one: the caller's stated intent AND the address itself. Relying on the
+  // flag alone would let a non-admin admit an outsider by omitting it;
+  // relying on the domain alone would miss a guest on a workspace alias.
+  const wantsGuest = body.isExternal === true;
+  const looksExternal = isExternalAddress(email);
+  const isExternal = wantsGuest || looksExternal;
+
+  if (isExternal && !authorize(actorSubject, "user:invite.external", null).allow) {
+    return Response.json(
+      {
+        error:
+          `Only admins can invite people from outside ${WORKSPACE_DOMAIN}. ` +
+          `Ask an admin to add this guest.`,
+      },
+      { status: 403 },
+    );
+  }
 
   // If a User already exists for this email, refuse — that's a
   // reactivation/role-change scenario, not an invite.
@@ -85,6 +108,7 @@ export async function POST(request: NextRequest) {
     data: {
       email,
       role: body.role,
+      isExternal,
       tokenHash: hash,
       invitedBy: actorUserId,
       expiresAt,

@@ -343,6 +343,14 @@ export function authorize(
         ? ALLOW
         : deny("Only managers or above can view aggregate team and project health.");
 
+    // Admitting a guest is a decision about what an outsider can read, so it
+    // is its own action rather than folded into user:invite — it can never
+    // be widened by accident. Deliberately absent from OVERRIDABLE_ACTIONS.
+    case "user:invite.external":
+      return isAdmin(subject.role)
+        ? ALLOW
+        : deny("Only admins can invite people from outside the practice.");
+
     case "user:invite":
     case "user:update":
     case "user:role.change":

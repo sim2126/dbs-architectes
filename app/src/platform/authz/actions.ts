@@ -36,6 +36,7 @@ export const ACTIONS = {
   // ── Users / team ──────────────────────────────────────────
   "user:read":              "Read user records",
   "user:invite":            "Invite a new user",
+  "user:invite.external":   "Invite an address outside the practice as a guest",
   "user:update":            "Edit a user (admin)",
   "user:role.change":       "Change a user's global role",
   "user:delete":            "Deactivate or delete a user",

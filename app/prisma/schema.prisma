@@ -24,6 +24,12 @@ model User {
   canDelete        Boolean   @default(false)
   // HR lifecycle
   employmentStatus String    @default("active") // invited | active | on_leave | suspended | terminated
+  /// True for guests outside the practice — clients, consultants, contractors.
+  /// Guests reach channels through explicit ChannelMember rows and never
+  /// through a ProjectAssignment, so they see a conversation and not a
+  /// portfolio. They are excluded from staff surfaces: the team directory,
+  /// workload, assignee pickers and headcount.
+  isExternal       Boolean   @default(false)
   departmentId     String?
   managerId        String?
   defaultCountry   String?   // CH | IT | IN
@@ -793,6 +799,11 @@ model Invitation {
   role         String    // role to assign on accept (admin | director | manager | employee | intern)
   tokenHash    String    @unique
   invitedBy    String    // userId of the admin who issued
+  /// Set when inviting an address outside the workspace domain. Recorded on
+  /// the invitation rather than re-derived at accept time: the admin's
+  /// decision is the source of truth, and a domain check at acceptance
+  /// could silently reclassify someone.
+  isExternal   Boolean   @default(false)
   expiresAt    DateTime
   status       String    @default("pending") // pending | accepted | revoked | expired
   acceptedAt   DateTime?

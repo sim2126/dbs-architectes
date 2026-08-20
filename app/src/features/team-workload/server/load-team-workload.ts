@@ -61,7 +61,10 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
   };
 
   const users = (await prisma.user.findMany({
-    where: { isActive: true },
+    // Guests are excluded. A client or consultant has visibility into one
+    // conversation, not a workload — showing them here would both mislead
+    // the manager and imply the practice owns their time.
+    where: { isActive: true, isExternal: false },
     orderBy: [{ name: "asc" }],
     select: {
       id: true,

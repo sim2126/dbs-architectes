@@ -18,6 +18,9 @@ export async function GET() {
       role: true,
       initials: true,
       isActive: true,
+      // Admins must see guests to manage them, so they are listed rather
+      // than filtered — but the UI badges them.
+      isExternal: true,
       canCreate: true,
       canEdit: true,
       canDelete: true,

@@ -45,6 +45,7 @@ export async function loadPermissionGrants(): Promise<PermissionSubjectRow[]> {
       initials: true,
       image: true,
       role: true,
+      isExternal: true,
       permissionGrants: {
         // Expired grants are excluded here for the same reason loadSubject
         // excludes them: showing an expired grant as active would mislead

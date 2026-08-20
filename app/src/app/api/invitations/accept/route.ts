@@ -28,6 +28,7 @@ async function findValidInvitation(rawToken: string) {
       id: true,
       email: true,
       role: true,
+      isExternal: true,
       status: true,
       expiresAt: true,
       inviter: { select: { name: true } },
@@ -130,6 +131,11 @@ export async function POST(request: NextRequest) {
         initials,
         password: hashed,
         role: invitation.role,
+        // Carried from the invitation rather than re-derived from the email
+        // domain. The admin's decision at invite time is the source of
+        // truth; re-deriving here could silently reclassify someone whose
+        // address happens to sit on a workspace alias.
+        isExternal: invitation.isExternal,
         isActive: true,
         employmentStatus: "active",
         emailVerified: new Date(), // accepting via emailed token verifies the address
