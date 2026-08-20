@@ -14,9 +14,10 @@
     "test:projects": "tsx --test src/features/projects/domain/editable-columns.test.ts",
     "test:work-grouping": "tsx --test src/features/work-items/domain/grouping.test.ts",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed-demo.ts",
+    "db:seed:legacy": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "prisma db push && tsx prisma/seed.ts"
+    "setup": "prisma db push && tsx prisma/seed-demo.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
