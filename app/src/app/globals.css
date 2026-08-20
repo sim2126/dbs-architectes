@@ -54,13 +54,21 @@
      dark mode, so these are defined once and never redeclared in .dark. The
      accent is a warm bronze rather than the architect's blue, which reads
      poorly on a near-black ground. */
-  --friday-landing-bg:        #0d0c0a;
-  --friday-landing-surface:   rgba(255, 255, 255, 0.035);
-  --friday-landing-border:    rgba(255, 255, 255, 0.10);
-  --friday-landing-fg:        #f3f1ec;
-  --friday-landing-fg-muted:  #a8a29a;
-  --friday-landing-fg-subtle: #6f6a63;
-  --friday-landing-accent:    #c9a227;
+  --friday-landing-bg:          #0a0908;
+  --friday-landing-surface:     rgba(255, 255, 255, 0.042);
+  --friday-landing-border:      rgba(255, 255, 255, 0.085);
+  --friday-landing-fg:          #f5f3f0;
+  --friday-landing-fg-muted:    #a59e97;
+  --friday-landing-fg-subtle:   #6b6560;
+  /* Rose-gold, not yellow-gold. The warm copper cast is what reads as
+     drawing-office brass against near-black; a true gold reads as luxury
+     retail, which is the wrong register for an architecture practice. */
+  --friday-landing-accent:      #cba28c;
+  --friday-landing-accent-soft: rgba(203, 162, 140, 0.16);
+  /* Linework sits far below text contrast on purpose — it is texture, and
+     anything more legible competes with the headline. */
+  --friday-landing-line:        rgba(203, 162, 140, 0.22);
+  --friday-landing-line-cool:   rgba(245, 243, 240, 0.16);
 
   /* Friendly error callout */
   --friday-error-bg:     #fdf6ec;
@@ -334,6 +342,9 @@
   --color-friday-landing-fg-muted: var(--friday-landing-fg-muted);
   --color-friday-landing-fg-subtle: var(--friday-landing-fg-subtle);
   --color-friday-landing-accent: var(--friday-landing-accent);
+  --color-friday-landing-accent-soft: var(--friday-landing-accent-soft);
+  --color-friday-landing-line: var(--friday-landing-line);
+  --color-friday-landing-line-cool: var(--friday-landing-line-cool);
   --color-friday-fg: var(--friday-fg);
   --color-friday-fg-muted: var(--friday-fg-muted);
   --color-friday-fg-subtle: var(--friday-fg-subtle);
