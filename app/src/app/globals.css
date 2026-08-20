@@ -49,6 +49,19 @@
   --status-stuck:     #e2445c;
   --status-completed: #00c875;
 
+  /* Landing register — the public surface, inverse of the product ground.
+     Theme-independent by design: the landing page is dark in both light and
+     dark mode, so these are defined once and never redeclared in .dark. The
+     accent is a warm bronze rather than the architect's blue, which reads
+     poorly on a near-black ground. */
+  --friday-landing-bg:        #0d0c0a;
+  --friday-landing-surface:   rgba(255, 255, 255, 0.035);
+  --friday-landing-border:    rgba(255, 255, 255, 0.10);
+  --friday-landing-fg:        #f3f1ec;
+  --friday-landing-fg-muted:  #a8a29a;
+  --friday-landing-fg-subtle: #6f6a63;
+  --friday-landing-accent:    #c9a227;
+
   /* Friendly error callout */
   --friday-error-bg:     #fdf6ec;
   --friday-error-border: #e8d9b8;
@@ -314,6 +327,13 @@
   --color-friday-surface-3: var(--friday-surface-3);
   --color-friday-border: var(--friday-border);
   --color-friday-border-soft: var(--friday-border-soft);
+  --color-friday-landing-bg: var(--friday-landing-bg);
+  --color-friday-landing-surface: var(--friday-landing-surface);
+  --color-friday-landing-border: var(--friday-landing-border);
+  --color-friday-landing-fg: var(--friday-landing-fg);
+  --color-friday-landing-fg-muted: var(--friday-landing-fg-muted);
+  --color-friday-landing-fg-subtle: var(--friday-landing-fg-subtle);
+  --color-friday-landing-accent: var(--friday-landing-accent);
   --color-friday-fg: var(--friday-fg);
   --color-friday-fg-muted: var(--friday-fg-muted);
   --color-friday-fg-subtle: var(--friday-fg-subtle);

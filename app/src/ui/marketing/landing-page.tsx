@@ -1,157 +1,203 @@
-"use client";
-
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
-import { FRIDAY_TOKENS } from "@/ui/tokens";
+import { ArrowRight, Building2, Globe2, MapPin, Users } from "lucide-react";
+import { cn } from "@/ui/utils";
+
+/**
+ * Public landing surface.
+ *
+ * Dark register — the inverse of the product's cream ground — so the
+ * threshold between "outside" and "inside the workspace" is felt rather
+ * than explained. Wireframe linework rather than photography: the studio
+ * sells drawings, and a drawing is the honest hero.
+ *
+ * Numbers come from LANDING_STATS below rather than being typed into the
+ * markup. The previous copy claimed "48 projects, 30 architects" long after
+ * the seed changed, which is exactly how a landing page starts lying.
+ */
+
+/**
+ * Figures shown in the stat row.
+ *
+ * These describe DEMO data, not the practice. Update them with the seed, or
+ * remove the row entirely once real records land — a stale number on a
+ * client's own landing page is worse than no number.
+ *
+ * Deliberately omitted: a founding year. Nobody has told us when DBS was
+ * established and inventing one onto their own site is not acceptable.
+ */
+const LANDING_STATS: Array<{
+  label: string;
+  value: string;
+  icon: typeof Building2;
+}> = [
+  { label: "Projects", value: "24", icon: Building2 },
+  { label: "Team", value: "25 people", icon: Users },
+  { label: "Offices", value: "CH · IT · IN", icon: Globe2 },
+  { label: "Studios", value: "Sion · Milano · Srinagar", icon: MapPin },
+];
 
 export function LandingPage({ hasSession }: { hasSession: boolean }) {
   return (
-    <div className="min-h-screen bg-friday-bg text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 flex flex-col">
-      {/* ─── Top bar ─── */}
-      <header className="flex items-center justify-between px-8 md:px-12 py-6">
-        <Link href="/" className="flex items-center gap-3">
-          <svg
-            viewBox="0 0 32 32"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="w-8 h-8"
+    <div className="relative min-h-svh bg-friday-landing-bg text-friday-landing-fg overflow-hidden">
+      <Linework />
+
+      <header className="relative flex items-center justify-between px-6 sm:px-10 py-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            aria-hidden
+            className="font-display italic leading-none select-none shrink-0"
+            style={{ fontSize: "32px", fontWeight: 500 }}
           >
-            <rect x="2" y="2" width="28" height="28" stroke="currentColor" strokeWidth="2.8" />
-            <rect x="23.5" y="2" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark} />
-            <rect x="2" y="23.5" width="6.5" height="6.5" fill={FRIDAY_TOKENS.brandMark} />
-            <text
-              x="16"
-              y="20.5"
-              textAnchor="middle"
-              fontSize="9.5"
-              fontWeight="800"
-              fill="currentColor"
-              fontFamily="system-ui, -apple-system, sans-serif"
-            >
-              DBS
-            </text>
-          </svg>
-          <div className="flex flex-col leading-none">
-            <span className="text-sm font-bold tracking-tight">DBS Architectes</span>
-            <span className="text-[11px] text-neutral-500 tracking-wider mt-0.5">
+            d
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold tracking-[0.2em] uppercase truncate">
+              DBS Architectes
+            </span>
+            <span className="block text-xs text-friday-landing-fg-muted truncate">
               Friday · Workspace
             </span>
-          </div>
-        </Link>
+          </span>
+        </div>
 
-        <nav className="flex items-center gap-3">
+        <nav className="flex items-center gap-2.5 shrink-0">
           {hasSession ? (
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
-            >
+            <Link href="/dashboard" className={cn(pillClass, pillSolidClass)}>
               Open workspace
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           ) : (
-            <>
-              <Link
-                href="/login"
-                className="text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 px-3 py-2 transition-colors"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/login?mode=signup"
-                className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
-              >
-                Sign up
-              </Link>
-            </>
+            <Link href="/login" className={cn(pillClass, pillSolidClass)}>
+              Log in
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           )}
         </nav>
       </header>
 
-      {/* ─── Hero ─── */}
-      <main className="flex-1 flex items-center px-8 md:px-12">
-        <div className="max-w-5xl mx-auto w-full py-20 md:py-28">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <p className="text-xs uppercase tracking-[0.22em] text-neutral-500 mb-6">
-              Sion · Milano · Srinagar
-            </p>
+      <main className="relative px-6 sm:px-10 pb-16">
+        <div className="max-w-2xl pt-12 sm:pt-20">
+          <span className="inline-flex items-center rounded-full border border-friday-landing-border px-3 py-1 text-[11px] tracking-[0.18em] uppercase text-friday-landing-fg-muted">
+            Sion · Milano · Srinagar
+          </span>
 
-            <h1 className="text-[clamp(2.5rem,6vw,5rem)] font-light leading-[1.05] tracking-tight mb-8">
+          <h1 className="mt-7 leading-[1.02]">
+            <span className="block text-4xl sm:text-6xl font-semibold tracking-[-0.02em]">
               DBS Architectes
-              <br />
-              <span className="text-neutral-500">welcomes you to</span>
-              <br />
-              <span className="font-serif italic">Friday.</span>
-            </h1>
+            </span>
+            <span className="block font-display italic text-4xl sm:text-6xl text-friday-landing-accent tracking-[-0.02em] mt-1">
+              Welcome to Friday.
+            </span>
+          </h1>
 
-            <p className="text-lg md:text-xl text-neutral-600 dark:text-neutral-400 leading-relaxed max-w-2xl mb-12 font-light">
-              Your workspace for better task management and efficiency.
-              <br />
-              Built for the studio — projects, meetings, drawings, and decisions in one quiet place.
-            </p>
+          <p className="mt-6 text-sm sm:text-base text-friday-landing-fg-muted leading-relaxed max-w-xl">
+            The studio&rsquo;s workspace. Projects, meetings, drawings and
+            decisions in one quiet place.
+          </p>
 
-            <div className="flex flex-wrap gap-3">
-              {hasSession ? (
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
-                >
-                  Enter workspace
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              ) : (
-                <>
-                  <Link
-                    href="/login"
-                    className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
-                  >
-                    Log in
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                  <Link
-                    href="/login?mode=signup"
-                    className="inline-flex items-center gap-2 text-base font-medium px-6 py-3 rounded-full border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
-                  >
-                    Sign up
-                  </Link>
-                </>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Thin divider row */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8, duration: 0.8 }}
-            className="mt-24 md:mt-32 pt-8 border-t border-neutral-200 dark:border-neutral-800 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm"
-          >
-            {[
-              { k: "Projects", v: "48+" },
-              { k: "Studio", v: "Since 2014" },
-              { k: "Offices", v: "CH · IT · IN" },
-              { k: "Team", v: "30 architects" },
-            ].map((item) => (
-              <div key={item.k}>
-                <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1">
-                  {item.k}
-                </div>
-                <div className="font-light text-xl">{item.v}</div>
-              </div>
-            ))}
-          </motion.div>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link
+              href={hasSession ? "/dashboard" : "/login"}
+              className={cn(pillClass, pillSolidClass, "px-5 py-2.5 text-sm")}
+            >
+              {hasSession ? "Open workspace" : "Log in"}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <span className="text-xs text-friday-landing-fg-subtle">
+              Access is by invitation from a studio administrator.
+            </span>
+          </div>
         </div>
+
+        <dl className="relative mt-16 grid grid-cols-2 lg:grid-cols-4 gap-3 max-w-4xl">
+          {LANDING_STATS.map(({ label, value, icon: Icon }) => (
+            <div
+              key={label}
+              className="rounded-lg border border-friday-landing-border bg-friday-landing-surface px-4 py-4"
+            >
+              <Icon
+                aria-hidden
+                className="h-4 w-4 text-friday-landing-accent"
+                strokeWidth={1.5}
+              />
+              <dt className="mt-3 text-xs text-friday-landing-fg-muted">{label}</dt>
+              <dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </main>
 
-      {/* ─── Footer ─── */}
-      <footer className="px-8 md:px-12 py-8 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500 flex flex-wrap justify-between gap-4">
-        <span>© DBS Architectes · Sustainable Architectural, Urban and Landscape design</span>
-        <span className="tracking-wider">Friday · v1</span>
+      <footer className="relative px-6 sm:px-10 py-6 border-t border-friday-landing-border flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-friday-landing-fg-subtle">
+          © DBS Architectes — Sustainable architectural, urban and landscape design
+        </p>
+        <p className="text-xs text-friday-landing-fg-subtle">Friday</p>
       </footer>
     </div>
+  );
+}
+
+const pillClass =
+  "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium " +
+  "transition-colors focus-visible:outline-none focus-visible:ring-2 " +
+  "focus-visible:ring-friday-landing-accent focus-visible:ring-offset-2 " +
+  "focus-visible:ring-offset-friday-landing-bg";
+
+const pillSolidClass =
+  "bg-friday-landing-accent text-friday-landing-bg hover:opacity-90";
+
+/**
+ * Architectural linework, drawn as SVG.
+ *
+ * An isometric wireframe rather than a photograph: it is what the practice
+ * actually produces, it weighs nothing, and it scales to any density. Drawn
+ * here rather than shipped as an asset so it re-tints from a token and needs
+ * no image pipeline.
+ */
+function Linework() {
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 1200 700"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <defs>
+        <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0.6">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.02" />
+          <stop offset="55%" stopColor="currentColor" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.05" />
+        </linearGradient>
+      </defs>
+
+      <g
+        className="text-friday-landing-fg"
+        stroke="url(#fade)"
+        strokeWidth="1"
+        fill="none"
+      >
+        {/* Isometric slab stack — three floor plates and their columns. */}
+        {[0, 1, 2].map((level) => {
+          const y = 210 + level * 118;
+          return (
+            <g key={level}>
+              <path d={`M760 ${y} L1000 ${y - 96} L1240 ${y} L1000 ${y + 96} Z`} />
+              <path d={`M820 ${y + 24} L1000 ${y - 48} L1180 ${y + 24}`} />
+            </g>
+          );
+        })}
+        {[760, 880, 1000, 1120, 1240].map((x) => (
+          <line key={x} x1={x} y1="210" x2={x} y2="446" />
+        ))}
+
+        {/* Contour sweeps, lower left — landscape design, quietly. */}
+        {Array.from({ length: 9 }).map((_, i) => (
+          <path
+            key={i}
+            d={`M-60 ${520 + i * 22} Q ${180 + i * 26} ${430 + i * 16} ${430 + i * 34} ${700}`}
+          />
+        ))}
+      </g>
+    </svg>
   );
 }
