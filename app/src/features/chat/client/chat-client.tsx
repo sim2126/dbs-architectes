@@ -19,6 +19,7 @@ import { Badge } from "@/ui/components/badge";
 import { cn } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
+import { GuestBadge } from "@/ui/components/guest-badge";
 import { ThreadActions } from "@/features/chat/client/thread-actions";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useT } from "@/i18n/translations";
@@ -53,6 +54,8 @@ interface User {
   initials?: string | null;
   image?: string | null;
   role?: string;
+  /** Outside the practice. Drives the guest marker — see GuestBadge. */
+  isExternal?: boolean;
 }
 
 interface Reaction {
@@ -221,6 +224,10 @@ function MessageItem({
             <span className="text-sm font-bold text-foreground leading-none">
               {message.user.name ?? "Unknown"}
             </span>
+            {/* Guests are marked on every message, not only in the member
+                list. Someone scanning a conversation needs to see that an
+                outsider is in it at the point they are about to reply. */}
+            {message.user.isExternal && <GuestBadge />}
             {isOwn && (
               <span className="text-[10px] text-muted-foreground font-normal">(you)</span>
             )}
@@ -1421,6 +1428,23 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 <h3 className="text-[14px] font-semibold text-foreground truncate">
                   {getChannelDisplayName(activeChannel)}
                 </h3>
+                {/*
+                 * Channel-level guest notice.
+                 *
+                 * More useful than the per-message badge, which only warns
+                 * after someone has posted. This warns before you type — the
+                 * failure being prevented is an internal remark about fees or
+                 * a contractor landing in a conversation the author had
+                 * forgotten a client was part of.
+                 */}
+                {activeChannel.members.some((m) => m.user.isExternal) && (
+                  <span
+                    title="A guest from outside the practice is in this channel"
+                    className="inline-flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium border border-friday-error-border bg-friday-error-bg text-friday-error-fg"
+                  >
+                    Guest present
+                  </span>
+                )}
                 {activeChannel.description && (
                   <>
                     <span className="text-muted-foreground/40 text-xs shrink-0">·</span>

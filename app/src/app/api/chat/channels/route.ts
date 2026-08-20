@@ -23,7 +23,7 @@ export async function GET() {
       ],
     },
     include: {
-      members: { include: { user: { select: { id: true, name: true, initials: true, image: true } } } },
+      members: { include: { user: { select: { id: true, name: true, initials: true, image: true, isExternal: true } } } },
       _count: { select: { messages: true } },
     },
     orderBy: { createdAt: "asc" },
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       },
     },
     include: {
-      members: { include: { user: { select: { id: true, name: true, initials: true } } } },
+      members: { include: { user: { select: { id: true, name: true, initials: true, isExternal: true } } } },
     },
   });
 

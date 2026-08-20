@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: 30,
       include: {
-        user: { select: { id: true, name: true, initials: true, image: true } },
+        user: { select: { id: true, name: true, initials: true, image: true, isExternal: true } },
         channel: { select: { id: true, name: true } },
       },
     });
@@ -98,14 +98,14 @@ export async function GET(request: NextRequest) {
       ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
     },
     include: {
-      user: { select: { id: true, name: true, initials: true, image: true, role: true } },
+      user: { select: { id: true, name: true, initials: true, image: true, role: true, isExternal: true } },
       reactions: {
-        include: { user: { select: { id: true, name: true, initials: true } } },
+        include: { user: { select: { id: true, name: true, initials: true, isExternal: true } } },
       },
       replies: {
         where: { deletedAt: null },
         include: {
-          user: { select: { id: true, name: true, initials: true, image: true } },
+          user: { select: { id: true, name: true, initials: true, image: true, isExternal: true } },
           reactions: { include: { user: { select: { id: true, name: true, initials: true } } } },
         },
         orderBy: { createdAt: "asc" },
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
       fileName: hasAttachment ? fileName! : null,
     },
     include: {
-      user: { select: { id: true, name: true, initials: true, image: true, role: true } },
+      user: { select: { id: true, name: true, initials: true, image: true, role: true, isExternal: true } },
       reactions: { include: { user: { select: { id: true, name: true, initials: true } } } },
       replies: {
         include: { user: { select: { id: true, name: true, initials: true, image: true } } },

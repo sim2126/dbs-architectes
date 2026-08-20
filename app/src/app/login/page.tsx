@@ -5,6 +5,8 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { cn } from "@/ui/utils";
+import { productSurfaceFlags } from "@/platform/feature-flags";
+import { VENDOR_BRAND } from "@/ui/vendor-brand";
 
 /**
  * Sign-in.
@@ -14,14 +16,17 @@ import { cn } from "@/ui/utils";
  * the first surface a DBS partner sees and it should read as a studio's
  * portal, not a SaaS funnel.
  *
- * Two things the reference shows that are NOT here, on purpose:
+ * Deliberate departures from the reference:
  *
- *   - Google / Microsoft / GitHub sign-in. Only CredentialsProvider is
- *     configured. A provider button that cannot authenticate is a dead
- *     control presented as a live one.
- *   - Demo credentials, unless NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS is set.
- *     Printing a working account on the sign-in page is fine for a demo
- *     and wrong the moment real staff use it.
+ *   - No Microsoft or GitHub sign-in. Not wanted.
+ *   - Demo credentials only when NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS is set.
+ *     Printing a working account on the sign-in page is fine for a demo and
+ *     wrong the moment real staff use it.
+ *
+ * Google IS shown, ahead of its provider being wired. Rather than fail
+ * silently on click — which is what makes a control feel broken — it says
+ * the provider is not connected yet and points at the working path. One env
+ * flag turns it into a real sign-in once platform/auth has the provider.
  *
  * The MFA step is preserved. The reference has no second stage, but TOTP
  * enrolment exists and dropping the step would lock out anyone enrolled.
@@ -219,6 +224,22 @@ export default function LoginPage() {
                     )}
                   </button>
                 </form>
+
+                <div className="flex items-center gap-3 my-5">
+                  <span className="h-px flex-1 bg-friday-border-soft" />
+                  <span className="text-xs text-muted-foreground">
+                    Or continue with
+                  </span>
+                  <span className="h-px flex-1 bg-friday-border-soft" />
+                </div>
+
+                <GoogleButton
+                  onUnavailable={() =>
+                    setError(
+                      "Google sign-in is not connected yet. Please use your email and password.",
+                    )
+                  }
+                />
               </>
             ) : (
               <>
@@ -308,6 +329,64 @@ const primaryClass =
   "hover:opacity-95 disabled:opacity-70 transition-opacity " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-friday-accent-ring " +
   "focus-visible:ring-offset-2 focus-visible:ring-offset-friday-surface";
+
+/**
+ * Google sign-in.
+ *
+ * Rendered whether or not the provider exists. When it does not, the click
+ * explains why instead of doing nothing — a silent no-op reads as a bug,
+ * and the user is left with no idea what to do next. The Google mark is
+ * inline SVG in its official four colours, which are vendor brand values
+ * and therefore not themed.
+ */
+function GoogleButton({ onUnavailable }: { onUnavailable: () => void }) {
+  const enabled = productSurfaceFlags.googleSignIn;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (!enabled) {
+          onUnavailable();
+          return;
+        }
+        void signIn("google", { callbackUrl: "/dashboard" });
+      }}
+      className={cn(
+        "w-full inline-flex items-center justify-center gap-2.5 rounded-md",
+        "border border-friday-border bg-friday-surface px-4 py-2.5 text-sm",
+        "text-foreground hover:bg-friday-surface-2 transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-friday-accent-ring",
+      )}
+    >
+      <GoogleMark />
+      Sign in with Google
+    </button>
+  );
+}
+
+/** Google's mark in its official colours. Vendor brand values — never themed. */
+function GoogleMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 18 18" className="h-4 w-4 shrink-0">
+      <path
+        fill={VENDOR_BRAND.GOOGLE_SIGN_IN.BLUE}
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62Z"
+      />
+      <path
+        fill={VENDOR_BRAND.GOOGLE_SIGN_IN.GREEN}
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.34A8.99 8.99 0 0 0 9 18Z"
+      />
+      <path
+        fill={VENDOR_BRAND.GOOGLE_SIGN_IN.YELLOW}
+        d="M3.97 10.72a5.41 5.41 0 0 1 0-3.44V4.94H.96a9 9 0 0 0 0 8.12l3.01-2.34Z"
+      />
+      <path
+        fill={VENDOR_BRAND.GOOGLE_SIGN_IN.RED}
+        d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.59C13.46.89 11.42 0 9 0A8.99 8.99 0 0 0 .96 4.94l3.01 2.34C4.68 5.16 6.66 3.58 9 3.58Z"
+      />
+    </svg>
+  );
+}
 
 function ErrorNote({ children }: { children: React.ReactNode }) {
   return (

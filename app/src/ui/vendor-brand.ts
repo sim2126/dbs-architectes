@@ -30,6 +30,13 @@ export const VENDOR_BRAND = Object.freeze({
     DARK_PURPLE: "#4b53bc",
     TILE_PURPLE: "#6264A7",
   }),
+  /** Google's identity mark, as used on the sign-in button. */
+  GOOGLE_SIGN_IN: Object.freeze({
+    BLUE: "#4285F4",
+    GREEN: "#34A853",
+    YELLOW: "#FBBC05",
+    RED: "#EA4335",
+  }),
   GOOGLE_CALENDAR: Object.freeze({
     BLUE: "#1e88e5",
     YELLOW: "#fbc02d",
