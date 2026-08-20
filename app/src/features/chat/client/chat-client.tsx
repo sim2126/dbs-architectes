@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Hash, Plus, Send, Smile, Paperclip, Search,
@@ -18,6 +19,7 @@ import { Badge } from "@/ui/components/badge";
 import { cn } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
+import { ThreadActions } from "@/features/chat/client/thread-actions";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useT } from "@/i18n/translations";
 import { EmojiPicker, type EmojiSelection } from "./emoji-picker";
@@ -88,6 +90,9 @@ interface Channel {
   description?: string | null;
   type: string;
   createdBy: string;
+  /** Set on project channels. Already returned by the API (it uses include,
+   *  not select) — this only declares it so callers can reach it. */
+  projectId?: string | null;
   members: ChannelMember[];
   unread?: number;
 }
@@ -320,7 +325,7 @@ function MessageItem({
                 </Avatar>
               ))}
             </div>
-            <span className="text-xs text-blue-500 font-semibold group-hover/thread:underline">
+            <span className="text-xs text-friday-accent font-medium group-hover/thread:underline">
               {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
             </span>
             <span className="text-[11px] text-muted-foreground">
@@ -900,6 +905,30 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editMessage, setEditMessage] = useState<Message | null>(null);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+
+  // Threads are addressable. Without a URL a thread cannot be linked, shared
+  // or reached with the back button — a manager saying "see the thread" has
+  // nothing to send. The id lives in a query param so the channel route is
+  // unchanged and an unknown id degrades to no thread rather than an error.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const threadParam = searchParams.get("thread");
+
+  const openThread = useCallback(
+    (msg: Message | null) => {
+      setThreadMessage(msg);
+      const params = new URLSearchParams(searchParams.toString());
+      if (msg) params.set("thread", msg.id);
+      else params.delete("thread");
+      // replace, not push: opening a thread should not fill the back stack
+      // with every panel toggle. scroll:false keeps the message list put.
+      router.replace(`${pathname}${params.toString() ? `?${params}` : ""}`, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams],
+  );
   const [search, setSearch] = useState("");
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
@@ -938,6 +967,18 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
       setThreadMessage(null);
     }
   }, [activeChannelId, fetchMessages]);
+
+  // Restore a thread from the URL once its channel's messages have loaded.
+  // This is what makes a pasted thread link work; without it the param is
+  // written but never read. An id that matches nothing in this channel is
+  // ignored rather than erroring — a stale link degrades to the channel
+  // view, which is the useful failure.
+  useEffect(() => {
+    if (!threadParam) return;
+    if (threadMessage?.id === threadParam) return;
+    const found = messages.find((m) => m.id === threadParam);
+    if (found) setThreadMessage(found);
+  }, [threadParam, messages, threadMessage?.id]);
 
   // Auto-scroll
   useEffect(() => {
@@ -1464,7 +1505,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                             message={msg}
                             currentUserId={currentUser.id}
                             onReact={reactToMessage}
-                            onReply={setThreadMessage}
+                            onReply={openThread}
                             onEdit={setEditMessage}
                             onDelete={deleteMessage}
                             isGrouped={isGrouped}
@@ -1535,18 +1576,27 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           >
             <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
               <div>
-                <h3 className="font-bold text-sm">Thread</h3>
+                <h3 className="font-bold text-sm">
+                  {threadMessage.user?.name
+                    ? `${threadMessage.user.name.split(" ")[0]}'s thread`
+                    : "Thread"}
+                </h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   #{activeChannel ? getChannelDisplayName(activeChannel) : ""}
                 </p>
               </div>
               <button
-                onClick={() => setThreadMessage(null)}
+                onClick={() => openThread(null)}
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <ThreadActions
+              threadId={threadMessage.id}
+              sourceText={threadMessage.content}
+              projectId={activeChannel?.projectId ?? null}
+            />
             <div className="flex-1 overflow-y-auto py-2">
               {/* Parent message */}
               <MessageItem
@@ -1594,7 +1644,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
               loading={sendingMessage}
               placeholder="Reply in thread..."
               replyTo={threadMessage}
-              onCancelReply={() => setThreadMessage(null)}
+              onCancelReply={() => openThread(null)}
               users={users}
             />
           </motion.div>
