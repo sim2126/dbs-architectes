@@ -10,8 +10,16 @@ export async function GET() {
   const channels = await prisma.channel.findMany({
     where: {
       OR: [
-        { type: "public" },
+        // Workspace-wide channels. Scoped to those with no project, so a
+        // project channel marked public cannot leak the whole portfolio.
+        { type: "public", projectId: null },
+        // DMs and explicitly-joined channels.
         { members: { some: { userId: session.user.id } } },
+        // Project channels: access follows the project assignment, not a
+        // mirrored ChannelMember row. Nothing keeps those rows in step with
+        // assignments today, so a member removed from a project would
+        // otherwise keep reading its channel indefinitely.
+        { project: { assignments: { some: { userId: session.user.id } } } },
       ],
     },
     include: {

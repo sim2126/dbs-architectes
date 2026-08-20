@@ -26,6 +26,7 @@ import { getPhaseColor, getStatusColor } from "@/ui/tokens";
 import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
+import { ProjectDetailModal } from "@/features/projects/client/project-detail-modal";
 import {
   projectMatchesPageQuery,
   type ProjectPageQuery,
@@ -333,17 +334,22 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
         </div>
       </div>
 
-      {/* ── Slide-over detail panel ── */}
+      {/*
+       * Detail is centre-stage, not a drawer. A 400px side panel left the
+       * table roughly 780px on a 1440px screen, which is what forced the
+       * column-overflow decision. ProjectDrawer is retained below but no
+       * longer mounted — it goes when the full project page absorbs the
+       * few things the modal does not cover.
+       */}
+      <ProjectDetailModal
+        project={selectedProject}
+        open={selectedProject !== null}
+        onClose={() => setSelectedProject(null)}
+        canEdit={permissions.canEdit}
+        onOptimistic={(patch) => updateProject(patch as Partial<Project>)}
+        currentUserId={currentUserId}
+      />
       <AnimatePresence>
-        {selectedProject && (
-          <ProjectDrawer
-            project={selectedProject}
-            onClose={() => setSelectedProject(null)}
-            onUpdate={updateProject}
-            canEdit={permissions.canEdit}
-            currentUserId={currentUserId}
-          />
-        )}
       </AnimatePresence>
 
       <AddProjectModal
