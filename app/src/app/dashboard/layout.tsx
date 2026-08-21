@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { HelpDialog } from "@/features/support/client/help-dialog";
+import { AssistantPanel } from "@/features/ai/client/assistant-panel";
 import { auth } from "@/platform/auth";
 import { Sidebar } from "@/ui/layout/sidebar";
 import { Header } from "@/ui/layout/header";
@@ -28,6 +29,12 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
+      {/*
+       * The assistant is a sibling of the content column, not an overlay, so
+       * opening it narrows the page rather than covering it. Reading a project
+       * while asking about it is the whole reason to dock the thing.
+       */}
+      <AssistantPanel />
       <BrowserNotificationBanner />
       <ToastHost />
     </div>

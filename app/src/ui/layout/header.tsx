@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Moon, Sun, Search, CheckCheck, AtSign, Activity, MessageSquare } from "lucide-react";
+import { Bell, Moon, Sun, Search, CheckCheck, AtSign, Activity, MessageSquare, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/ui/components/button";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -10,6 +10,7 @@ import { useT } from "@/i18n/translations";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/ui/utils";
+import { useAssistantStore } from "@/ui/stores/assistant-store";
 import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -184,25 +185,43 @@ export function Header({ title }: { title?: string }) {
     (activeTab === "all" && (loadingActivities || loadingMentions));
 
   return (
-    <header className="h-14 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-5 gap-3 shrink-0">
+    <header className="relative h-14 border-b border-border bg-background/95 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-5 gap-3 shrink-0">
       <div className="flex items-center min-w-0">
         {title && (
           <h1 className="text-base font-semibold text-foreground truncate">{title}</h1>
         )}
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Search — relocated to the right cluster */}
+      {/*
+       * Search is centred and paired with the assistant, matching the
+       * reference. Absolutely positioned rather than placed in the flex row
+       * so it stays optically centred in the viewport regardless of how wide
+       * the page title on the left happens to be.
+       */}
+      <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2">
         <button
           onClick={openSearch}
           aria-label={`${t("common.search")} pages, projects`}
-          className="flex items-center gap-2.5 h-9 px-3 w-56 sm:w-72 rounded-xl border border-border bg-muted/40 hover:bg-muted/80 hover:border-foreground/20 text-muted-foreground text-sm transition-all group"
+          className="flex items-center gap-2.5 h-9 px-3.5 w-64 lg:w-80 rounded-full border border-border bg-muted/40 hover:bg-muted/80 hover:border-foreground/20 text-muted-foreground text-sm transition-all group"
         >
           <Search className="w-3.5 h-3.5 shrink-0 group-hover:text-foreground transition-colors" />
-          <span className="flex-1 text-left text-sm truncate">{t("common.search")} pages, projects…</span>
-          <div className="hidden sm:flex items-center gap-0.5 shrink-0">
-            <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-background border border-border rounded">⌘K</kbd>
-          </div>
+          <span className="flex-1 text-left text-sm truncate">{t("common.search")}</span>
+          <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-background border border-border rounded shrink-0">
+            ⌘K
+          </kbd>
+        </button>
+
+        <AssistantPill />
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Compact search for viewports too narrow for the centred pair. */}
+        <button
+          onClick={openSearch}
+          aria-label={`${t("common.search")} pages, projects`}
+          className="md:hidden p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <Search className="w-4 h-4" />
         </button>
 
         <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-8 w-8" title="Toggle theme">
@@ -386,5 +405,35 @@ export function Header({ title }: { title?: string }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * DBS GPT trigger, beside the search field.
+ *
+ * Sits here rather than in the sidebar because the assistant is useful
+ * *while* looking at something — asking "what changed on Belvédère" from the
+ * Belvédère page beats navigating to a separate assistant screen and losing
+ * the context you were asking about.
+ */
+function AssistantPill() {
+  const open = useAssistantStore((s) => s.open);
+  const toggle = useAssistantStore((s) => s.toggle);
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-pressed={open}
+      aria-label="DBS GPT"
+      className={cn(
+        "inline-flex items-center gap-1.5 h-9 rounded-full border px-3.5 text-sm transition-colors shrink-0",
+        open
+          ? "border-friday-accent bg-friday-accent-soft text-foreground"
+          : "border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/80",
+      )}
+    >
+      <Sparkles className="h-3.5 w-3.5 text-friday-accent shrink-0" />
+      DBS GPT
+    </button>
   );
 }

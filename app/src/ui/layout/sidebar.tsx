@@ -53,9 +53,16 @@ const collaborationItems = [
     : []),
 ];
 
-const aiItems = [
-  { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
-];
+/**
+ * Empty by design. DBS GPT moved out of the sidebar and into the header,
+ * beside search, as a docked panel — see AssistantPill. A destination you
+ * must leave your work to reach gets used once; a panel you can open over
+ * the thing you are asking about gets used daily.
+ *
+ * The array is kept rather than deleted so the section's render logic and
+ * its role gating stay intact for whatever lands here next.
+ */
+const aiItems: { labelKey: string; href: string; icon: typeof Sparkles }[] = [];
 
 interface SidebarProps {
   user?: {
