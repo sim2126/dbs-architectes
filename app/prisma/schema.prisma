@@ -71,6 +71,7 @@ model User {
   roleChangesBy    RoleChangeLog[]     @relation("RoleChangeActor")
   favorites        Favorite[]
   savedAi          SavedAiResponse[]
+  aiAttachments    AiChatAttachment[]
   tasks            Task[]
   invitationsIssued Invitation[]      @relation("InvitationInviter")
   passwordResets    PasswordReset[]
@@ -730,6 +731,43 @@ model Favorite {
 // Snapshots of Aria assistant responses the user wants to revisit.
 // We embed the rendered blocks + plain text so the saved card survives
 // even if the original chat session is deleted.
+
+/// A file a user attached in DBS GPT.
+///
+/// Storage and comprehension are different things. A row here means the file
+/// is stored and downloadable; it does NOT mean the assistant can read it.
+/// `ingestedAt` is the only signal that content has been extracted and is
+/// available to ground an answer — until it is set the UI must say the file is
+/// attached but not yet readable, or a user will upload a PDF, ask about it,
+/// and get a confident answer from a model that never saw it.
+model AiChatAttachment {
+  id          String  @id @default(cuid())
+  userId      String
+  /// Nullable so an attachment survives deletion of the conversation it came
+  /// from — same reasoning as SavedAiResponse.sessionId.
+  sessionId   String?
+  messageId   String?
+  filename    String
+  contentType String
+  sizeBytes   Int
+  /// Location from the upload adapter — S3 key or local-disk path depending on
+  /// deployment. Never a data URL; large blobs do not belong in Postgres.
+  url         String
+
+  /// Set when extraction has run and the text is available to the agent.
+  /// Null means stored only.
+  ingestedAt  DateTime?
+  /// Populated when ingestion fails, so a failure is visible rather than
+  /// looking like a file that is processing forever.
+  ingestError String?
+
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([sessionId])
+}
 
 model SavedAiResponse {
   id         String   @id @default(cuid())

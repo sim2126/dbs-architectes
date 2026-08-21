@@ -13,6 +13,7 @@
     "test:dashboard": "tsx --test src/features/dashboard/domain/widgets.test.ts",
     "test:projects": "tsx --test src/features/projects/domain/editable-columns.test.ts",
     "test:guests": "tsx --test src/features/users/domain/guests.test.ts",
+    "test:attachments": "tsx --test src/features/ai/domain/attachments.test.ts",
     "test:work-grouping": "tsx --test src/features/work-items/domain/grouping.test.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed-demo.ts",
