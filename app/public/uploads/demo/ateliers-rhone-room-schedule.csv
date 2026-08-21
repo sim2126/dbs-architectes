@@ -1,0 +1,11 @@
+Room,Level,Area m2,Floor finish,Ceiling,Occupancy
+Atelier A,00,184.5,Sealed concrete,Exposed slab,24
+Atelier B,00,176.2,Sealed concrete,Exposed slab,24
+Workshop,00,96.4,Resin,Acoustic raft,12
+Store,00,42.1,Sealed concrete,Exposed slab,2
+Meeting,01,38.6,Oak boards,Plasterboard,10
+Studio North,01,142.0,Oak boards,Acoustic raft,18
+Studio South,01,138.7,Oak boards,Acoustic raft,18
+Kitchen,01,28.3,Terrazzo,Plasterboard,8
+WC accessible,01,6.4,Terrazzo,Plasterboard,1
+Plant,02,54.8,Screed,Exposed,0

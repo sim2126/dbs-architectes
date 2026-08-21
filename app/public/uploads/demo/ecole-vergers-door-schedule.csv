@@ -1,0 +1,11 @@
+Ref,Location,Width mm,Height mm,Fire rating,Access control
+D-001,Main entrance,1800,2400,—,Card reader
+D-002,Lobby to corridor,1500,2100,EI30,None
+D-003,Classroom 1,1000,2100,EI30,None
+D-004,Classroom 2,1000,2100,EI30,None
+D-005,Stair core north,1200,2100,EI60,None
+D-006,Stair core south,1200,2100,EI60,None
+D-007,Plant room,900,2100,EI60,Key
+D-008,Kitchen,1100,2100,EI30,None
+D-009,Staff room,900,2100,—,Card reader
+D-010,Refuse store,1000,2100,EI60,Key

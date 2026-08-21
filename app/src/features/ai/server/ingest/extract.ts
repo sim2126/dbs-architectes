@@ -45,7 +45,9 @@ export async function extractText(
       ? await extractPdf(bytes)
       : kind === "table"
         ? await extractTable(bytes, contentType, filename)
-        : await extractImage(bytes, contentType);
+        : kind === "doc"
+          ? await extractDoc(bytes)
+          : await extractImage(bytes, contentType);
 
   if (result.text.trim().length === 0) {
     // A scanned PDF with no text layer lands here. Saying so is more useful
@@ -71,7 +73,16 @@ async function extractPdf(bytes: Uint8Array): Promise<ExtractResult> {
   // serverless bundle that happens to import this module.
   const { extractText: unpdfExtract, getDocumentProxy } = await import("unpdf");
   try {
-    const pdf = await getDocumentProxy(bytes);
+    // unpdf rejects a Node Buffer outright, even though Buffer extends
+    // Uint8Array and so satisfies this module's signature. Normalised to a
+    // plain view over the same memory — no copy — so any caller holding a
+    // Buffer works rather than failing on a type check it cannot see.
+    const plain = new Uint8Array(
+      bytes.buffer,
+      bytes.byteOffset,
+      bytes.byteLength,
+    );
+    const pdf = await getDocumentProxy(plain);
     const { totalPages, text } = await unpdfExtract(pdf, { mergePages: true });
     // mergePages:true narrows the return type to a single string, so no
     // array branch is needed — TypeScript rejects one as unreachable.
@@ -151,6 +162,40 @@ function formatCell(value: unknown): string {
     return "";
   }
   return String(value);
+}
+
+// ── Word documents ────────────────────────────────────────────────
+
+/**
+ * .docx via mammoth's raw-text reader.
+ *
+ * Raw text rather than mammoth's HTML converter on purpose. The HTML path
+ * would put document-authored markup into a string that later becomes model
+ * context and, through the preview, the DOM — an injection surface with no
+ * upside, since the agent needs the words, not the styling.
+ *
+ * Units are paragraphs. Pages are not a property of a .docx at all: pagination
+ * is decided by whatever renders it, so reporting a page count would be
+ * inventing a number.
+ */
+async function extractDoc(bytes: Uint8Array): Promise<ExtractResult> {
+  const mammoth = await import("mammoth");
+  try {
+    const { value } = await mammoth.extractRawText({
+      buffer: Buffer.from(bytes),
+    });
+    const paragraphs = value
+      .split(/\n+/)
+      .filter((line) => line.trim().length > 0);
+    return cap(paragraphs.join("\n\n"), paragraphs.length);
+  } catch (err) {
+    // The usual cause is a legacy .doc renamed to .docx — mammoth cannot open
+    // an OLE container. Saying which file is wrong beats a parser stack trace.
+    throw new ExtractError(
+      `Could not read the document: ${err instanceof Error ? err.message : "unknown error"}. ` +
+        `Legacy .doc files must be saved as .docx first.`,
+    );
+  }
 }
 
 // ── Images ────────────────────────────────────────────────────────

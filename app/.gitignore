@@ -52,4 +52,10 @@ next-env.d.ts
 *.db
 
 # locally-stored chat uploads (production uses S3)
-/public/uploads
+#
+# Everything directly under uploads/ is a real user upload and stays out of
+# git. demo/ is the exception: those are generated demo fixtures committed on
+# purpose, because the seeded attachment rows point at these paths and a
+# deployed demo has no way to run the generator.
+/public/uploads/*
+!/public/uploads/demo/

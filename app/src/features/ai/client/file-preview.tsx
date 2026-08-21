@@ -16,10 +16,13 @@ import type { AiAttachment } from "./ai-lists";
  *           drawing hides exactly the title block you wanted to read.
  *   pdf   — an iframe. Every current browser has a PDF viewer with its own
  *           paging and zoom, which is better than anything worth rebuilding.
- *   table — the extracted text laid out as a grid. The stored object is a
- *           binary .xlsx the browser cannot display, so the extraction is
- *           what makes a preview possible at all — which is why a table
- *           preview is only offered once the file has been read.
+ *   table — the extracted text laid out as a grid.
+ *   doc   — the extracted text as prose.
+ *
+ * The last two share a constraint: the stored object is a binary OOXML zip no
+ * browser can display, so the extraction is what makes a preview possible at
+ * all. That is why both are offered only once the file has been read, and why
+ * both fall back to a download rather than an empty frame.
  *
  * The body scrolls; the header and footer do not. A long spreadsheet or a
  * tall elevation is the normal case, not the exception.
@@ -115,6 +118,14 @@ export function FilePreview({
                 note="This spreadsheet has not been read yet, so there is nothing to show inline. Download it to open in Excel."
               />
             )
+          ) : kind === "doc" ? (
+            readable && attachment.extractedText ? (
+              <DocPreview text={attachment.extractedText} />
+            ) : (
+              <Unavailable
+                note="This document has not been read yet, so there is nothing to show inline. Download it to open in Word."
+              />
+            )
           ) : (
             <Unavailable note="This file type cannot be previewed here." />
           )}
@@ -189,6 +200,28 @@ function TablePreview({ text }: { text: string }) {
   );
 }
 
+/**
+ * Extracted document text as prose.
+ *
+ * Rendered as plain text nodes, never as markup: the source is a document
+ * someone else authored, and React escaping is what keeps a crafted .docx
+ * from putting HTML into this page.
+ */
+function DocPreview({ text }: { text: string }) {
+  return (
+    <div className="px-6 py-6 mx-auto max-w-2xl bg-friday-surface">
+      {text.split(/\n{2,}/).map((para, i) => (
+        <p
+          key={i}
+          className="text-sm text-foreground leading-relaxed mb-3 whitespace-pre-wrap font-serif"
+        >
+          {para}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function Unavailable({ note }: { note: string }) {
   return (
     <div className="px-6 py-14 text-center">
@@ -208,5 +241,6 @@ function unitWord(kind: ReturnType<typeof kindForType>, n: number): string {
   const plural = n === 1 ? "" : "s";
   if (kind === "pdf") return `page${plural}`;
   if (kind === "table") return `sheet${plural}`;
+  if (kind === "doc") return `paragraph${plural}`;
   return `image${plural}`;
 }

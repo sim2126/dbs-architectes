@@ -17,6 +17,7 @@
     "test:work-grouping": "tsx --test src/features/work-items/domain/grouping.test.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed-demo.ts",
+    "db:seed:ai": "tsx prisma/seed-ai-files.ts",
     "db:seed:legacy": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "setup": "prisma db push && tsx prisma/seed-demo.ts"
@@ -61,6 +62,7 @@
     "framer-motion": "^12.38.0",
     "googleapis": "^171.4.0",
     "lucide-react": "^1.7.0",
+    "mammoth": "^1.12.1",
     "next": "^16.2.11",
     "next-auth": "^5.0.0-beta.32",
     "nodemailer": "^8.0.11",

@@ -2,19 +2,24 @@
  * Attachment types DBS AI accepts.
  *
  * Deliberately narrow. Each entry here is a promise that the ingestion
- * pipeline will eventually be able to read it — accepting a .docx or a .dwg
- * today would mean storing something the agent can never use, which is worse
- * than refusing it, because the user believes they have supplied context.
+ * pipeline can actually read it — accepting a .dwg today would mean storing
+ * something the agent can never use, which is worse than refusing it, because
+ * the user believes they have supplied context.
  *
- * Scope for the first pipeline, in order of difficulty:
- *   PDF          — text extraction, then OCR fallback for scanned sheets
- *   images       — OCR only
- *   CSV / Excel  — tabular parse, no OCR needed
+ * What the pipeline reads:
+ *   PDF          — embedded text layer
+ *   images       — a vision model, which reads labels and describes the sheet
+ *   CSV / Excel  — tabular parse, sheet names preserved
+ *   .docx        — document text
+ *
+ * Note the absence of legacy .doc (application/msword). It is a binary
+ * OLE container, not an OOXML zip, and the .docx reader cannot open it — so
+ * accepting it would break the promise above.
  *
  * Pure — importable by the route, the client and a test alike.
  */
 
-export type IngestKind = "pdf" | "image" | "table";
+export type IngestKind = "pdf" | "image" | "table" | "doc";
 
 /** MIME type to the kind of extraction it will need. */
 export const INGESTIBLE_TYPES: ReadonlyArray<{ mime: string; kind: IngestKind }> = [
@@ -36,6 +41,11 @@ export const INGESTIBLE_TYPES: ReadonlyArray<{ mime: string; kind: IngestKind }>
   {
     mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     kind: "table",
+  },
+
+  {
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    kind: "doc",
   },
 ];
 

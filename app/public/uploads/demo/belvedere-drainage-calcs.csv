@@ -1,0 +1,5 @@
+Catchment,Area m2,Rate mm/hr,Flow l/s,Attenuation m3
+Roof north,214,50,2.97,1.8
+Roof south,216,50,3.00,1.8
+Terrace,148,50,2.06,1.2
+Access road,312,50,4.33,2.6

@@ -1,7 +1,7 @@
 /**
  * /api/ai-attachments — files attached in DBS AI.
  *
- * GET  list the caller's attachments, newest first
+ * GET  list the caller's attachments, newest first, or one in full via ?id=
  * POST record one that has already been uploaded
  *
  * The bytes do not pass through here. The client presigns via
@@ -28,6 +28,35 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const sessionId = searchParams.get("sessionId");
+  const id = searchParams.get("id");
+
+  // One row, with its extracted text. Separate from the list on purpose: the
+  // preview needs the text of the file being opened, and a listing that
+  // carried every document's full text would ship megabytes to render a
+  // sidebar. Still filtered on the caller, so an id belonging to someone else
+  // returns 404 rather than their document.
+  if (id) {
+    const one = await prisma.aiChatAttachment.findFirst({
+      where: { id, userId: session.user.id },
+      select: {
+        id: true,
+        filename: true,
+        contentType: true,
+        sizeBytes: true,
+        url: true,
+        sessionId: true,
+        ingestedAt: true,
+        ingestError: true,
+        createdAt: true,
+        extractedText: true,
+        extractedUnits: true,
+      },
+    });
+    if (!one) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    return Response.json({ attachment: one });
+  }
 
   const attachments = await prisma.aiChatAttachment.findMany({
     where: {

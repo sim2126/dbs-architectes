@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
-  Bookmark,
   Check,
   ChevronDown,
   ChevronRight,
@@ -24,7 +23,6 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Button } from "@/ui/components/button";
 import ReactMarkdown from "react-markdown";
@@ -38,6 +36,12 @@ import {
 } from "@/features/ai/server/agent/artifacts";
 import type { Block } from "@/features/ai/server/agent/blocks";
 import { BlocksView } from "@/features/ai/client/agent-blocks";
+import {
+  AttachmentRow,
+  ListOrEmpty,
+  type AiAttachment,
+} from "@/features/ai/client/ai-lists";
+import { FilePreview } from "@/features/ai/client/file-preview";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -59,15 +63,6 @@ interface ChatSession {
   title: string;
   createdAt: string;
   updatedAt: string;
-}
-
-interface SavedInsight {
-  id: string;
-  title: string;
-  text: string;
-  blocks: Block[];
-  sessionId: string | null;
-  createdAt: string;
 }
 
 interface SSEEvent {
@@ -354,53 +349,22 @@ function ArtifactTableCard({
 
 function MessageBubble({
   message,
-  sessionId,
-  onSaved,
   onRetry,
   onExportArtifact,
   onOpenSheet,
 }: {
   message: ChatMessage;
-  sessionId: string | null;
-  onSaved?: () => void;
   onRetry?: () => void;
   onExportArtifact?: (artifactId: string) => void;
   onOpenSheet?: (sheetId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [message.content]);
-
-  const save = useCallback(async () => {
-    if (saving || saved) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/ai-saved", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          messageId: message.id,
-          text: message.content,
-          blocks: message.blocks ?? [],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      onSaved?.();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    } catch (err) {
-      console.error("[gpt] save insight failed:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [message.id, message.content, message.blocks, sessionId, saved, saving, onSaved]);
 
   if (message.role === "user") {
     return (
@@ -469,20 +433,6 @@ function MessageBubble({
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className={cn(
-                "inline-flex items-center gap-1 text-[11px] transition-colors",
-                saved
-                  ? "text-friday-accent"
-                  : "text-friday-fg-subtle hover:text-friday-fg",
-                saving && "opacity-50",
-              )}
-            >
-              <Bookmark className={cn("h-3 w-3", saved && "fill-current")} />
-              {saved ? "Saved" : "Save"}
-            </button>
             {onRetry && (
               <button
                 onClick={onRetry}
@@ -503,21 +453,23 @@ function MessageBubble({
 
 function ChatHistorySidebar({
   sessions,
-  savedInsights,
-  savedInsightsError,
+  attachments,
+  attachmentsError,
   activeId,
   onSelect,
-  onSelectSaved,
+  onOpenFile,
+  onDeleteFile,
   onNew,
   onDelete,
   onRename,
 }: {
   sessions: ChatSession[];
-  savedInsights: SavedInsight[] | null;
-  savedInsightsError: boolean;
+  attachments: AiAttachment[] | null;
+  attachmentsError: boolean;
   activeId: string | null;
   onSelect: (id: string) => void;
-  onSelectSaved: (insight: SavedInsight) => void;
+  onOpenFile: (attachment: AiAttachment) => void;
+  onDeleteFile: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -525,7 +477,7 @@ function ChatHistorySidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [savedOpen, setSavedOpen] = useState(true);
+  const [filesOpen, setFilesOpen] = useState(true);
 
   const groupByDate = (sessions: ChatSession[]) => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -648,51 +600,47 @@ function ChatHistorySidebar({
         <div className="border-t border-friday-border-soft pt-2">
           <button
             type="button"
-            onClick={() => setSavedOpen((open) => !open)}
+            onClick={() => setFilesOpen((open) => !open)}
             className="flex w-full items-center gap-1 px-3 py-1 text-left font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle hover:text-friday-fg transition-colors"
-            aria-expanded={savedOpen}
+            aria-expanded={filesOpen}
           >
-            {savedOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            <span className="flex-1">Saved</span>
-            {savedInsights && savedInsights.length > 0 && (
-              <span className="tracking-normal">{savedInsights.length}</span>
+            {filesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <span className="flex-1">Files</span>
+            {attachments && attachments.length > 0 && (
+              <span className="tracking-normal">{attachments.length}</span>
             )}
           </button>
 
-          {savedOpen && (
-            <div>
-              {savedInsightsError ? (
-                <p className="px-3 py-2 text-[11px] text-red-600">Saved insights unavailable</p>
-              ) : savedInsights === null ? (
-                <p className="px-3 py-2 text-[11px] text-friday-fg-subtle italic">Loading saved insights...</p>
-              ) : savedInsights.length === 0 ? (
-                <p className="px-3 py-2 text-[11px] text-friday-fg-subtle italic">No saved insights</p>
+          {/*
+            * Every file the user has attached, across conversations — not just
+            * the active one. A document uploaded three chats ago is the case
+            * where a file library earns its place; scoping it to the open
+            * conversation would make it a duplicate of the composer's own list.
+            */}
+          {filesOpen && (
+            <div className="px-1 pb-2">
+              {attachmentsError ? (
+                <p className="px-2 py-2 text-[11px] text-friday-error-fg">
+                  Files unavailable
+                </p>
+              ) : attachments === null ? (
+                <p className="px-2 py-2 text-[11px] text-friday-fg-subtle italic">
+                  Loading files...
+                </p>
               ) : (
-                savedInsights.map((insight) => (
-                  <button
-                    key={insight.id}
-                    type="button"
-                    onClick={() => onSelectSaved(insight)}
-                    title={insight.title}
-                    className={cn(
-                      "group relative flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px] transition-colors",
-                      insight.sessionId && activeId === insight.sessionId
-                        ? "text-friday-fg font-medium"
-                        : "text-friday-fg-muted hover:text-friday-fg",
-                    )}
-                  >
-                    {insight.sessionId && activeId === insight.sessionId && (
-                      <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-sm bg-friday-accent" />
-                    )}
-                    <Bookmark className="mt-0.5 h-3 w-3 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">{insight.title}</span>
-                      <span className="block truncate text-[10px] font-normal text-friday-fg-subtle">
-                        Saved {formatDistanceToNow(new Date(insight.createdAt), { addSuffix: true })}
-                      </span>
-                    </span>
-                  </button>
-                ))
+                <ListOrEmpty
+                  empty={attachments.length === 0}
+                  note="No files yet. Attach a PDF, drawing, spreadsheet or document to a conversation and it will appear here."
+                >
+                  {attachments.map((attachment) => (
+                    <AttachmentRow
+                      key={attachment.id}
+                      attachment={attachment}
+                      onOpen={() => onOpenFile(attachment)}
+                      onDelete={() => onDeleteFile(attachment.id)}
+                    />
+                  ))}
+                </ListOrEmpty>
               )}
             </div>
           )}
@@ -708,9 +656,9 @@ export default function DBSGPTPage() {
   const router = useRouter();
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [savedInsights, setSavedInsights] = useState<SavedInsight[] | null>(null);
-  const [savedInsightsError, setSavedInsightsError] = useState(false);
-  const [activeSavedInsight, setActiveSavedInsight] = useState<SavedInsight | null>(null);
+  const [attachments, setAttachments] = useState<AiAttachment[] | null>(null);
+  const [attachmentsError, setAttachmentsError] = useState(false);
+  const [previewFile, setPreviewFile] = useState<AiAttachment | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -743,22 +691,67 @@ export default function DBSGPTPage() {
     fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
   }, []);
 
-  const loadSavedInsights = useCallback(async () => {
-    setSavedInsightsError(false);
+  const loadAttachments = useCallback(async () => {
+    setAttachmentsError(false);
     try {
-      const response = await fetch("/api/ai-saved");
+      const response = await fetch("/api/ai-attachments");
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      setSavedInsights((await response.json()) as SavedInsight[]);
+      const data = (await response.json()) as { attachments: AiAttachment[] };
+      setAttachments(data.attachments ?? []);
     } catch (error) {
-      console.error("[gpt] saved insights load failed:", error);
-      setSavedInsights([]);
-      setSavedInsightsError(true);
+      console.error("[gpt] attachments load failed:", error);
+      setAttachments([]);
+      setAttachmentsError(true);
     }
   }, []);
 
   useEffect(() => {
-    void loadSavedInsights();
-  }, [loadSavedInsights]);
+    void loadAttachments();
+  }, [loadAttachments]);
+
+  /**
+   * Opens the centre-stage preview.
+   *
+   * The row from the listing is shown immediately so the dialog appears on the
+   * click, then the full row — including extracted text — replaces it. Without
+   * that second fetch a spreadsheet or document would always render its
+   * "not read yet" fallback, because the listing deliberately omits the text.
+   */
+  const handleOpenFile = useCallback(async (attachment: AiAttachment) => {
+    setPreviewFile(attachment);
+    try {
+      const res = await fetch(
+        `/api/ai-attachments?id=${encodeURIComponent(attachment.id)}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { attachment: AiAttachment };
+      // Guard against a slow response landing after the user opened another
+      // file or closed the dialog.
+      setPreviewFile((current) =>
+        current?.id === attachment.id ? data.attachment : current,
+      );
+    } catch (error) {
+      // Non-fatal. Images and PDFs render from the URL alone, so the preview
+      // stays useful; only the text-derived previews lose their body.
+      console.error("[gpt] attachment detail load failed:", error);
+    }
+  }, []);
+
+  const handleDeleteFile = useCallback(async (id: string) => {
+    setAttachments((prev) => prev?.filter((a) => a.id !== id) ?? prev);
+    setPreviewFile((current) => (current?.id === id ? null : current));
+    try {
+      const res = await fetch(`/api/ai-attachments?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (error) {
+      // Put it back rather than leaving the list claiming a deletion that
+      // did not happen.
+      console.error("[gpt] attachment delete failed:", error);
+      void loadAttachments();
+    }
+  }, [loadAttachments]);
 
   // Probe AI status — when AI_DISABLED is on in Vercel, the empty state
   // explains the planned break and the composer is disabled instead of
@@ -788,7 +781,6 @@ export default function DBSGPTPage() {
   // session-load effect from racing sendMessage() and wiping the in-flight
   // user/assistant messages right after a starter-prompt click.
   const loadedSessionRef = useRef<string | null>(null);
-  const savedFallbackRef = useRef<SavedInsight | null>(null);
   const sessionSelectionRef = useRef(0);
 
   // Restore the previously-viewed chat from ?chat=<id> on mount so a
@@ -836,15 +828,9 @@ export default function DBSGPTPage() {
       .then(async (r) => {
         if (selection !== sessionSelectionRef.current) return null;
         if (!r.ok) {
-          const fallback = savedFallbackRef.current;
-          if (fallback?.sessionId === activeSessionId) {
-            setActiveSavedInsight(fallback);
-          }
           // Drop a stale deleted/foreign session so the URL cleans up.
-          // Saved selections continue with their stored read-only snapshot.
           setActiveSessionId(null);
           loadedSessionRef.current = null;
-          savedFallbackRef.current = null;
           throw new Error(`HTTP ${r.status}`);
         }
         return (await r.json()) as {
@@ -868,9 +854,7 @@ export default function DBSGPTPage() {
           steps: m.steps ?? [],
           blocks: m.blocks ?? [],
         })));
-        setActiveSavedInsight(null);
         loadedSessionRef.current = activeSessionId;
-        savedFallbackRef.current = null;
       })
       .catch(() => {})
       .finally(() => {
@@ -899,35 +883,14 @@ export default function DBSGPTPage() {
   const handleNew = useCallback(() => {
     sessionSelectionRef.current += 1;
     setActiveSessionId(null);
-    setActiveSavedInsight(null);
     setLoadingSession(false);
     setMessages([]);
     loadedSessionRef.current = null;
-    savedFallbackRef.current = null;
   }, []);
 
   const handleSelect = useCallback((id: string) => {
     if (id !== activeSessionId) sessionSelectionRef.current += 1;
-    setActiveSavedInsight(null);
-    savedFallbackRef.current = null;
     setActiveSessionId(id);
-  }, [activeSessionId]);
-
-  const handleSelectSaved = useCallback((insight: SavedInsight) => {
-    if (!insight.sessionId) {
-      sessionSelectionRef.current += 1;
-      setActiveSessionId(null);
-      setMessages([]);
-      setActiveSavedInsight(insight);
-      setLoadingSession(false);
-      loadedSessionRef.current = null;
-      savedFallbackRef.current = null;
-      return;
-    }
-    if (insight.sessionId !== activeSessionId) sessionSelectionRef.current += 1;
-    setActiveSavedInsight(null);
-    savedFallbackRef.current = insight;
-    setActiveSessionId(insight.sessionId);
   }, [activeSessionId]);
 
   const handleDelete = useCallback(async (id: string) => {
@@ -1287,9 +1250,6 @@ export default function DBSGPTPage() {
         return `${days} d ago`;
       })()
     : null;
-  const activeSavedTimeAgo = activeSavedInsight
-    ? formatDistanceToNow(new Date(activeSavedInsight.createdAt), { addSuffix: true })
-    : null;
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-friday-bg">
@@ -1300,9 +1260,10 @@ export default function DBSGPTPage() {
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatHistorySidebar
-            sessions={sessions} savedInsights={savedInsights}
-            savedInsightsError={savedInsightsError} activeId={activeSessionId}
-            onSelect={handleSelect} onSelectSaved={handleSelectSaved} onNew={handleNew}
+            sessions={sessions} attachments={attachments}
+            attachmentsError={attachmentsError} activeId={activeSessionId}
+            onSelect={handleSelect} onOpenFile={handleOpenFile}
+            onDeleteFile={handleDeleteFile} onNew={handleNew}
             onDelete={handleDelete} onRename={handleRename}
           />
         </div>
@@ -1313,16 +1274,7 @@ export default function DBSGPTPage() {
         {/* Top bar */}
         <div className="shrink-0 border-b border-friday-border-soft bg-friday-bg/95 backdrop-blur-sm px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0 flex items-baseline gap-2.5">
-            {activeSavedInsight ? (
-              <>
-                <span className="font-display italic text-[15px] text-friday-fg truncate">
-                  {activeSavedInsight.title}
-                </span>
-                <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em] shrink-0">
-                  Saved insight · {activeSavedTimeAgo}
-                </span>
-              </>
-            ) : activeSession ? (
+            {activeSession ? (
               <>
                 <span className="font-display italic text-[15px] text-friday-fg truncate">
                   {activeSession.title}
@@ -1341,10 +1293,7 @@ export default function DBSGPTPage() {
             <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em]">
               AI Assistant
             </span>
-            <span className="hidden sm:flex items-center gap-1 text-[10.5px] text-friday-fg-subtle">
-              <kbd className="px-1.5 py-0.5 font-mono text-[10px] border border-friday-border-soft rounded bg-friday-surface">⌘K</kbd>
-            </span>
-            {(activeSavedInsight || messages.length > 0) && (
+            {messages.length > 0 && (
               <button
                 onClick={handleNew}
                 className="inline-flex items-center gap-1 text-[12px] text-friday-fg-muted hover:text-friday-fg transition-colors"
@@ -1360,21 +1309,6 @@ export default function DBSGPTPage() {
           {loadingSession ? (
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : activeSavedInsight ? (
-            <div className="mx-auto max-w-3xl px-6 py-6">
-              <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
-                <p className="mb-3 font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
-                  Saved snapshot · Original conversation unavailable
-                </p>
-                {activeSavedInsight.blocks.length > 0 ? (
-                  <BlocksView blocks={activeSavedInsight.blocks} />
-                ) : (
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-[13.5px] leading-7">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeSavedInsight.text}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
             </div>
           ) : !aiStatus.enabled ? (
             <motion.div
@@ -1438,8 +1372,6 @@ export default function DBSGPTPage() {
                   <MessageBubble
                     key={message.id}
                     message={message}
-                    sessionId={activeSessionId}
-                    onSaved={loadSavedInsights}
                     onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
                     onOpenSheet={openSheet}
                     onRetry={
@@ -1461,9 +1393,7 @@ export default function DBSGPTPage() {
             <textarea
               ref={textareaRef}
               placeholder={
-                activeSavedInsight
-                  ? "Saved snapshots are read-only — start a new chat to continue"
-                  : aiStatus.enabled
+                aiStatus.enabled
                   ? "Ask about projects, deadlines, team workload, regulations…"
                   : `DBS AI is offline — back ${aiStatus.eta ?? "soon"}`
               }
@@ -1471,12 +1401,12 @@ export default function DBSGPTPage() {
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               rows={1}
-              disabled={!aiStatus.enabled || Boolean(activeSavedInsight)}
+              disabled={!aiStatus.enabled}
               className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <Button
               onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading || !aiStatus.enabled || Boolean(activeSavedInsight)}
+              disabled={!input.trim() || loading || !aiStatus.enabled}
               size="icon"
               className="h-[52px] w-[52px] rounded-2xl shrink-0"
             >
@@ -1484,14 +1414,17 @@ export default function DBSGPTPage() {
             </Button>
           </div>
           <p className="mx-auto max-w-3xl mt-2 text-xs text-muted-foreground">
-            {activeSavedInsight
-              ? "Saved snapshot · Read-only"
-              : aiStatus.enabled
+            {aiStatus.enabled
               ? "Enter to send · Shift+Enter for new line"
               : `Scheduled return: ${aiStatus.eta ?? "soon"}`}
           </p>
         </div>
       </div>
+
+      <FilePreview
+        attachment={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 }

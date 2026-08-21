@@ -1,0 +1,15 @@
+Element,Quantity,Unit,Rate CHF,Total CHF
+Substructure,410,m2,285,116850
+Frame and upper floors,1240,m2,410,508400
+External walls,860,m2,395,339700
+Windows and external doors,142,nr,1850,262700
+Roof,430,m2,340,146200
+Internal partitions,690,m2,155,106950
+Fittings and fixtures,1,sum,184000,184000
+Sanitary installations,34,nr,3200,108800
+Heating and ventilation,1240,m2,220,272800
+Electrical installations,1240,m2,165,204600
+External works,1,sum,227000,227000
+Preliminaries,1,sum,268000,268000
+Contingency 5%,1,sum,137300,137300
+TOTAL,,,,2883300

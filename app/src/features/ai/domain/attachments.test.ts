@@ -42,6 +42,29 @@ test("every type maps to an extraction kind", () => {
   assert.equal(kindForType("application/msword"), null);
 });
 
+test("docx is accepted but legacy .doc is not", () => {
+  // The distinction is not cosmetic. A .docx is an OOXML zip the reader can
+  // open; a .doc is a binary OLE container it cannot. Accepting the latter
+  // would store a file the assistant can never read while telling the user it
+  // has supplied context — the exact promise INGESTIBLE_TYPES exists to keep.
+  const docx =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  assert.ok(isIngestibleType(docx));
+  assert.equal(kindForType(docx), "doc");
+
+  assert.equal(isIngestibleType("application/msword"), false);
+  assert.equal(kindForType("application/msword"), null);
+
+  // A spreadsheet must not be mistaken for a document: they take different
+  // extraction paths and a mix-up would silently produce the wrong reader.
+  assert.equal(
+    kindForType(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
+    "table",
+  );
+});
+
 test("the accept attribute covers every listed type", () => {
   for (const { mime } of INGESTIBLE_TYPES) {
     assert.ok(ACCEPT_ATTRIBUTE.includes(mime), `${mime} missing from accept`);
