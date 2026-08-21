@@ -421,12 +421,29 @@ function AssistantPill() {
   const toggle = useAssistantStore((s) => s.toggle);
   const pathname = usePathname();
 
+  const onFullPage = pathname?.startsWith("/dashboard/ai/gpt") ?? false;
+
+  const styles = cn(
+    "inline-flex items-center gap-1.5 h-9 rounded-full border px-3.5 text-sm transition-colors shrink-0",
+    open || onFullPage
+      ? "border-friday-accent bg-friday-accent-soft text-foreground"
+      : "border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/80",
+  );
+
   /*
-   * Hidden on the full DBS AI page. The pill would toggle a panel that
-   * refuses to render there, which is a control that visibly does nothing —
-   * worse than no control. The page already is the assistant.
+   * On the full DBS AI page the pill stays visible and reads as active, but
+   * it is a link to that page rather than a panel toggle. Toggling would open
+   * a second assistant beside the first — two conversations writing to one
+   * history — so clicking simply keeps you on the screen you are already on.
    */
-  if (pathname?.startsWith("/dashboard/ai/gpt")) return null;
+  if (onFullPage) {
+    return (
+      <Link href="/dashboard/ai/gpt" aria-current="page" className={styles}>
+        <Sparkles className="h-3.5 w-3.5 text-friday-accent shrink-0" />
+        DBS AI
+      </Link>
+    );
+  }
 
   return (
     <button
@@ -434,12 +451,7 @@ function AssistantPill() {
       onClick={toggle}
       aria-pressed={open}
       aria-label="DBS AI"
-      className={cn(
-        "inline-flex items-center gap-1.5 h-9 rounded-full border px-3.5 text-sm transition-colors shrink-0",
-        open
-          ? "border-friday-accent bg-friday-accent-soft text-foreground"
-          : "border-border bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/80",
-      )}
+      className={styles}
     >
       <Sparkles className="h-3.5 w-3.5 text-friday-accent shrink-0" />
       DBS AI
