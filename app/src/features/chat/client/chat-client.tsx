@@ -8,7 +8,7 @@ import {
   MoreHorizontal, Reply, Edit2, Trash2,
   Users, X, Video, Phone,
   AtSign, Loader2, Lock, UserPlus, Languages,
-  FileText, Download, Upload,
+  FileText, Download, Upload, Eye,
 } from "lucide-react";
 import { useLanguageStore } from "@/i18n/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
@@ -24,6 +24,7 @@ import { ThreadActions } from "@/features/chat/client/thread-actions";
 import { PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { useT } from "@/i18n/translations";
 import { EmojiPicker, type EmojiSelection } from "./emoji-picker";
+import { FilePreview, typeForFilename } from "@/ui/components/file-preview";
 
 // ─── Attachment helpers ───────────────────────────────────────
 type PendingAttachment = { file: File; previewUrl: string | null };
@@ -447,6 +448,19 @@ function DateSeparator({ date }: { date: string }) {
 }
 
 // ─── Attachment renderer (image inline or file card) ───────────
+/**
+ * A message attachment, opened in place rather than in a new tab.
+ *
+ * Previewable here means PDF or image: those render from the URL alone.
+ * Spreadsheets and Word documents are binary OOXML the browser cannot
+ * display, and their preview is built from extracted text — which chat has
+ * none of, because chat has no ingestion pipeline. Offering a dialog for
+ * those would open an empty frame, so they stay downloads.
+ *
+ * The Message row records no content type, only a filename, so the type is
+ * inferred from the extension. An unrecognised extension falls back to a
+ * download, which is the safe direction.
+ */
 function AttachmentRender({
   url,
   name,
@@ -456,40 +470,69 @@ function AttachmentRender({
   name: string;
   kind: "image" | "file";
 }) {
+  const [preview, setPreview] = useState(false);
+  const contentType = typeForFilename(name);
+  const previewable =
+    contentType !== null &&
+    (contentType === "application/pdf" || contentType.startsWith("image/"));
+
+  const dialog = previewable ? (
+    <FilePreview
+      attachment={preview ? { filename: name, contentType: contentType!, url } : null}
+      onClose={() => setPreview(false)}
+    />
+  ) : null;
+
   if (kind === "image") {
+    const thumbnail = (
+      /* Using a plain <img> rather than next/image because file uploads land
+         on arbitrary URLs (S3 / local) we don't want to pre-register in
+         next.config. The thumbnail is bounded by max-w-sm so it never
+         dominates the message. */
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img
+        src={url}
+        alt={name}
+        className="block w-full max-h-[320px] object-contain bg-background"
+      />
+    );
+    const frame =
+      "block mt-2 max-w-sm rounded-lg overflow-hidden border border-border bg-muted/30 hover:border-foreground/30 transition-colors";
     return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block mt-2 max-w-sm rounded-lg overflow-hidden border border-border bg-muted/30 hover:border-foreground/30 transition-colors"
-        title={name}
-      >
-        {/* Using a plain <img> rather than next/image because file
-            uploads land on arbitrary URLs (S3 / local) we don't want
-            to pre-register in next.config. The thumbnail is bounded
-            by max-w-sm so it never dominates the message. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt={name}
-          className="block w-full max-h-[320px] object-contain bg-background"
-        />
-      </a>
+      <>
+        {previewable ? (
+          <button type="button" onClick={() => setPreview(true)} title={name} className={frame}>
+            {thumbnail}
+          </button>
+        ) : (
+          <a href={url} target="_blank" rel="noopener noreferrer" title={name} className={frame}>
+            {thumbnail}
+          </a>
+        )}
+        {dialog}
+      </>
     );
   }
+
+  const card =
+    "mt-2 inline-flex items-center gap-2.5 max-w-md px-3 py-2 rounded-lg border border-border bg-muted/30 hover:border-foreground/30 hover:bg-muted/60 transition-colors";
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      download={name}
-      className="mt-2 inline-flex items-center gap-2.5 max-w-md px-3 py-2 rounded-lg border border-border bg-muted/30 hover:border-foreground/30 hover:bg-muted/60 transition-colors"
-    >
-      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-      <span className="text-[12.5px] text-foreground font-medium truncate">{name}</span>
-      <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
-    </a>
+    <>
+      {previewable ? (
+        <button type="button" onClick={() => setPreview(true)} className={card}>
+          <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+          <span className="text-[12.5px] text-foreground font-medium truncate">{name}</span>
+          <Eye className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
+        </button>
+      ) : (
+        <a href={url} target="_blank" rel="noopener noreferrer" download={name} className={card}>
+          <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+          <span className="text-[12.5px] text-foreground font-medium truncate">{name}</span>
+          <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
+        </a>
+      )}
+      {dialog}
+    </>
   );
 }
 

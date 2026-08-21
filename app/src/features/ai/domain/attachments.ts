@@ -62,12 +62,13 @@ export function kindForType(mime: string): IngestKind | null {
   return INGESTIBLE_TYPES.find((t) => t.mime === normalised)?.kind ?? null;
 }
 
-/** Human-readable size. Bytes are not a unit anyone reads at a glance. */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+/**
+ * Re-exported so existing callers keep one import.
+ *
+ * The definition moved to ui/ because the file previewer needs it and ui/ may
+ * not import features/. Formatting a byte count was never AI-domain logic.
+ */
+export { formatSize } from "@/ui/utils";
 
 export type AttachmentState = "stored" | "ready" | "failed";
 

@@ -2,9 +2,105 @@
 
 import { Download, ExternalLink, FileText, X } from "lucide-react";
 import { Dialog, DialogContent } from "@/ui/components/dialog";
-import { cn } from "@/ui/utils";
-import { formatSize, kindForType } from "../domain/attachments";
-import type { AiAttachment } from "./ai-lists";
+import { cn, formatSize } from "@/ui/utils";
+
+/**
+ * How a file is rendered, which is a different question from how it is read.
+ *
+ * The ingestion pipeline classifies types by which extractor they need
+ * (features/ai/domain/attachments). This classifies by what a browser can
+ * display. The two overlap today but are not the same concern, and this
+ * module lives in ui/ precisely so both chat and DBS AI can use it — ui/ may
+ * not import features/, so it cannot borrow the ingest vocabulary.
+ *
+ * attachments.test.ts asserts every ingestible type has a path here, so
+ * adding one to the accepted set without teaching the previewer about it
+ * fails at test time rather than showing a blank frame in production.
+ */
+export type PreviewKind = "pdf" | "image" | "table" | "doc";
+
+const PREVIEW_TYPES: Readonly<Record<string, PreviewKind>> = {
+  "application/pdf": "pdf",
+
+  "image/png": "image",
+  "image/jpeg": "image",
+  "image/webp": "image",
+  "image/gif": "image",
+  "image/tiff": "image",
+  "image/bmp": "image",
+  "image/heic": "image",
+  "image/heif": "image",
+  "image/svg+xml": "image",
+
+  "text/csv": "table",
+  "application/csv": "table",
+  "application/vnd.ms-excel": "table",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "table",
+
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    "doc",
+};
+
+export function previewKindFor(mime: string): PreviewKind | null {
+  const normalised = mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  return PREVIEW_TYPES[normalised] ?? null;
+}
+
+/**
+ * Best-effort MIME type from a filename.
+ *
+ * Exists for chat, whose Message row records a URL and a filename but no
+ * content type — so the only way to know whether an attachment can be shown
+ * is the extension. Never used to validate an upload: an extension is a claim
+ * by the uploader, whereas the accepted-types check reads what the browser
+ * actually reported.
+ */
+const EXTENSION_TYPES: Readonly<Record<string, string>> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  bmp: "image/bmp",
+  heic: "image/heic",
+  heif: "image/heif",
+  svg: "image/svg+xml",
+  csv: "text/csv",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  docx:
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+export function typeForFilename(filename: string): string | null {
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0 || dot === filename.length - 1) return null;
+  return EXTENSION_TYPES[filename.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+/**
+ * What the previewer needs, which is less than a DBS AI attachment carries.
+ *
+ * Chat attachments are the reason this is its own type. A chat Message row
+ * records only a URL and a filename — no MIME type, no byte count, and no
+ * extracted text, because chat has no ingestion pipeline. Rather than force
+ * those surfaces to fabricate the missing fields, everything beyond the three
+ * that always exist is optional.
+ */
+export type PreviewFile = {
+  filename: string;
+  contentType: string;
+  url: string;
+  /** Unknown in chat; omitted from the header rather than shown as "0 B". */
+  sizeBytes?: number | null;
+  extractedText?: string | null;
+  extractedUnits?: number | null;
+  ingestedAt?: string | null;
+  ingestError?: string | null;
+};
 
 /**
  * File preview, centre-stage.
@@ -30,14 +126,24 @@ import type { AiAttachment } from "./ai-lists";
 export function FilePreview({
   attachment,
   onClose,
+  showAssistantReadability = false,
 }: {
-  attachment: AiAttachment | null;
+  attachment: PreviewFile | null;
   onClose: () => void;
+  /**
+   * Whether to state if the assistant can read this file.
+   *
+   * Only DBS AI attachments are ingested, so only there is the claim
+   * meaningful. Defaults to false so a surface that forgets to opt in makes
+   * no claim at all, rather than asserting something untrue about a file the
+   * assistant has never seen.
+   */
+  showAssistantReadability?: boolean;
 }) {
   if (!attachment) return null;
 
-  const kind = kindForType(attachment.contentType);
-  const readable = attachment.ingestedAt !== null;
+  const kind = previewKindFor(attachment.contentType);
+  const readable = Boolean(attachment.ingestedAt);
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -53,7 +159,9 @@ export function FilePreview({
                 {attachment.filename}
               </span>
               <span className="block text-xs text-muted-foreground">
-                {formatSize(attachment.sizeBytes)}
+                {typeof attachment.sizeBytes === "number"
+                  ? formatSize(attachment.sizeBytes)
+                  : kindLabel(kind)}
                 {attachment.extractedUnits
                   ? ` · ${attachment.extractedUnits} ${unitWord(kind, attachment.extractedUnits)}`
                   : ""}
@@ -131,20 +239,22 @@ export function FilePreview({
           )}
         </div>
 
-        <footer className="px-5 py-3 border-t border-friday-border-soft">
-          <p
-            className={cn(
-              "text-xs",
-              readable ? "text-muted-foreground" : "text-friday-error-fg",
-            )}
-          >
-            {attachment.ingestError
-              ? attachment.ingestError
-              : readable
-                ? "The assistant can read this file."
-                : "Stored — the assistant has not read this file yet."}
-          </p>
-        </footer>
+        {showAssistantReadability && (
+          <footer className="px-5 py-3 border-t border-friday-border-soft">
+            <p
+              className={cn(
+                "text-xs",
+                readable ? "text-muted-foreground" : "text-friday-error-fg",
+              )}
+            >
+              {attachment.ingestError
+                ? attachment.ingestError
+                : readable
+                  ? "The assistant can read this file."
+                  : "Stored — the assistant has not read this file yet."}
+            </p>
+          </footer>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -237,7 +347,16 @@ function Unavailable({ note }: { note: string }) {
   );
 }
 
-function unitWord(kind: ReturnType<typeof kindForType>, n: number): string {
+/** Used in place of a byte count where the size is not recorded. */
+function kindLabel(kind: PreviewKind | null): string {
+  if (kind === "pdf") return "PDF";
+  if (kind === "image") return "Image";
+  if (kind === "table") return "Spreadsheet";
+  if (kind === "doc") return "Document";
+  return "File";
+}
+
+function unitWord(kind: PreviewKind | null, n: number): string {
   const plural = n === 1 ? "" : "s";
   if (kind === "pdf") return `page${plural}`;
   if (kind === "table") return `sheet${plural}`;

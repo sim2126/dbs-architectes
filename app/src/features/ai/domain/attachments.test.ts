@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { previewKindFor } from "@/ui/components/file-preview";
 import {
   ACCEPT_ATTRIBUTE,
   attachmentState,
@@ -63,6 +64,20 @@ test("docx is accepted but legacy .doc is not", () => {
     ),
     "table",
   );
+});
+
+test("every ingestible type has a preview path", () => {
+  // The previewer lives in ui/ with its own classifier, because ui/ may not
+  // import features/. That separation is correct but it can drift: adding a
+  // type to the accepted set without teaching the previewer about it would
+  // let a file upload successfully and then open a blank frame. This is the
+  // test that makes the drift loud.
+  for (const { mime } of INGESTIBLE_TYPES) {
+    assert.ok(
+      previewKindFor(mime) !== null,
+      `${mime} is accepted for upload but has no preview path`,
+    );
+  }
 });
 
 test("the accept attribute covers every listed type", () => {

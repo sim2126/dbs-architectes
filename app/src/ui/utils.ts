@@ -95,3 +95,10 @@ export const OPERATING_REGIONS: Record<string, { value: string; label: string; c
 };
 
 export const BILLING_OPTIONS = ["Non", "Parziale", "Completo"] as const;
+
+/** Human-readable size. Bytes are not a unit anyone reads at a glance. */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

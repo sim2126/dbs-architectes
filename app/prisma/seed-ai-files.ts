@@ -1124,6 +1124,254 @@ const CHATS: Array<{
 ];
 
 // ─────────────────────────────────────────────────────────────────
+// Chat attachments
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * The same files, posted into chat.
+ *
+ * Reuses the generated fixtures rather than making more: a document discussed
+ * in a project channel and then opened again in DBS AI is the same document,
+ * and duplicating it would make the demo read as two unrelated file stores.
+ *
+ * Not replicated per user, unlike the AI attachments. A channel message is
+ * visible to every member by construction, so one row serves everyone.
+ */
+const CHANNEL_FILES: Array<{
+  /** "general", or a project title whose channel should receive the file. */
+  channel: string;
+  file: string;
+  caption: string;
+  daysAgo: number;
+}> = [
+  {
+    channel: "general",
+    file: "minutes-2026-07-31-studio.pdf",
+    caption: "Studio review minutes from 31 July, for anyone who missed it.",
+    daysAgo: 6,
+  },
+  {
+    channel: "general",
+    file: "material-schedule-comparison.csv",
+    caption:
+      "Facade material comparison — embodied carbon, cost and lead time in one place. Worth a look before the next specification decision.",
+    daysAgo: 3,
+  },
+  {
+    channel: "Résidence Belvédère",
+    file: "belvedere-planning-application.pdf",
+    caption:
+      "Covering statement as submitted to the commune. Reference SI-2026-0418.",
+    daysAgo: 5,
+  },
+  {
+    channel: "Résidence Belvédère",
+    file: "belvedere-site-plan.svg",
+    caption: "A-100 as issued. Setbacks are 6.0 m north and 4.5 m east.",
+    daysAgo: 4,
+  },
+  {
+    channel: "Ateliers du Rhône",
+    file: "ateliers-rhone-structural-report.pdf",
+    caption:
+      "Structural appraisal is in. The frame is sound — eight bays need strengthening, two spalled areas need local repair.",
+    daysAgo: 4,
+  },
+  {
+    channel: "École des Vergers",
+    file: "ecole-vergers-fire-strategy.pdf",
+    caption:
+      "Revision C. One item still open: smoke ventilation opening area to the south stair, pending the facade contractor.",
+    daysAgo: 2,
+  },
+  {
+    channel: "École des Vergers",
+    file: "ecole-vergers-ground-floor.svg",
+    caption: "Ground floor as built to date.",
+    daysAgo: 2,
+  },
+  {
+    channel: "Villa Mirasole",
+    file: "villa-mirasole-permit-decision.pdf",
+    caption:
+      "Permit granted, five conditions. The render sample was refused — we need a lime-based alternative to the comune by 5 September.",
+    daysAgo: 7,
+  },
+  {
+    channel: "Palazzo Sant'Orso",
+    file: "palazzo-santorso-cost-plan.xlsx",
+    caption:
+      "Cost plan at EUR 2 965 000. Contingency is carried at 12 per cent, which is high, and deliberately so until the facade opening-up is done.",
+    daysAgo: 3,
+  },
+];
+
+/** Direct messages between two role accounts. */
+const DM_FILES: Array<{
+  from: string;
+  to: string;
+  file: string;
+  caption: string;
+  reply?: string;
+  daysAgo: number;
+}> = [
+  {
+    from: "pm@dbsarc.com",
+    to: "manager@dbsarc.com",
+    file: "minutes-2026-08-14-belvedere.pdf",
+    caption:
+      "Minutes from meeting 14. The cost plan came back 4.8 per cent over — value engineering options are wanted for meeting 15.",
+    reply:
+      "Seen. Let us talk before you put options together — the client has fixed the standard and the balcony areas.",
+    daysAgo: 1,
+  },
+  {
+    from: "director@dbsarc.com",
+    to: "owner@dbsarc.com",
+    file: "contractor-prequalification.pdf",
+    caption:
+      "Prequalification assessment for Ateliers du Rhône. Recommending Constructions Valaisannes — not the lowest, but the only one with no qualifications attached.",
+    reply:
+      "Agreed with the reasoning. The Lombarda programme at 71 weeks would have cost us more than the difference in price.",
+    daysAgo: 2,
+  },
+  {
+    from: "employee@dbsarc.com",
+    to: "pm@dbsarc.com",
+    file: "belvedere-elevation-south.svg",
+    caption:
+      "South elevation marked up. The larch coursing at the balcony returns still needs a decision.",
+    daysAgo: 0,
+  },
+];
+
+async function seedChatFiles(
+  byName: Map<string, { url: string; mime: string }>,
+) {
+  // Images render as an inline thumbnail, everything else as a file card.
+  const messageType = (mime: string) =>
+    mime.startsWith("image/") ? "image" : "file";
+
+  // Idempotent, and narrow: only messages pointing at the demo fixtures are
+  // removed, so anything posted by hand during a demo survives a re-seed.
+  await prisma.message.deleteMany({
+    where: { fileUrl: { startsWith: URL_PREFIX } },
+  });
+
+  let posted = 0;
+
+  for (const entry of CHANNEL_FILES) {
+    const spec = byName.get(entry.file);
+    if (!spec) throw new Error(`Unknown fixture: ${entry.file}`);
+
+    const channel =
+      entry.channel === "general"
+        ? await prisma.channel.findFirst({ where: { name: "general" } })
+        : await (async () => {
+            const project = await prisma.project.findFirst({
+              where: { title: entry.channel },
+              select: { id: true },
+            });
+            if (!project) return null;
+            return prisma.channel.findFirst({ where: { projectId: project.id } });
+          })();
+
+    if (!channel) {
+      console.log(`  skipped ${entry.file} — no channel for "${entry.channel}"`);
+      continue;
+    }
+
+    // Authored by a member of that channel. A message from a non-member
+    // would contradict how the channel's own visibility rules work.
+    const member = await prisma.channelMember.findFirst({
+      where: { channelId: channel.id },
+      select: { userId: true },
+    });
+    if (!member) {
+      console.log(`  skipped ${entry.file} — "${entry.channel}" has no members`);
+      continue;
+    }
+
+    await prisma.message.create({
+      data: {
+        channelId: channel.id,
+        userId: member.userId,
+        content: entry.caption,
+        type: messageType(spec.mime),
+        fileUrl: spec.url,
+        fileName: entry.file,
+        createdAt: new Date(Date.now() - entry.daysAgo * 86_400_000),
+      },
+    });
+    posted++;
+  }
+
+  for (const entry of DM_FILES) {
+    const spec = byName.get(entry.file);
+    if (!spec) throw new Error(`Unknown fixture: ${entry.file}`);
+
+    const [from, to] = await Promise.all([
+      prisma.user.findFirst({
+        where: { email: entry.from },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({ where: { email: entry.to }, select: { id: true } }),
+    ]);
+    if (!from || !to) {
+      console.log(`  skipped DM ${entry.file} — missing participant`);
+      continue;
+    }
+
+    // Matches the name the chat client generates when a user opens a DM, so a
+    // seeded conversation and a real one are indistinguishable.
+    const name = `dm-${from.id}-${to.id}`;
+    let channel = await prisma.channel.findFirst({
+      where: { name, type: "direct" },
+    });
+    if (!channel) {
+      channel = await prisma.channel.create({
+        data: { name, type: "direct", createdBy: from.id },
+      });
+      await prisma.channelMember.createMany({
+        data: [
+          { channelId: channel.id, userId: from.id, role: "member" },
+          { channelId: channel.id, userId: to.id, role: "member" },
+        ],
+      });
+    }
+
+    const when = Date.now() - entry.daysAgo * 86_400_000;
+    await prisma.message.create({
+      data: {
+        channelId: channel.id,
+        userId: from.id,
+        content: entry.caption,
+        type: messageType(spec.mime),
+        fileUrl: spec.url,
+        fileName: entry.file,
+        createdAt: new Date(when),
+      },
+    });
+    posted++;
+
+    if (entry.reply) {
+      await prisma.message.create({
+        data: {
+          channelId: channel.id,
+          userId: to.id,
+          content: entry.reply,
+          createdAt: new Date(when + 45 * 60_000),
+        },
+      });
+    }
+  }
+
+  console.log(
+    `${posted} chat file messages across channels and direct messages.`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Seed
 // ─────────────────────────────────────────────────────────────────
 
@@ -1296,6 +1544,12 @@ async function main() {
       })),
     });
   }
+
+  // Chat gets the same files. Narrowed to what seedChatFiles needs rather
+  // than passing the whole prepared record.
+  await seedChatFiles(
+    new Map(prepared.map((p) => [p.filename, { url: p.url, mime: p.mime }])),
+  );
 
   const ready = prepared.filter((p) => p.ingested).length;
   const stored = prepared.filter((p) => !p.ingested && !p.error).length;

@@ -41,7 +41,7 @@ import {
   ListOrEmpty,
   type AiAttachment,
 } from "@/features/ai/client/ai-lists";
-import { FilePreview } from "@/features/ai/client/file-preview";
+import { FilePreview } from "@/ui/components/file-preview";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -1424,6 +1424,7 @@ export default function DBSGPTPage() {
       <FilePreview
         attachment={previewFile}
         onClose={() => setPreviewFile(null)}
+        showAssistantReadability
       />
     </div>
   );
