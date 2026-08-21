@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -11,49 +11,56 @@ import { cn } from "@/ui/utils";
 /**
  * Drag-to-resize strip on the sidebar's trailing edge.
  *
- * Width is committed to the persisted store only on pointer-up. Writing on
- * every pointermove would put a localStorage write on every frame of the
- * drag; the live width is held locally and handed over once.
+ * The drag writes to `sidebarDragWidth` on every pointermove, so the panel
+ * follows the pointer continuously. The persisted `sidebarWidth` is written
+ * once, on pointer-up — that is the expensive one, since it hits
+ * localStorage.
+ *
+ * An earlier version set a CSS variable during the drag that nothing read,
+ * and committed the width only at the end. The panel therefore did not move
+ * until release, and then animated to the new value, which read as snapping
+ * to fixed positions rather than tracking the cursor.
  */
 export function SidebarResizeHandle({ disabled }: { disabled?: boolean }) {
   const width = useUserPrefs((s) => s.sidebarWidth);
   const setWidth = useUserPrefs((s) => s.setSidebarWidth);
+  const dragWidth = useUserPrefs((s) => s.sidebarDragWidth);
+  const setDragWidth = useUserPrefs((s) => s.setSidebarDragWidth);
   const [dragging, setDragging] = useState(false);
-  const liveWidth = useRef(width);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (disabled) return;
       e.preventDefault();
+      // Capture the pointer so the drag survives the cursor leaving the
+      // 4px strip — without this a fast drag drops out almost immediately.
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDragWidth(width);
       setDragging(true);
-      liveWidth.current = width;
     },
-    [disabled, width],
+    [disabled, width, setDragWidth],
   );
 
   useEffect(() => {
     if (!dragging) return;
 
-    const move = (e: PointerEvent) => {
-      // The sidebar is pinned to the viewport's left edge, so the pointer's
-      // clientX is the width. Clamped here for the live CSS variable; the
-      // store clamps again on commit.
-      const next = Math.min(
-        SIDEBAR_MAX_WIDTH,
-        Math.max(SIDEBAR_MIN_WIDTH, e.clientX),
-      );
-      liveWidth.current = next;
-      document.documentElement.style.setProperty("--sidebar-w", `${next}px`);
-    };
+    // The sidebar is pinned to the viewport's left edge, so clientX is the
+    // width. Clamping happens in the store.
+    const move = (e: PointerEvent) => setDragWidth(e.clientX);
 
     const up = () => {
       setDragging(false);
-      setWidth(liveWidth.current);
+      // Commit whatever the live value ended on, then clear it so consumers
+      // fall back to the persisted width.
+      const finalWidth = useUserPrefs.getState().sidebarDragWidth;
+      if (finalWidth !== null) setWidth(finalWidth);
+      setDragWidth(null);
     };
 
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-    // Stop text selection and cursor flicker across the whole page mid-drag.
+    window.addEventListener("pointercancel", up);
+
     const prevUserSelect = document.body.style.userSelect;
     const prevCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
@@ -62,12 +69,13 @@ export function SidebarResizeHandle({ disabled }: { disabled?: boolean }) {
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       document.body.style.userSelect = prevUserSelect;
       document.body.style.cursor = prevCursor;
     };
-  }, [dragging, setWidth]);
+  }, [dragging, setWidth, setDragWidth]);
 
-  // Keyboard resizing — a drag handle that only responds to a pointer is
+  // Keyboard resizing — a drag handle that only answers a pointer is
   // unreachable for keyboard users.
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (disabled) return;
@@ -88,7 +96,7 @@ export function SidebarResizeHandle({ disabled }: { disabled?: boolean }) {
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
-      aria-valuenow={width}
+      aria-valuenow={dragWidth ?? width}
       aria-valuemin={SIDEBAR_MIN_WIDTH}
       aria-valuemax={SIDEBAR_MAX_WIDTH}
       tabIndex={0}
@@ -96,10 +104,13 @@ export function SidebarResizeHandle({ disabled }: { disabled?: boolean }) {
       onKeyDown={onKeyDown}
       title="Drag to resize"
       className={cn(
-        "absolute inset-y-0 right-0 z-30 w-1 cursor-col-resize",
-        "hover:bg-friday-accent-ring focus-visible:bg-friday-accent-ring",
-        "focus-visible:outline-none transition-colors",
-        dragging && "bg-friday-accent-ring",
+        // Wider than it looks: a 1px target is genuinely hard to hit, so the
+        // strip is 6px with only a 1px line visible on hover.
+        "absolute inset-y-0 right-0 z-30 w-1.5 cursor-col-resize",
+        "after:absolute after:inset-y-0 after:right-0 after:w-px after:transition-colors",
+        "hover:after:bg-friday-accent-ring focus-visible:after:bg-friday-accent-ring",
+        "focus-visible:outline-none",
+        dragging && "after:bg-friday-accent-ring",
       )}
     />
   );

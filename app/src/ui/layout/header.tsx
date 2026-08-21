@@ -205,10 +205,9 @@ export function Header({ title }: { title?: string }) {
           className="flex items-center gap-2.5 h-9 px-3.5 w-64 lg:w-80 rounded-full border border-border bg-muted/40 hover:bg-muted/80 hover:border-foreground/20 text-muted-foreground text-sm transition-all group"
         >
           <Search className="w-3.5 h-3.5 shrink-0 group-hover:text-foreground transition-colors" />
-          <span className="flex-1 text-left text-sm truncate">{t("common.search")}</span>
-          <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-background border border-border rounded shrink-0">
-            ⌘K
-          </kbd>
+          <span className="flex-1 text-left text-sm truncate">
+            Can&rsquo;t find it? Search here
+          </span>
         </button>
 
         <AssistantPill />

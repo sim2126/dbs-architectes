@@ -23,6 +23,16 @@ interface AssistantStore {
   toggle: () => void;
   width: number;
   setWidth: (width: number) => void;
+
+  /**
+   * Live width during a drag, or null. Kept apart from `width` so the panel
+   * can follow the pointer every frame while localStorage is written once,
+   * on release. Its non-null value also signals the panel to drop any width
+   * transition — easing towards intermediate values is what made the drag
+   * feel like it snapped between fixed positions.
+   */
+  dragWidth: number | null;
+  setDragWidth: (width: number | null) => void;
 }
 
 export const useAssistantStore = create<AssistantStore>()(
@@ -31,6 +41,18 @@ export const useAssistantStore = create<AssistantStore>()(
       open: false,
       setOpen: (open) => set({ open }),
       toggle: () => set((s) => ({ open: !s.open })),
+
+      dragWidth: null,
+      setDragWidth: (dragWidth) =>
+        set({
+          dragWidth:
+            dragWidth === null
+              ? null
+              : Math.min(
+                  ASSISTANT_MAX_WIDTH,
+                  Math.max(ASSISTANT_MIN_WIDTH, Math.round(dragWidth)),
+                ),
+        }),
 
       width: ASSISTANT_DEFAULT_WIDTH,
       setWidth: (width) =>

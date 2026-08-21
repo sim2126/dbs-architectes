@@ -46,14 +46,20 @@ export function CommandPalette() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Open/close hotkey
+  /*
+   * Escape closes. The Cmd/Ctrl+K open shortcut was removed on request —
+   * the header button is the only way in now.
+   *
+   * Escape is kept deliberately: a modal that traps you until you find its
+   * close button is a worse thing to ship than an undiscoverable shortcut,
+   * and Escape-to-dismiss is an expectation rather than a feature.
+   */
   useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.key === "k" && (e.metaKey || e.ctrlKey)) || e.key === "Escape" && open) {
-        e.preventDefault();
-        if (e.key === "Escape") { setOpen(false); return; }
-        setOpen((o) => !o);
-      }
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);

@@ -24,6 +24,18 @@ interface UserPrefs {
   sidebarWidth: number;
   setSidebarWidth: (v: number) => void;
 
+  /**
+   * Live width during a drag, or null when not dragging.
+   *
+   * Separate from sidebarWidth so the pointer can be followed frame by frame
+   * without persisting on every move. Consumers read
+   * `sidebarDragWidth ?? sidebarWidth`, and its non-null value also tells the
+   * layout to drop its width transition — animating towards each intermediate
+   * value is what made the drag feel stepped rather than continuous.
+   */
+  sidebarDragWidth: number | null;
+  setSidebarDragWidth: (v: number | null) => void;
+
   // Table density
   density: DensityMode;
   setDensity: (v: DensityMode) => void;
@@ -41,6 +53,18 @@ export const useUserPrefs = create<UserPrefs>()(
 
       sidebarCollapsed: false,
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+
+      sidebarDragWidth: null,
+      setSidebarDragWidth: (sidebarDragWidth) =>
+        set({
+          sidebarDragWidth:
+            sidebarDragWidth === null
+              ? null
+              : Math.min(
+                  SIDEBAR_MAX_WIDTH,
+                  Math.max(SIDEBAR_MIN_WIDTH, Math.round(sidebarDragWidth)),
+                ),
+        }),
 
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (v) =>
@@ -62,6 +86,12 @@ export const useUserPrefs = create<UserPrefs>()(
     }),
     {
       name: "friday-user-prefs",
+      // sidebarDragWidth is transient — it exists only while the pointer is
+      // down. Persisting it would restore a half-finished drag on reload.
+      partialize: (state) =>
+        Object.fromEntries(
+          Object.entries(state).filter(([key]) => key !== "sidebarDragWidth"),
+        ) as UserPrefs,
       // Coerce stale persisted view values (kanban was removed from the
       // product) so users with old localStorage don't get a blank page.
       onRehydrateStorage: () => (state) => {

@@ -76,6 +76,7 @@ interface SidebarProps {
 export function Sidebar({ user }: SidebarProps) {
   const { sidebarCollapsed: collapsed, setSidebarCollapsed: setCollapsed } = useUserPrefs();
   const sidebarWidth = useUserPrefs((s) => s.sidebarWidth);
+  const sidebarDragWidth = useUserPrefs((s) => s.sidebarDragWidth);
   const pathname = usePathname();
   const t = useT();
 
@@ -123,10 +124,23 @@ export function Sidebar({ user }: SidebarProps) {
        */}
       <div className="relative flex shrink-0 h-full">
         <motion.aside
-          animate={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }}
-          // Snap during a drag rather than easing to each intermediate width,
-          // which would make the handle feel like it lags the pointer.
-          transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+          animate={{
+            width: collapsed
+              ? SIDEBAR_COLLAPSED_WIDTH
+              : (sidebarDragWidth ?? sidebarWidth),
+          }}
+          /*
+           * No transition while dragging. Easing towards each intermediate
+           * width makes the edge trail the cursor and land on apparent
+           * detents; duration 0 lets it track the pointer exactly. The eased
+           * transition is still used for the collapse toggle, which is a
+           * discrete change and should be animated.
+           */
+          transition={
+            sidebarDragWidth !== null
+              ? { duration: 0 }
+              : { duration: 0.25, ease: [0.4, 0, 0.2, 1] }
+          }
           className="relative flex flex-col h-full bg-card overflow-hidden border-r border-border shadow-[1px_0_0_0_hsl(var(--border))]"
         >
           <SidebarResizeHandle disabled={collapsed} />
