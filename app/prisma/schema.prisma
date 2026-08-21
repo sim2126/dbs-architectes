@@ -754,6 +754,17 @@ model AiChatAttachment {
   /// deployment. Never a data URL; large blobs do not belong in Postgres.
   url         String
 
+  /// Text extracted from the file, available to ground an answer.
+  ///
+  /// Stored on the row rather than chunked into a vector table: a first
+  /// pipeline that puts whole documents in context is simpler, verifiable by
+  /// reading the column, and correct for the sizes DBS actually attaches.
+  /// Chunking and embeddings are the next step, not this one.
+  extractedText String?
+  /// Number of pages, sheets or rows the extraction covered. Lets the UI say
+  /// how much was read rather than implying the whole file was.
+  extractedUnits Int?
+
   /// Set when extraction has run and the text is available to the agent.
   /// Null means stored only.
   ingestedAt  DateTime?

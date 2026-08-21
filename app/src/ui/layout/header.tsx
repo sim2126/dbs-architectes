@@ -408,7 +408,7 @@ export function Header({ title }: { title?: string }) {
 }
 
 /**
- * DBS GPT trigger, beside the search field.
+ * DBS AI trigger, beside the search field.
  *
  * Sits here rather than in the sidebar because the assistant is useful
  * *while* looking at something — asking "what changed on Belvédère" from the
@@ -423,7 +423,7 @@ function AssistantPill() {
       type="button"
       onClick={toggle}
       aria-pressed={open}
-      aria-label="DBS GPT"
+      aria-label="DBS AI"
       className={cn(
         "inline-flex items-center gap-1.5 h-9 rounded-full border px-3.5 text-sm transition-colors shrink-0",
         open
@@ -432,7 +432,7 @@ function AssistantPill() {
       )}
     >
       <Sparkles className="h-3.5 w-3.5 text-friday-accent shrink-0" />
-      DBS GPT
+      DBS AI
     </button>
   );
 }

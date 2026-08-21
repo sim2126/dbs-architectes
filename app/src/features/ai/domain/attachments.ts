@@ -1,5 +1,5 @@
 /**
- * Attachment types DBS GPT accepts.
+ * Attachment types DBS AI accepts.
  *
  * Deliberately narrow. Each entry here is a promise that the ingestion
  * pipeline will eventually be able to read it — accepting a .docx or a .dwg

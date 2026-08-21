@@ -17,7 +17,7 @@ for (const prompt of [
   });
 }
 
-test("preserves DBS GPT and chat-agent defaults", () => {
+test("preserves DBS AI and chat-agent defaults", () => {
   assert.equal(surfaceForAgentRequest("Show Le Saillen", true), "dbs-gpt");
   assert.equal(surfaceForAgentRequest("Show Le Saillen", false), "chat-agent");
 });

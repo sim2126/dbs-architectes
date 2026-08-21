@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * Open/closed and width for the DBS GPT panel.
+ * Open/closed and width for the DBS AI panel.
  *
  * Width is persisted, open state is not. A panel that reopens itself on every
  * page load is an imposition; a panel that forgets how wide you made it is an

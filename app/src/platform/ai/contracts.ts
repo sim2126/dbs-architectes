@@ -38,7 +38,7 @@ interface TranslationGroundingInput {
   input: string;
 }
 
-/** The single grounding declaration shared by the DBS GPT and agent entry points. */
+/** The single grounding declaration shared by the DBS AI and agent entry points. */
 export function buildAgentGroundingContract({
   surface,
   subject,

@@ -2,7 +2,7 @@ import { auth } from "@/platform/auth";
 import { AI_DISABLED_ETA, AI_DISABLED_MESSAGE, isAiDisabled } from "@/features/ai/domain/ai-flags";
 
 // Public-to-signed-in-users endpoint reporting whether the AI surfaces
-// are currently active. The DBS GPT page polls this on mount so it can
+// are currently active. The DBS AI page polls this on mount so it can
 // render the friendly "scheduled return" state without trying to fire
 // /api/agent and waiting for it to fail.
 export async function GET() {

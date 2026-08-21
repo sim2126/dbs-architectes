@@ -1180,7 +1180,7 @@ export default function DBSGPTPage() {
               // Log the raw upstream error for debugging; surface a friendly
               // message to the user so internal stack traces never leak into
               // the chat bubble.
-              console.error("[DBS GPT] agent stream error:", event.message);
+              console.error("[DBS AI] agent stream error:", event.message);
               const friendly = "Hmm — something broke on our end. Try that again?";
               pendingAssistantContent.current = friendly;
               pendingAssistantBlocks.current = [
@@ -1222,7 +1222,7 @@ export default function DBSGPTPage() {
     } catch (err) {
       // Connection-level failure (network, abort, etc.). Same policy: log the
       // raw error, show a branded-friendly message in the UI.
-      console.error("[DBS GPT] request failed:", err);
+      console.error("[DBS AI] request failed:", err);
       const friendly = "It's not you — our end hit a snag. Give it another try in a moment.";
       pendingAssistantContent.current = friendly;
       pendingAssistantBlocks.current = [

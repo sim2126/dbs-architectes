@@ -1,5 +1,5 @@
 /**
- * Gen-UI response blocks for DBS GPT.
+ * Gen-UI response blocks for DBS AI.
  *
  * The agent emits a typed envelope { blocks: Block[] } instead of free-form
  * Markdown. Each block is rendered by a dedicated React component, so the

@@ -54,15 +54,16 @@ const collaborationItems = [
 ];
 
 /**
- * Empty by design. DBS GPT moved out of the sidebar and into the header,
- * beside search, as a docked panel — see AssistantPill. A destination you
- * must leave your work to reach gets used once; a panel you can open over
- * the thing you are asking about gets used daily.
+ * DBS AI has two doors, deliberately.
  *
- * The array is kept rather than deleted so the section's render logic and
- * its role gating stay intact for whatever lands here next.
+ * The header panel is for asking while you work — quick chat, in context,
+ * without leaving the page. This sidebar entry is the full surface: saved
+ * insights, attached files, and the whole conversation archive, which need
+ * room to browse rather than a 440px column.
  */
-const aiItems: { labelKey: string; href: string; icon: typeof Sparkles }[] = [];
+const aiItems = [
+  { labelKey: "nav.ai_gpt", href: "/dashboard/ai/gpt", icon: Sparkles },
+];
 
 interface SidebarProps {
   user?: {

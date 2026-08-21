@@ -1,4 +1,4 @@
-// Server-side context reconstruction for DBS GPT.
+// Server-side context reconstruction for DBS AI.
 //
 // On every /api/agent request we load the chat session's prior messages
 // and rebuild an OpenAI Chat Completions message array that includes

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ArrowUp,
   Bookmark,
@@ -9,6 +10,7 @@ import {
   FileText,
   History,
   Loader2,
+  Maximize2,
   PanelRightClose,
   Paperclip,
   Plus,
@@ -24,15 +26,16 @@ import {
   useAssistantStore,
 } from "@/ui/stores/assistant-store";
 import { INTENT_PRESETS, type IntentPreset } from "../domain/intents";
+import { ACCEPT_ATTRIBUTE } from "../domain/attachments";
 import {
-  ACCEPT_ATTRIBUTE,
-  ATTACHMENT_STATE_LABEL,
-  attachmentState,
-  formatSize,
-} from "../domain/attachments";
+  ListOrEmpty,
+  ListRow,
+  relativeDay,
+  type AiSession,
+} from "./ai-lists";
 
 /**
- * DBS GPT, docked.
+ * DBS AI, docked.
  *
  * Docked rather than a page because context is the point: asking what changed
  * on a project is more useful while looking at that project than after
@@ -44,22 +47,16 @@ import {
  */
 
 type Turn = { role: "user" | "assistant"; content: string };
-type Session = { id: string; title: string; updatedAt: string };
-type Saved = { id: string; title: string; text: string; createdAt: string };
-type Attachment = {
-  id: string;
-  filename: string;
-  contentType: string;
-  sizeBytes: number;
-  url: string;
-  ingestedAt: string | null;
-  ingestError: string | null;
-  createdAt: string;
-};
 
-/** Which secondary list is showing. One at a time — stacking history over
- *  saved over files would bury the conversation. */
-type View = "chat" | "history" | "saved" | "files";
+/**
+ * The panel shows chat and its history, and nothing else.
+ *
+ * Saved insights and attached files live on the full DBS AI page. Browsing
+ * an archive in a 440px column is worse than browsing it on a page, and
+ * putting four lists behind four icons in a narrow panel turns a quick
+ * question into a navigation exercise.
+ */
+type View = "chat" | "history";
 
 export function AssistantPanel() {
   const open = useAssistantStore((s) => s.open);
@@ -76,9 +73,7 @@ export function AssistantPanel() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const [view, setView] = useState<View>("chat");
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [saved, setSaved] = useState<Saved[]>([]);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [sessions, setSessions] = useState<AiSession[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [savedTurns, setSavedTurns] = useState<Set<number>>(new Set());
@@ -125,12 +120,7 @@ export function AssistantPanel() {
     setView(next);
     if (next === "chat") return;
 
-    const endpoint =
-      next === "history"
-        ? "/api/ai-chats"
-        : next === "saved"
-          ? "/api/ai-saved"
-          : "/api/ai-attachments";
+    const endpoint = "/api/ai-chats";
 
     setLoadingList(true);
     try {
@@ -145,9 +135,7 @@ export function AssistantPanel() {
         const value = (payload as Record<string, unknown>)[key];
         return Array.isArray(value) ? (value as T[]) : [];
       };
-      if (next === "history") setSessions(pick<Session>("sessions"));
-      else if (next === "saved") setSaved(pick<Saved>("saved"));
-      else setAttachments(pick<Attachment>("attachments"));
+      setSessions(pick<AiSession>("sessions"));
     } finally {
       setLoadingList(false);
     }
@@ -293,6 +281,15 @@ export function AssistantPanel() {
             continue;
           }
           showToast(`${file.name} attached`, "success");
+
+          // Kick extraction, but do not wait on it. A vision call per image
+          // would make attaching three files feel broken; the route is a pull,
+          // so an unread file is simply picked up on the next call.
+          void fetch("/api/ai-attachments/ingest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
         } catch {
           showToast(`Could not attach ${file.name}.`, "danger");
         }
@@ -355,7 +352,7 @@ export function AssistantPanel() {
     <aside
       style={{ width: liveWidth }}
       className="relative shrink-0 h-full flex flex-col border-l border-border bg-card"
-      aria-label="DBS GPT"
+      aria-label="DBS AI"
     >
       <div
         role="separator"
@@ -394,26 +391,12 @@ export function AssistantPanel() {
       <header className="h-14 shrink-0 flex items-center justify-between gap-1 px-3 border-b border-border">
         <span className="flex items-center gap-2 min-w-0 pl-1">
           <Sparkles className="h-4 w-4 text-friday-accent shrink-0" />
-          <span className="text-sm font-semibold truncate">DBS GPT</span>
+          <span className="text-sm font-semibold truncate">DBS AI</span>
         </span>
 
         <span className="flex items-center gap-0.5 shrink-0">
           <IconButton label="New chat" onClick={newChat}>
             <Plus className="h-4 w-4" />
-          </IconButton>
-          <IconButton
-            label="Saved insights"
-            active={view === "saved"}
-            onClick={() => void openView(view === "saved" ? "chat" : "saved")}
-          >
-            <Bookmark className="h-4 w-4" />
-          </IconButton>
-          <IconButton
-            label="Attached files"
-            active={view === "files"}
-            onClick={() => void openView(view === "files" ? "chat" : "files")}
-          >
-            <Paperclip className="h-4 w-4" />
           </IconButton>
           <IconButton
             label="Chat history"
@@ -422,6 +405,14 @@ export function AssistantPanel() {
           >
             <History className="h-4 w-4" />
           </IconButton>
+          <Link
+            href="/dashboard/ai/gpt"
+            aria-label="Open DBS AI"
+            title="Open the full DBS AI page — saved insights and files"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </Link>
           <IconButton label="Close assistant" onClick={() => setOpen(false)}>
             <PanelRightClose className="h-4 w-4" />
           </IconButton>
@@ -443,79 +434,20 @@ export function AssistantPanel() {
               <Loader2 className="h-3 w-3 animate-spin" />
               Loading
             </p>
-          ) : view === "history" ? (
+          ) : (
             <ListOrEmpty
               empty={sessions.length === 0}
               note="No conversations yet. Ask something and it will be kept here."
             >
-              {sessions.map((s) => (
+              {sessions.map((session) => (
                 <ListRow
-                  key={s.id}
-                  title={s.title}
-                  meta={relativeDay(s.updatedAt)}
-                  active={s.id === sessionId}
-                  onOpen={() => void openSession(s.id)}
-                  onDelete={() => void deleteSession(s.id)}
-                  deleteLabel={`Delete ${s.title}`}
-                />
-              ))}
-            </ListOrEmpty>
-          ) : view === "saved" ? (
-            <ListOrEmpty
-              empty={saved.length === 0}
-              note="Nothing saved yet. Use the bookmark on an answer to keep it."
-            >
-              {saved.map((item) => (
-                <ListRow
-                  key={item.id}
-                  title={item.title}
-                  meta={relativeDay(item.createdAt)}
-                  /*
-                   * Opens the snippet rather than restoring the conversation.
-                   * The original chat may be long gone — sessionId is nullable
-                   * for exactly that reason — so a saved insight has to stand
-                   * on its own.
-                   */
-                  onOpen={() => {
-                    setTurns([{ role: "assistant", content: item.text }]);
-                    setSessionId(null);
-                    setSavedTurns(new Set([0]));
-                    setView("chat");
-                  }}
-                  onDelete={async () => {
-                    const res = await fetch(`/api/ai-saved/${item.id}`, {
-                      method: "DELETE",
-                    });
-                    if (!res.ok) {
-                      showToast("Could not remove that insight.", "danger");
-                      return;
-                    }
-                    setSaved((prev) => prev.filter((x) => x.id !== item.id));
-                  }}
-                  deleteLabel={`Remove ${item.title}`}
-                />
-              ))}
-            </ListOrEmpty>
-          ) : (
-            <ListOrEmpty
-              empty={attachments.length === 0}
-              note="No files yet. Attach a PDF, image, CSV or Excel file from the composer."
-            >
-              {attachments.map((a) => (
-                <AttachmentRow
-                  key={a.id}
-                  attachment={a}
-                  onDelete={async () => {
-                    const res = await fetch(
-                      `/api/ai-attachments?id=${encodeURIComponent(a.id)}`,
-                      { method: "DELETE" },
-                    );
-                    if (!res.ok) {
-                      showToast("Could not remove that file.", "danger");
-                      return;
-                    }
-                    setAttachments((prev) => prev.filter((x) => x.id !== a.id));
-                  }}
+                  key={session.id}
+                  title={session.title}
+                  meta={relativeDay(session.updatedAt)}
+                  active={session.id === sessionId}
+                  onOpen={() => void openSession(session.id)}
+                  onDelete={() => void deleteSession(session.id)}
+                  deleteLabel={`Delete ${session.title}`}
                 />
               ))}
             </ListOrEmpty>
@@ -540,7 +472,7 @@ export function AssistantPanel() {
                 {turns.map((turn, i) => (
                   <div key={i} className={cn(turn.role === "user" && "text-right")}>
                     <p className="text-[10px] uppercase tracking-wider text-friday-fg-subtle mb-1">
-                      {turn.role === "user" ? "You" : "DBS GPT"}
+                      {turn.role === "user" ? "You" : "DBS AI"}
                     </p>
                     <div
                       className={cn(
@@ -671,122 +603,8 @@ export function AssistantPanel() {
   );
 }
 
-function ListOrEmpty({
-  empty,
-  note,
-  children,
-}: {
-  empty: boolean;
-  note: string;
-  children: React.ReactNode;
-}) {
-  if (empty) {
-    return (
-      <p className="text-sm text-muted-foreground px-1 py-3 leading-relaxed">
-        {note}
-      </p>
-    );
-  }
-  return <ul className="space-y-0.5">{children}</ul>;
-}
 
-function ListRow({
-  title,
-  meta,
-  active,
-  onOpen,
-  onDelete,
-  deleteLabel,
-}: {
-  title: string;
-  meta: string;
-  active?: boolean;
-  onOpen: () => void;
-  onDelete: () => void | Promise<void>;
-  deleteLabel: string;
-}) {
-  return (
-    <li className="group/row flex items-center gap-1">
-      <button
-        type="button"
-        onClick={onOpen}
-        className={cn(
-          "flex-1 min-w-0 text-left rounded-md px-2 py-2 transition-colors",
-          "hover:bg-friday-surface-2 focus-visible:outline-none",
-          "focus-visible:ring-2 focus-visible:ring-ring",
-          active && "bg-friday-surface-2",
-        )}
-      >
-        <span className="block text-sm text-foreground truncate">{title}</span>
-        <span className="block text-[11px] text-friday-fg-subtle">{meta}</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => void onDelete()}
-        aria-label={deleteLabel}
-        className="shrink-0 p-1.5 rounded-md text-friday-fg-subtle opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-friday-error-fg transition-all"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </li>
-  );
-}
 
-function AttachmentRow({
-  attachment,
-  onDelete,
-}: {
-  attachment: Attachment;
-  onDelete: () => void | Promise<void>;
-}) {
-  const state = attachmentState(attachment);
-  return (
-    <li className="group/row flex items-start gap-1">
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex-1 min-w-0 flex items-start gap-2 rounded-md px-2 py-2 hover:bg-friday-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0">
-          <span className="block text-sm text-foreground truncate">
-            {attachment.filename}
-          </span>
-          <span className="block text-[11px] text-friday-fg-subtle">
-            {formatSize(attachment.sizeBytes)} ·{" "}
-            {relativeDay(attachment.createdAt)}
-          </span>
-          {/*
-           * Not decoration. Until ingestion runs the assistant has not read
-           * the file, and a user who assumes otherwise will trust an answer
-           * about a document the model never saw.
-           */}
-          <span
-            className={cn(
-              "block text-[11px] mt-0.5",
-              state === "ready"
-                ? "text-friday-success-fg"
-                : state === "failed"
-                  ? "text-friday-error-fg"
-                  : "text-muted-foreground",
-            )}
-          >
-            {attachment.ingestError ?? ATTACHMENT_STATE_LABEL[state]}
-          </span>
-        </span>
-      </a>
-      <button
-        type="button"
-        onClick={() => void onDelete()}
-        aria-label={`Remove ${attachment.filename}`}
-        className="shrink-0 p-1.5 mt-1 rounded-md text-friday-fg-subtle opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-friday-error-fg transition-all"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </li>
-  );
-}
 
 function IconButton({
   label,
@@ -848,17 +666,3 @@ function IntentChip({
   );
 }
 
-/** Today / Yesterday / an absolute date. Relative ages past that make the
- *  reader do arithmetic. */
-function relativeDay(iso: string): string {
-  const then = new Date(iso);
-  const now = new Date();
-  const days = Math.floor(
-    (Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) -
-      Date.UTC(then.getUTCFullYear(), then.getUTCMonth(), then.getUTCDate())) /
-      86_400_000,
-  );
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return then.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}

@@ -1,6 +1,6 @@
 "use client";
 
-// Gen-UI block renderers for DBS GPT responses.
+// Gen-UI block renderers for DBS AI responses.
 // The agent emits { blocks: Block[] } and the page maps each block to the
 // right renderer — no more wall-of-tables in Markdown.
 

@@ -1,6 +1,6 @@
 "use client";
 
-// Saved DBS GPT insights — snapshots of DBS AI responses the user wants to
+// Saved DBS AI insights — snapshots of DBS AI responses the user wants to
 // keep. Pinned items float to the top. Each card shows the saved blocks
 // rendered with the same components used in the live chat.
 
@@ -126,7 +126,7 @@ export default function SavedInsightsPage() {
               </div>
               <p className="text-sm font-semibold">Nothing saved yet</p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                When DBS GPT gives you a useful answer, hit the bookmark icon and
+                When DBS AI gives you a useful answer, hit the bookmark icon and
                 it&apos;ll land here for quick reference later.
               </p>
             </div>

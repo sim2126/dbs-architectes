@@ -1,5 +1,5 @@
 /**
- * /api/ai-attachments — files attached in DBS GPT.
+ * /api/ai-attachments — files attached in DBS AI.
  *
  * GET  list the caller's attachments, newest first
  * POST record one that has already been uploaded

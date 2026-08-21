@@ -1,4 +1,4 @@
-// Server-side feature flag for the AI features (DBS GPT, translate,
+// Server-side feature flag for the AI features (DBS AI, translate,
 // meeting summariser). Flip on by setting AI_DISABLED=true in the
 // Vercel project env vars. Flip off by removing the var (or setting it
 // to anything other than "true") and triggering a redeploy.

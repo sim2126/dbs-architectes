@@ -5,11 +5,11 @@ import test from "node:test";
 
 const AI_SURFACES = [
   {
-    name: "DBS GPT chat",
+    name: "DBS AI chat",
     disclosureSource: "src/app/dashboard/ai/gpt/page.tsx",
   },
   {
-    name: "DBS GPT saved insights",
+    name: "DBS AI saved insights",
     disclosureSource: "src/app/dashboard/ai/gpt/page.tsx",
   },
   {

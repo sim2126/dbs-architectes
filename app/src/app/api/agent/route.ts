@@ -304,7 +304,7 @@ export async function POST(req: NextRequest) {
           throw new AiProviderFailure("invalid_output");
         }
         if (validated.issues.length > 0) {
-          console.warn("DBS GPT grounding issues", { surface, issues: validated.issues });
+          console.warn("DBS AI grounding issues", { surface, issues: validated.issues });
           send({
             type: "grounding_issues",
             surface,
