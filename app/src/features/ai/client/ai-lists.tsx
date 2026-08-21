@@ -34,6 +34,10 @@ export type AiAttachment = {
   ingestedAt: string | null;
   ingestError: string | null;
   createdAt: string;
+  /** Present only where the caller asked for it — the list endpoint omits it
+   *  so a directory listing does not ship every document's full text. */
+  extractedText?: string | null;
+  extractedUnits?: number | null;
 };
 
 export function ListOrEmpty({
@@ -99,19 +103,29 @@ export function ListRow({
 
 export function AttachmentRow({
   attachment,
+  onOpen,
   onDelete,
 }: {
   attachment: AiAttachment;
+  /** Opens the centre-stage preview. Falls back to the stored object in a new
+   *  tab when no handler is supplied. */
+  onOpen?: () => void;
   onDelete: () => void | Promise<void>;
 }) {
   const state = attachmentState(attachment);
+  const RowTag = onOpen ? "button" : "a";
+  const rowProps = onOpen
+    ? ({ type: "button" as const, onClick: onOpen })
+    : ({
+        href: attachment.url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+      } as const);
   return (
     <li className="group/row flex items-start gap-1">
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex-1 min-w-0 flex items-start gap-2 rounded-md px-2 py-2 hover:bg-friday-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <RowTag
+        {...rowProps}
+        className="flex-1 min-w-0 flex items-start gap-2 text-left rounded-md px-2 py-2 hover:bg-friday-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0">
@@ -140,7 +154,7 @@ export function AttachmentRow({
             {attachment.ingestError ?? ATTACHMENT_STATE_LABEL[state]}
           </span>
         </span>
-      </a>
+      </RowTag>
       <button
         type="button"
         onClick={() => void onDelete()}

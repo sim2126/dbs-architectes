@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   ArrowUp,
   Bookmark,
@@ -78,6 +79,7 @@ export function AssistantPanel() {
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [savedTurns, setSavedTurns] = useState<Set<number>>(new Set());
 
+  const pathname = usePathname();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -343,7 +345,16 @@ export function AssistantPanel() {
     [sending, sessionId],
   );
 
-  if (!open) return null;
+  /*
+   * The panel never appears on the full DBS AI page.
+   *
+   * Two of the same assistant side by side would be two independent
+   * conversations that both write to the same history — the user would end up
+   * with a split thread and no way to tell which half went where. The page is
+   * the superset, so it wins.
+   */
+  const onFullPage = pathname?.startsWith("/dashboard/ai/gpt") ?? false;
+  if (onFullPage || !open) return null;
 
   const liveWidth = dragWidth ?? width;
   const isEmpty = turns.length === 0;
@@ -406,9 +417,19 @@ export function AssistantPanel() {
             <History className="h-4 w-4" />
           </IconButton>
           <Link
-            href="/dashboard/ai/gpt"
-            aria-label="Open DBS AI"
-            title="Open the full DBS AI page — saved insights and files"
+            /*
+             * Carries the current conversation across. The page already reads
+             * ?chat= on load and mirrors it back, so expanding continues the
+             * same thread rather than starting a second one — the session
+             * lives in the database, and both surfaces post to /api/agent.
+             */
+            href={
+              sessionId
+                ? `/dashboard/ai/gpt?chat=${encodeURIComponent(sessionId)}`
+                : "/dashboard/ai/gpt"
+            }
+            aria-label="Open full DBS AI"
+            title="Open the full page — continues this conversation"
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <Maximize2 className="h-4 w-4" />

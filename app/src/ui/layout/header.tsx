@@ -11,6 +11,7 @@ import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { useSession } from "next-auth/react";
 import { cn } from "@/ui/utils";
 import { useAssistantStore } from "@/ui/stores/assistant-store";
+import { usePathname } from "next/navigation";
 import { FRIDAY_TOKENS } from "@/ui/tokens";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -418,6 +419,15 @@ export function Header({ title }: { title?: string }) {
 function AssistantPill() {
   const open = useAssistantStore((s) => s.open);
   const toggle = useAssistantStore((s) => s.toggle);
+  const pathname = usePathname();
+
+  /*
+   * Hidden on the full DBS AI page. The pill would toggle a panel that
+   * refuses to render there, which is a control that visibly does nothing —
+   * worse than no control. The page already is the assistant.
+   */
+  if (pathname?.startsWith("/dashboard/ai/gpt")) return null;
+
   return (
     <button
       type="button"

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { loadAttachmentContext } from "@/features/ai/server/ingest/load-attachment-context";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/features/ai/server/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/features/ai/server/agent/tools";
 import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifacts";
@@ -102,6 +103,30 @@ export async function POST(req: NextRequest) {
   }
   priorHistory = filterHistoryForGrounding(priorHistory, resolvedContext);
 
+  /*
+   * Attachment text, if any, as a SEPARATE system message.
+   *
+   * Deliberately not merged into the grounding block. Grounding is
+   * authoritative — we resolved every value in it. Attachment text is
+   * whatever a user uploaded, and presenting the two as one would make an
+   * uploaded PDF an instruction channel. Its own message, with its own
+   * framing, keeps the trust boundary visible to the model.
+   *
+   * Failure here is non-fatal: an assistant that answers from workspace
+   * context alone is far better than one that refuses because a file could
+   * not be read.
+   */
+  let attachmentPrompt = "";
+  try {
+    const attachmentContext = await loadAttachmentContext({
+      userId: session.user.id,
+      sessionId: body.sessionId ?? null,
+    });
+    attachmentPrompt = attachmentContext.prompt;
+  } catch (err) {
+    console.warn("[agent] attachment context unavailable", err);
+  }
+
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
     "{today_date}",
     new Date().toISOString().split("T")[0],
@@ -128,6 +153,14 @@ export async function POST(req: NextRequest) {
         const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
           { role: "system", content: systemPrompt },
           { role: "system", content: buildGroundingPrompt(resolvedContext) },
+          ...(attachmentPrompt
+            ? [
+                {
+                  role: "system" as const,
+                  content: attachmentPrompt,
+                },
+              ]
+            : []),
           ...priorHistory,
         ];
 
