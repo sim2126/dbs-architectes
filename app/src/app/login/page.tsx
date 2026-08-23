@@ -35,16 +35,73 @@ import { VENDOR_BRAND } from "@/ui/vendor-brand";
 const SHOW_DEMO_CREDENTIALS =
   process.env.NEXT_PUBLIC_SHOW_DEMO_CREDENTIALS === "true";
 
+/**
+ * The public demo door.
+ *
+ * These credentials are compiled into the client bundle, so they are public by
+ * design rather than by accident. That is only safe because of what is behind
+ * them: prisma/seed-demo-account.ts holds this account at role "viewer", which
+ * is not in WRITE_ROLES, so authorize() refuses every mutation. The one
+ * exception is a PermissionGrant for ai:invoke, because DBS AI is the point of
+ * the demo and it is otherwise limited to managers and above.
+ *
+ * Deliberately NOT the shared dbs2025. Publishing that here would hand out
+ * admin@, owner@ and pm@ as well, and those can write.
+ *
+ * There is no auth bypass. This signs in through the same credentials provider
+ * as the form above; the only difference is that the visitor did not type
+ * anything. A route that minted a session without a password would be a real
+ * hole in exchange for nothing.
+ *
+ * Set NEXT_PUBLIC_DEMO_ACCESS=off to close the door once real DBS staff are
+ * onboarded.
+ */
+const DEMO_EMAIL = "demo@dbsarc.com";
+const DEMO_PASSWORD = "friday-demo-2026";
+const DEMO_ACCESS_ENABLED = process.env.NEXT_PUBLIC_DEMO_ACCESS !== "off";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [stage, setStage] = useState<"credentials" | "mfa">("credentials");
   const [mfaCode, setMfaCode] = useState("");
+  // Separate from `loading` so the demo card spins without also disabling the
+  // sign-in form, and vice versa.
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  async function handleDemo() {
+    setDemoLoading(true);
+    setError("");
+
+    const result = await signIn("credentials", {
+      email: DEMO_EMAIL,
+      password: DEMO_PASSWORD,
+      mfaCode: "",
+      redirect: false,
+    });
+
+    if (result?.error) {
+      setDemoLoading(false);
+      // Named plainly. The usual cause is a database that has not had
+      // prisma/seed-demo-account.ts run against it, and "those details did
+      // not match an account" would send someone hunting for a typo in
+      // credentials they never typed.
+      setError(
+        "The demo account is not available on this deployment. Please sign in with your email and password.",
+      );
+      return;
+    }
+
+    // Left spinning through the navigation — the dashboard is a server
+    // component and the pause before it paints would otherwise look like a
+    // click that did nothing.
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   async function attemptSignIn(code?: string) {
     return signIn("credentials", {
@@ -201,16 +258,6 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={keepSignedIn}
-                      onChange={(e) => setKeepSignedIn(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-friday-border accent-friday-accent"
-                    />
-                    Keep me signed in
-                  </label>
-
                   {error && <ErrorNote>{error}</ErrorNote>}
 
                   <button type="submit" disabled={loading} className={primaryClass}>
@@ -240,6 +287,10 @@ export default function LoginPage() {
                     )
                   }
                 />
+
+                {DEMO_ACCESS_ENABLED && (
+                  <DemoCard onEnter={handleDemo} loading={demoLoading} />
+                )}
               </>
             ) : (
               <>
@@ -360,6 +411,78 @@ function GoogleButton({ onUnavailable }: { onUnavailable: () => void }) {
     >
       <GoogleMark />
       Sign in with Google
+    </button>
+  );
+}
+
+/**
+ * The demo card.
+ *
+ * A card rather than a third button because it is a different kind of offer:
+ * the buttons above assume you have an account, this one assumes you do not.
+ * Giving it its own bordered block stops it reading as a third way to sign in.
+ *
+ * Interactive in the register the rest of the product uses — the border and
+ * ground warm on hover, the arrow travels, the detail line lifts out of the
+ * muted tone. No lift, no shadow bloom, no scale. This is the first surface a
+ * DBS partner sees and a card that springs at the cursor would undercut it.
+ *
+ * The read-only line is not a disclaimer. Someone arriving without an account
+ * should know why the edit controls will refuse them, before they try one and
+ * conclude the product is broken.
+ */
+function DemoCard({
+  onEnter,
+  loading,
+}: {
+  onEnter: () => void | Promise<void>;
+  loading: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => void onEnter()}
+      disabled={loading}
+      aria-label="Try the demo workspace without an account"
+      className={cn(
+        "group mt-5 w-full text-left rounded-md border px-4 py-3.5 transition-colors",
+        "border-friday-border-soft bg-friday-surface",
+        "hover:border-friday-accent-ring hover:bg-friday-surface-2",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-friday-accent-ring",
+        "disabled:opacity-70 disabled:cursor-wait",
+      )}
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span className="font-display italic text-[15px] text-foreground">
+          No account? Try the demo
+        </span>
+        {loading ? (
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-friday-accent" />
+        ) : (
+          <ArrowRight
+            className={cn(
+              "h-4 w-4 shrink-0 text-friday-accent",
+              "transition-transform group-hover:translate-x-0.5",
+            )}
+            aria-hidden
+          />
+        )}
+      </span>
+
+      <span className="mt-1 block text-[13px] leading-relaxed text-muted-foreground">
+        {loading
+          ? "Opening the workspace"
+          : "Look around the whole workspace without signing up."}
+      </span>
+
+      <span
+        className={cn(
+          "mt-2 block font-mono text-[10px] uppercase tracking-[0.16em]",
+          "text-friday-fg-subtle transition-colors group-hover:text-muted-foreground",
+        )}
+      >
+        24 projects · 39 files · read-only
+      </span>
     </button>
   );
 }
