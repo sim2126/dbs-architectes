@@ -17,8 +17,10 @@ import {
   Pencil,
   RotateCcw,
   Send,
+  PanelRight,
   Table2,
   Trash2,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/ui/components/button";
@@ -133,6 +135,119 @@ function formatArgs(args: Record<string, unknown>): string | null {
   return visible
     .map(([k, v]) => `${k.replace(/_/g, " ")}: ${JSON.stringify(v)}`)
     .join(" · ");
+}
+
+/**
+ * The agent workspace.
+ *
+ * A persistent pane showing what the agent actually did — which tools it
+ * called, with which arguments, and what came back — rather than a trace that
+ * collapses itself the moment it finishes.
+ *
+ * This is the point of the surface. Friday's claim is that its AI is grounded
+ * in DBS's own data; until now that claim was a sentence in a document while
+ * the interface showed a spinner and then prose. Showing the lookups turns
+ * "I hope it read the right thing" into "I can see what it read".
+ *
+ * It also carries the wait. A detailed answer is budgeted at under sixty
+ * seconds, and a minute of nothing reads as broken however good the answer is.
+ * Steps arriving one by one are the honest way to render that minute.
+ */
+function AgentWorkspace({
+  steps,
+  isStreaming,
+  onClose,
+}: {
+  steps: ToolStep[];
+  isStreaming: boolean;
+  onClose: () => void;
+}) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  return (
+    <aside className="w-[340px] shrink-0 border-l border-friday-border-soft bg-friday-bg flex flex-col overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between gap-2 border-b border-friday-border-soft px-4 py-3">
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle">
+          Grounding
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Hide the grounding panel"
+          className="rounded-md p-1 text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3">
+        {steps.length === 0 && !isStreaming ? (
+          <p className="px-1 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
+            Nothing looked up yet. When you ask something, the lookups the
+            assistant makes against the workspace appear here.
+          </p>
+        ) : (
+          <ol className="space-y-1">
+            {steps.map((step, i) => {
+              const args = formatArgs(step.args);
+              const open = expanded === i;
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(open ? null : i)}
+                    // Only a step that returned something has anything to
+                    // reveal; the rest are labels, not controls.
+                    disabled={!step.result}
+                    className={cn(
+                      "w-full rounded-md px-2 py-2 text-left transition-colors",
+                      step.result && "hover:bg-friday-surface-2",
+                      open && "bg-friday-surface-2",
+                    )}
+                  >
+                    <span className="flex items-start gap-2">
+                      {step.status === "done" ? (
+                        <Check className="mt-0.5 h-3 w-3 shrink-0 text-friday-success-fg" />
+                      ) : (
+                        <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-friday-accent" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12.5px] leading-snug text-friday-fg">
+                          {TOOL_LABELS[step.name] ?? step.label ?? step.name}
+                        </span>
+                        {args && (
+                          <span className="mt-0.5 block break-words font-mono text-[10px] leading-relaxed text-friday-fg-subtle">
+                            {args}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                  {open && step.result && (
+                    <pre className="mx-2 mb-1 mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-friday-surface px-2.5 py-2 font-mono text-[10px] leading-relaxed text-friday-fg">
+                      {step.result}
+                    </pre>
+                  )}
+                </li>
+              );
+            })}
+            {isStreaming && (
+              <li className="flex items-center gap-2 px-2 py-2">
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-friday-accent" />
+                <span className="text-[12.5px] text-muted-foreground">
+                  Working
+                </span>
+              </li>
+            )}
+          </ol>
+        )}
+      </div>
+
+      <p className="shrink-0 border-t border-friday-border-soft px-4 py-2.5 font-mono text-[9.5px] leading-relaxed tracking-[0.14em] text-friday-fg-subtle">
+        Every answer is built from these lookups against the DBS workspace.
+      </p>
+    </aside>
+  );
 }
 
 // ─── Thinking panel ───────────────────────────────────────────
@@ -350,11 +465,15 @@ function ArtifactTableCard({
 
 function MessageBubble({
   message,
+  hideThinking,
   onRetry,
   onExportArtifact,
   onOpenSheet,
 }: {
   message: ChatMessage;
+  /** Suppressed when the grounding pane is already showing this turn's trace,
+   *  so the same lookups are not rendered twice on one screen. */
+  hideThinking?: boolean;
   onRetry?: () => void;
   onExportArtifact?: (artifactId: string) => void;
   onOpenSheet?: (sheetId: string) => void;
@@ -394,9 +513,10 @@ function MessageBubble({
 
       <div className="flex-1 min-w-0 max-w-[92%] space-y-1.5">
         {/* Thinking / tool steps */}
-        {((message.steps && message.steps.length > 0) || message.isStreaming) && (
-          <ThinkingPanel steps={message.steps ?? []} isStreaming={message.isStreaming} />
-        )}
+        {!hideThinking &&
+          ((message.steps && message.steps.length > 0) || message.isStreaming) && (
+            <ThinkingPanel steps={message.steps ?? []} isStreaming={message.isStreaming} />
+          )}
 
         {message.artifacts && message.artifacts.length > 0 && (
           <div className="space-y-3">
@@ -415,6 +535,23 @@ function MessageBubble({
         {message.blocks && message.blocks.length > 0 ? (
           <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
             <BlocksView blocks={message.blocks} />
+          </div>
+        ) : message.isStreaming ? (
+          /*
+            * Streaming, nothing to show yet.
+            *
+            * Needed because the grounding pane takes the inline trace away for
+            * this turn, and without a placeholder the bubble would be empty
+            * for as long as the lookups take. The line names the current step
+            * rather than saying "loading", so the wait is accounted for.
+            */
+          <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
+            <p className="friday-shimmer-text text-[13.5px] leading-7">
+              {message.steps && message.steps.length > 0
+                ? (TOOL_LABELS[message.steps[message.steps.length - 1]!.name] ??
+                   message.steps[message.steps.length - 1]!.label)
+                : "Consulting the DBS workspace"}
+            </p>
           </div>
         ) : message.content ? (
           <div className="rounded-lg border border-friday-border-soft bg-friday-surface px-5 py-4">
@@ -700,6 +837,15 @@ export default function DBSGPTPage() {
   const [attachments, setAttachments] = useState<AiAttachment[] | null>(null);
   const [attachmentsError, setAttachmentsError] = useState(false);
   const [previewFile, setPreviewFile] = useState<AiAttachment | null>(null);
+  /**
+   * The grounding pane, open by default.
+   *
+   * Open is the deliberate choice: this is the surface where Friday shows its
+   * work, and a panel nobody opens demonstrates nothing. It is a visible
+   * change for anyone who used the page yesterday, which is why it has an
+   * obvious toggle in the top bar rather than being buried.
+   */
+  const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -1241,6 +1387,13 @@ export default function DBSGPTPage() {
       })()
     : null;
 
+  // The turn the grounding pane describes. Found by scanning back rather than
+  // taking the last element, because the array can end on a user message while
+  // the assistant reply is still being requested.
+  const lastAssistantMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant");
+
   return (
     <div className="flex h-[calc(100vh-64px)] bg-friday-bg">
       {/* History sidebar */}
@@ -1283,6 +1436,21 @@ export default function DBSGPTPage() {
             <span className="font-mono text-[10.5px] text-friday-fg-subtle uppercase tracking-[0.18em]">
               AI Assistant
             </span>
+            <button
+              type="button"
+              onClick={() => setWorkspaceOpen((open) => !open)}
+              aria-pressed={workspaceOpen}
+              aria-label="Toggle the grounding panel"
+              title="Grounding panel"
+              className={cn(
+                "rounded-md p-1.5 transition-colors",
+                workspaceOpen
+                  ? "bg-friday-accent-soft text-friday-accent"
+                  : "text-friday-fg-subtle hover:bg-friday-surface-2 hover:text-friday-fg",
+              )}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
             {messages.length > 0 && (
               <button
                 onClick={handleNew}
@@ -1362,6 +1530,9 @@ export default function DBSGPTPage() {
                   <MessageBubble
                     key={message.id}
                     message={message}
+                    hideThinking={
+                      workspaceOpen && message.id === lastAssistantMessage?.id
+                    }
                     onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
                     onOpenSheet={openSheet}
                     onRetry={
@@ -1434,6 +1605,23 @@ export default function DBSGPTPage() {
           </p>
         </div>
       </div>
+
+      {/*
+        * The grounding pane sits beside the conversation rather than inside
+        * it, so a long trace does not push the answer off screen and the
+        * lookups stay visible while you read what they produced.
+        *
+        * Scoped to the most recent assistant turn — earlier turns keep their
+        * inline trace. Showing every turn's lookups at once would be a log,
+        * and a log is not what makes an answer trustworthy.
+        */}
+      {workspaceOpen && (
+        <AgentWorkspace
+          steps={lastAssistantMessage?.steps ?? []}
+          isStreaming={Boolean(lastAssistantMessage?.isStreaming) || loading}
+          onClose={() => setWorkspaceOpen(false)}
+        />
+      )}
 
       <FilePreview
         attachment={previewFile}

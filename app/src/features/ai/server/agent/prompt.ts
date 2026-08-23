@@ -61,6 +61,8 @@ Block types you may emit:
 - agenda        — list of upcoming items with date + priority.
 - table         — generic {columns, rows}. Use ONLY when none of the
                   specialised blocks above fit.
+- bar_chart     — horizontal bars comparing named things. {caption, bars:
+                  [{label, value, tone}]}. For distribution and comparison.
 - callout       — short warning / info banner. Sparingly, ≤ 1 per turn.
 
 Choosing the right block — this is the single biggest predictor of
@@ -71,6 +73,14 @@ quality:
 - "Who is on …?" → people (chips, NOT a table).
 - "List / show / which projects…" → project_list (NOT a table).
 - "Upcoming deadlines / agenda / due …" → agenda (NOT a table).
+- "Who is overloaded / busiest?", "split / distribution / breakdown by
+  …", "compare X across Y" → bar_chart. These are comparison questions:
+  stat_cards makes the reader compare numbers in their head and a table
+  makes them scan rows, whereas a bar makes the comparison the first
+  thing they see. Set tone "warning" or "danger" on the bars that are
+  the answer — the person over capacity, the phase at risk — and leave
+  the rest default. Six to ten bars is the useful range; beyond that
+  prefer project_list or table.
 - Analytical, advisory, or empty-result answer → prose alone.
 - Critical caveat or data-quality reminder → callout (max 1).
 
@@ -181,9 +191,10 @@ Work status (separate from phase):
 | "How many … are stuck?"          | search_projects work_status=stuck    | stat_cards (+ prose)    |
 | "Tell me about [CODE]"           | search_projects → get_project_details| prose + people + agenda |
 | "Who's on project X?"            | get_project_details                  | people                  |
-| "Team workload / overloaded"     | get_team_workload                    | project_list OR people  |
+| "Team workload / overloaded"     | get_team_workload                    | bar_chart (+ prose)     |
 | "Upcoming deadlines"             | get_agenda from=today                | agenda                  |
 | "Portfolio health / stats"       | get_statistics                       | stat_cards              |
+| "Split / breakdown by phase"     | get_statistics                       | bar_chart               |
 | "What changed this week?"        | get_activity_log from=Monday         | prose (summarise)       |
 | "Latest update on X"             | get_project_thread                   | prose                   |
 | Comparison (phase A vs phase B)  | search_projects × 2 (parallel)       | stat_cards              |

@@ -354,6 +354,16 @@
   --color-friday-brand-mark: var(--friday-brand-mark);
   --color-friday-auth-feature-icon: var(--friday-auth-feature-icon);
   --color-friday-success-bg: var(--friday-success-bg);
+  /*
+   * These three are defined in both :root blocks but were never registered
+   * here, so Tailwind generated no utility for them — text-friday-error-fg,
+   * text-friday-success-fg and ring-friday-accent-ring were silent no-ops
+   * across 47 call sites in 24 files. Registering them here is the fix; the
+   * alternative was rewriting every call site to a different token.
+   */
+  --color-friday-error-fg: var(--friday-error-fg);
+  --color-friday-success-fg: var(--friday-success-fg);
+  --color-friday-accent-ring: var(--friday-accent-ring);
   --color-friday-success-soft-fg: var(--friday-success-soft-fg);
   --color-friday-denial-fg: var(--friday-denial-fg);
   --color-friday-warning-fill: var(--friday-warning-fill);
@@ -540,4 +550,45 @@ body {
 .dark .dbs-ai-logo-img {
   filter: invert(1) brightness(0.95);
   mix-blend-mode: screen;
+}
+
+/*
+ * Shimmering text, for a value that is being produced rather than displayed.
+ *
+ * Used while the assistant is working. A spinner says "something is
+ * happening"; text that shimmers says "this line is not final yet", which is
+ * the more useful claim when the wait can run to a minute.
+ *
+ * A sweep across the glyphs via background-clip, not an opacity pulse — a
+ * pulse reads as a warning, a sweep reads as progress. Sixty percent of the
+ * gradient is the base colour so the text stays legible throughout.
+ */
+@keyframes friday-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.friday-shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    var(--friday-fg-subtle) 0%,
+    var(--friday-fg-subtle) 40%,
+    var(--friday-fg) 50%,
+    var(--friday-fg-subtle) 60%,
+    var(--friday-fg-subtle) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: friday-shimmer 2.4s linear infinite;
+}
+
+/* Anyone who has asked for less motion gets the settled colour instead. */
+@media (prefers-reduced-motion: reduce) {
+  .friday-shimmer-text {
+    animation: none;
+    background-image: none;
+    color: var(--friday-fg-muted);
+  }
 }

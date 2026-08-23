@@ -85,6 +85,33 @@ export type CalloutBlock = {
   text: string;
 };
 
+/**
+ * A bar chart, for questions about distribution across named things.
+ *
+ * "Who is overloaded?" and "how is the portfolio split by phase?" are
+ * comparison questions. stat_cards answers them with numbers you then have to
+ * compare in your head; a table answers them with rows you have to scan. A
+ * bar makes the comparison the thing you see first.
+ *
+ * Bars are horizontal on purpose: the labels are people and phase names, and
+ * horizontal bars give long labels room without rotating them.
+ *
+ * Deliberately not a charting library. MEMORY.md rules ECharts out of the DBS
+ * build, and a bar is a div with a width — the dependency would buy nothing.
+ */
+export type BarChartBlock = {
+  type: "bar_chart";
+  /** What the bars measure, e.g. "Active projects per person". */
+  caption?: string | null;
+  bars: Array<{
+    label: string;
+    /** Non-negative. The renderer scales to the largest value present. */
+    value: number;
+    /** Marks an outlier — the person over capacity, the phase at risk. */
+    tone?: "default" | "warning" | "danger" | null;
+  }>;
+};
+
 export type Block =
   | ProseBlock
   | StatCardsBlock
@@ -92,7 +119,8 @@ export type Block =
   | PeopleBlock
   | AgendaBlock
   | TableBlock
-  | CalloutBlock;
+  | CalloutBlock
+  | BarChartBlock;
 
 export type AgentResponse = {
   blocks: Block[];
@@ -159,6 +187,17 @@ const agentResponseRuntimeSchema = z.object({
       type: z.literal("callout"),
       tone: z.enum(["info", "warning", "danger", "success"]),
       text: z.string(),
+    }).strict(),
+    z.object({
+      type: z.literal("bar_chart"),
+      caption: nullableOptionalString,
+      bars: z.array(z.object({
+        label: z.string(),
+        // Negative values would invert the bar; clamped at the boundary
+        // rather than trusted, because this value comes from a model.
+        value: z.number().nonnegative(),
+        tone: z.enum(["default", "warning", "danger"]).nullable().optional(),
+      }).strict()),
     }).strict(),
   ])),
   userIds: z.array(z.string()),
@@ -315,6 +354,33 @@ export const AGENT_RESPONSE_SCHEMA = {
               text: { type: "string" },
             },
           },
+          {
+            type: "object",
+            additionalProperties: false,
+            // Strict mode requires every key in `required`, including the
+            // nullable ones — hence caption and tone listed here.
+            required: ["type", "caption", "bars"],
+            properties: {
+              type: { type: "string", const: "bar_chart" },
+              caption: { type: ["string", "null"] },
+              bars: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["label", "value", "tone"],
+                  properties: {
+                    label: { type: "string" },
+                    value: { type: "number" },
+                    tone: {
+                      type: ["string", "null"],
+                      enum: ["default", "warning", "danger", null],
+                    },
+                  },
+                },
+              },
+            },
+          },
         ],
       },
     },
@@ -367,6 +433,13 @@ export function blocksToPlainText(blocks: readonly Block[]): string {
           block.caption,
           block.columns.join(" | "),
           ...block.rows.map((row) => row.join(" | ")),
+        ].filter(Boolean).join("\n");
+      case "bar_chart":
+        // The plain-text form is what gets persisted and what a degraded
+        // surface shows, so the numbers must survive losing the bars.
+        return [
+          block.caption,
+          ...block.bars.map((bar) => `${bar.label}: ${bar.value}`),
         ].filter(Boolean).join("\n");
     }
   }).filter(Boolean).join("\n\n");
