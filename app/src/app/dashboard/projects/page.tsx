@@ -1,4 +1,5 @@
 import { auth } from "@/platform/auth";
+import { redirect } from "next/navigation";
 import { prisma } from "@/platform/db";
 import { parseProjectPageQuery, ProjectsExplorer } from "@/features/projects";
 
@@ -8,7 +9,9 @@ export default async function ProjectsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const initialQuery = parseProjectPageQuery(await searchParams);
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
+  if (!session) redirect("/login");
+  if (session.user.isExternal) redirect("/dashboard/chat");
 
   const [projects, users] = await Promise.all([
     prisma.project.findMany({
@@ -20,7 +23,7 @@ export default async function ProjectsPage({
       },
     }),
     prisma.user.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isExternal: false },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -64,7 +67,7 @@ export default async function ProjectsPage({
         role: u.role,
       }))}
       permissions={{ canCreate, canEdit, canDelete }}
-      currentUserId={session!.user.id}
+      currentUserId={session.user.id}
       initialQuery={initialQuery}
     />
   );

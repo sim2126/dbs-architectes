@@ -1,70 +1,86 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
+import { authorize, loadSubject } from "@/platform/authz";
 import { prisma } from "@/platform/db";
 import { pusherServer, PUSHER_EVENTS, channelName } from "@/platform/integrations/pusher";
-import { canAccessCall, canAccessChannel } from "@/features/calls/server/call-access";
+import { canAccessCall } from "@/features/calls/server/call-access";
+import { resolveChannelAccess } from "@/features/chat/server/channel-access";
+import { channelInvalidation } from "@/features/chat/domain/realtime";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const subject = await loadSubject();
+  if (!subject) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const readDecision = authorize(subject, "chat:read", null);
+  const postDecision = authorize(subject, "chat:post", null);
+  if (!readDecision.allow) {
+    return Response.json({ error: readDecision.reason }, { status: 403 });
+  }
+  if (!postDecision.allow) {
+    return Response.json({ error: postDecision.reason }, { status: 403 });
+  }
 
   const { id } = await params;
-  const { channelId } = (await request.json()) as { channelId?: string };
+  const body = (await request.json().catch(() => null)) as { channelId?: unknown } | null;
+  if (body?.channelId !== undefined && typeof body.channelId !== "string") {
+    return Response.json({ error: "Invalid target channel" }, { status: 400 });
+  }
 
   const call = await prisma.call.findUnique({ where: { id }, include: { project: true } });
-  if (!(await canAccessCall({ callId: id, userId: session.user.id, role: session.user.role }))) {
+  if (
+    !(await canAccessCall({
+      callId: id,
+      userId: subject.userId,
+      role: subject.role,
+    }))
+  ) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   if (!call?.shareToken) {
     return Response.json({ error: "Summary not yet generated" }, { status: 400 });
   }
 
-  // Default to project's main channel if not specified
-  let targetChannelId = channelId;
+  let targetChannelId = body?.channelId;
   if (!targetChannelId && call.projectId) {
-    const ch = await prisma.channel.findFirst({
+    const channel = await prisma.channel.findFirst({
       where: { projectId: call.projectId },
       orderBy: { createdAt: "asc" },
       select: { id: true },
     });
-    targetChannelId = ch?.id;
+    targetChannelId = channel?.id;
   }
   if (!targetChannelId) {
     return Response.json({ error: "No target channel" }, { status: 400 });
   }
-  if (!(await canAccessChannel({
-    channelId: targetChannelId,
-    userId: session.user.id,
-    role: session.user.role,
-  }))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  const channelAccess = await resolveChannelAccess(targetChannelId, subject);
+  if (!channelAccess.ok) {
+    return Response.json({ error: channelAccess.error }, { status: channelAccess.status });
   }
 
   const origin = request.nextUrl.origin;
   const shareUrl = `${origin}/s/meeting/${call.shareToken}`;
-  const title = call.title ?? "Team Meeting";
+  const title = call.title ?? "Team meeting";
   const projectTag = call.project ? ` · ${call.project.code}` : "";
-  const content = `📝 **Meeting summary**${projectTag} — ${title}\n${shareUrl}`;
+  const content = `**Meeting summary**${projectTag} — ${title}\n${shareUrl}`;
 
-  const message = await prisma.message.create({
+  await prisma.message.create({
     data: {
       channelId: targetChannelId,
-      userId: session.user.id,
+      userId: subject.userId,
       content,
       type: "text",
-    },
-    include: {
-      user: { select: { id: true, name: true, initials: true, image: true } },
     },
   });
 
   try {
-    await pusherServer.trigger(channelName(targetChannelId), PUSHER_EVENTS.NEW_MESSAGE, message);
+    await pusherServer.trigger(
+      channelName(targetChannelId),
+      PUSHER_EVENTS.NEW_MESSAGE,
+      channelInvalidation(targetChannelId),
+    );
   } catch {
-    // non-fatal
+    // The database write remains authoritative when real-time delivery is down.
   }
 
   return Response.json({ success: true, shareUrl, channelId: targetChannelId });

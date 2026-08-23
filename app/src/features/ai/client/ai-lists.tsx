@@ -23,6 +23,7 @@ export type AiSaved = {
   id: string;
   title: string;
   text: string;
+  sessionId?: string | null;
   createdAt: string;
 };
 export type AiAttachment = {
@@ -107,24 +108,16 @@ export function AttachmentRow({
   onDelete,
 }: {
   attachment: AiAttachment;
-  /** Opens the centre-stage preview. Falls back to the stored object in a new
-   *  tab when no handler is supplied. */
-  onOpen?: () => void;
+  /** Opens the centre-stage preview after its storage URL is validated. */
+  onOpen: () => void;
   onDelete: () => void | Promise<void>;
 }) {
   const state = attachmentState(attachment);
-  const RowTag = onOpen ? "button" : "a";
-  const rowProps = onOpen
-    ? ({ type: "button" as const, onClick: onOpen })
-    : ({
-        href: attachment.url,
-        target: "_blank",
-        rel: "noopener noreferrer",
-      } as const);
   return (
     <li className="group/row flex items-start gap-1">
-      <RowTag
-        {...rowProps}
+      <button
+        type="button"
+        onClick={onOpen}
         className="flex-1 min-w-0 flex items-start gap-2 text-left rounded-md px-2 py-2 hover:bg-friday-surface-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
@@ -154,7 +147,7 @@ export function AttachmentRow({
             {attachment.ingestError ?? ATTACHMENT_STATE_LABEL[state]}
           </span>
         </span>
-      </RowTag>
+      </button>
       <button
         type="button"
         onClick={() => void onDelete()}

@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Operations
+
+Run `npm run uploads:gc` for a dry-run report of expired, unreferenced private
+uploads. Schedule `npm run uploads:gc -- --apply` at least daily in production
+to remove those objects after their signed receipt window has elapsed.
+
 ## Getting Started
 
 First, run the development server:

@@ -55,6 +55,8 @@ actions:
   chat:read:              { description: "Read messages in a channel" }
   chat:post:              { description: "Post a message in a channel" }
   chat:react:             { description: "React to a message" }
+  chat:channel.create:    { description: "Create a conversation channel" }
+  chat:members.manage:    { description: "Add people to a conversation channel" }
   chat:message.update:    { description: "Edit own message" }
   chat:message.delete:    { description: "Delete a message" }
 

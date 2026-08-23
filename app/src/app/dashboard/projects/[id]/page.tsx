@@ -16,8 +16,9 @@ export default async function ProjectDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
   if (!session) redirect("/login");
+  if (session.user.isExternal) redirect("/dashboard/chat");
   const { id } = await params;
 
   // Build the AuthZ subject + region access.
@@ -28,6 +29,7 @@ export default async function ProjectDetailPage({
   const subject: Subject = {
     userId: session.user.id,
     role: session.user.role,
+    isExternal: session.user.isExternal,
     regions: regions.map((r) => ({
       country: r.country,
       operatingRegion: r.operatingRegion,

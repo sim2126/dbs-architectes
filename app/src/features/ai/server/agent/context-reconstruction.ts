@@ -21,6 +21,14 @@ import type { ResolvedContext } from "@/platform/ai/grounding";
 /** Keep this many of the latest assistant turns with full tool replays. */
 export const FULL_TOOL_TURNS = 5;
 
+/**
+ * Keep prior prose bounded as well as tool results. Without this limit a long
+ * conversation eventually exceeds the provider context even though old tool
+ * calls have been condensed.
+ */
+export const MAX_HISTORY_TURNS = 20;
+export const MAX_HISTORY_CHARS = 60_000;
+
 /** Remove client-controlled system/tool roles from the legacy chat contract. */
 export function sanitiseLegacyHistory(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
@@ -241,7 +249,46 @@ export function reconstructHistory(
     }
   }
 
-  return out;
+  return boundHistory(out);
+}
+
+/** Keep the newest complete user turns that fit the history budget. */
+export function boundHistory(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  options: { maxTurns?: number; maxChars?: number } = {},
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  const maxTurns = options.maxTurns ?? MAX_HISTORY_TURNS;
+  const maxChars = options.maxChars ?? MAX_HISTORY_CHARS;
+  if (maxTurns <= 0 || maxChars <= 0) return [];
+
+  const turns: OpenAI.Chat.ChatCompletionMessageParam[][] = [];
+  for (const message of messages) {
+    if (message.role === "user") {
+      turns.push([message]);
+    } else if (turns.length > 0) {
+      turns.at(-1)!.push(message);
+    }
+  }
+
+  const selected: OpenAI.Chat.ChatCompletionMessageParam[][] = [];
+  let usedChars = 0;
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index];
+    // A malformed legacy row must not make JSON serialisation take down the
+    // agent. Such a row is omitted from context and remains visible in history.
+    let turnChars: number;
+    try {
+      turnChars = JSON.stringify(turn).length;
+    } catch {
+      continue;
+    }
+    if (turnChars > maxChars - usedChars) break;
+    selected.unshift(turn);
+    usedChars += turnChars;
+    if (selected.length >= maxTurns) break;
+  }
+
+  return selected.flat();
 }
 
 function summariseTurnForMemory(

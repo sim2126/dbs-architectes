@@ -41,8 +41,23 @@ export async function PATCH(
   const body = await request.json();
 
   // Fetch current user to detect role changes and handle status transitions
-  const current = await prisma.user.findUnique({ where: { id }, select: { role: true, isActive: true } });
+  const current = await prisma.user.findUnique({
+    where: { id },
+    select: { role: true, isActive: true, isExternal: true },
+  });
   if (!current) return Response.json({ error: "Not found" }, { status: 404 });
+  if (
+    current.isExternal &&
+    ((body.role !== undefined && body.role !== "employee") ||
+      body.canCreate === true ||
+      body.canEdit === true ||
+      body.canDelete === true)
+  ) {
+    return Response.json(
+      { error: "Guest accounts cannot receive staff roles or capabilities" },
+      { status: 400 },
+    );
+  }
 
   const updateData: Record<string, unknown> = {};
 
@@ -94,7 +109,7 @@ export async function PATCH(
     data: updateData,
     select: {
       id: true, name: true, email: true, role: true, initials: true,
-      isActive: true, canCreate: true, canEdit: true, canDelete: true,
+      isActive: true, isExternal: true, canCreate: true, canEdit: true, canDelete: true,
       employmentStatus: true, defaultCountry: true, defaultRegion: true,
       departmentId: true, deactivatedAt: true,
     },

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { HelpDialog } from "@/features/support/client/help-dialog";
 import { AssistantPanel } from "@/features/ai/client/assistant-panel";
+import { GuestRouteGuard } from "@/features/users";
 import { auth } from "@/platform/auth";
 import { Sidebar } from "@/ui/layout/sidebar";
 import { Header } from "@/ui/layout/header";
@@ -12,7 +13,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
 
   if (!session) {
     redirect("/login");
@@ -26,7 +27,9 @@ export default async function DashboardLayout({
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden border-l border-border">
         <Header />
         <main className="flex-1 overflow-auto">
-          {children}
+          <GuestRouteGuard isExternal={session.user.isExternal}>
+            {children}
+          </GuestRouteGuard>
         </main>
       </div>
       {/*
@@ -34,7 +37,7 @@ export default async function DashboardLayout({
        * opening it narrows the page rather than covering it. Reading a project
        * while asking about it is the whole reason to dock the thing.
        */}
-      <AssistantPanel />
+      {!session.user.isExternal && <AssistantPanel />}
       <BrowserNotificationBanner />
       <ToastHost />
     </div>

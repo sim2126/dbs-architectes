@@ -18,6 +18,7 @@ import {
 } from "@/platform/authz";
 import { issueToken, INVITATION_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
+import { safeInvitationRole } from "@/features/users/domain/guests";
 
 function inviteUrl(req: NextRequest, token: string): string {
   const origin = req.headers.get("origin") ?? new URL(req.url).origin;
@@ -89,9 +90,13 @@ export async function POST(
 
   const updated = await prisma.invitation.update({
     where: { id },
-    data: { tokenHash: hash, expiresAt },
+    data: {
+      tokenHash: hash,
+      expiresAt,
+      role: safeInvitationRole(existing.role, existing.isExternal),
+    },
     select: {
-      id: true, email: true, role: true, status: true,
+      id: true, email: true, role: true, isExternal: true, status: true,
       expiresAt: true, createdAt: true,
     },
   });
@@ -104,7 +109,9 @@ export async function POST(
     text: [
       `Hello,`,
       ``,
-      `${inviterLabel} re-sent your invitation to join DBS Friday as a ${updated.role}.`,
+      updated.isExternal
+        ? `${inviterLabel} re-sent your invitation to a guest conversation in DBS Friday.`
+        : `${inviterLabel} re-sent your invitation to join DBS Friday as a ${updated.role}.`,
       ``,
       `Set your password and join the workspace here (this link replaces the previous one and expires in 7 days):`,
       `  ${url}`,

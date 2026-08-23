@@ -1,88 +1,201 @@
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
-import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { authorize, loadSubject } from "@/platform/authz";
+import { rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { channelAccessWhere } from "@/features/chat/server/channel-access";
+import { parseChannelCreateInput } from "@/features/chat/domain/channel-input";
 
 export async function GET() {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const subject = await loadSubject();
+  if (!subject) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const readDecision = authorize(subject, "chat:read", null);
+  if (!readDecision.allow) {
+    return Response.json({ error: readDecision.reason }, { status: 403 });
+  }
 
   const channels = await prisma.channel.findMany({
-    where: {
-      OR: [
-        // Workspace-wide channels. Scoped to those with no project, so a
-        // project channel marked public cannot leak the whole portfolio.
-        { type: "public", projectId: null },
-        // DMs and explicitly-joined channels.
-        { members: { some: { userId: session.user.id } } },
-        // Project channels: access follows the project assignment, not a
-        // mirrored ChannelMember row. Nothing keeps those rows in step with
-        // assignments today, so a member removed from a project would
-        // otherwise keep reading its channel indefinitely.
-        { project: { assignments: { some: { userId: session.user.id } } } },
-      ],
-    },
+    where: channelAccessWhere(subject),
     include: {
-      members: { include: { user: { select: { id: true, name: true, initials: true, image: true, isExternal: true } } } },
+      members: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              initials: true,
+              image: true,
+              isExternal: true,
+            },
+          },
+        },
+      },
       _count: { select: { messages: true } },
     },
     orderBy: { createdAt: "asc" },
   });
 
   const memberChannelIds = channels
-    .filter((ch) => ch.members.some((m) => m.userId === session.user.id))
-    .map((ch) => ch.id);
+    .filter((channel) => channel.members.some((member) => member.userId === subject.userId))
+    .map((channel) => channel.id);
   const unreadRows = memberChannelIds.length
     ? await prisma.$queryRaw<Array<{ channelId: string; unread: bigint }>>(Prisma.sql`
         SELECT m."channelId", COUNT(*) AS unread
         FROM "Message" m
         JOIN "ChannelMember" cm
           ON cm."channelId" = m."channelId"
-         AND cm."userId" = ${session.user.id}
+         AND cm."userId" = ${subject.userId}
         WHERE m."channelId" IN (${Prisma.join(memberChannelIds)})
           AND m."createdAt" > cm."lastRead"
           AND m."deletedAt" IS NULL
         GROUP BY m."channelId"
       `)
     : [];
-  const unreadByChannel = new Map(unreadRows.map((row) => [row.channelId, Number(row.unread)]));
+  const unreadByChannel = new Map(
+    unreadRows.map((row) => [row.channelId, Number(row.unread)]),
+  );
 
-  const channelsWithUnread = channels.map((ch) => ({
-    ...ch,
-    unread: unreadByChannel.get(ch.id) ?? 0,
-  }));
-
-  return Response.json(channelsWithUnread);
+  return Response.json(
+    channels.map((channel) => ({
+      ...channel,
+      unread: unreadByChannel.get(channel.id) ?? 0,
+    })),
+  );
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const subject = await loadSubject();
+  if (!subject) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const { name, description, type = "public", memberIds = [] } = body;
+  const readDecision = authorize(subject, "chat:read", null);
+  if (!readDecision.allow) {
+    return Response.json({ error: readDecision.reason }, { status: 403 });
+  }
+  const createDecision = authorize(subject, "chat:channel.create", null);
+  if (!createDecision.allow) {
+    return Response.json({ error: createDecision.reason }, { status: 403 });
+  }
+  const createLimit = rateLimit(subject.userId, {
+    key: "chat-channel-create",
+    limit: 10,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!createLimit.allowed) {
+    return rateLimitedResponse(
+      createLimit.retryAfterMs,
+      "Too many channels created. Please wait before creating another.",
+    );
+  }
 
-  if (!name) return Response.json({ error: "Name required" }, { status: 400 });
+  const parsed = parseChannelCreateInput(await request.json().catch(() => null));
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+
+  const memberIds = parsed.value.memberIds.filter((id) => id !== subject.userId);
+  if (parsed.value.type === "direct" && memberIds.length !== 1) {
+    return Response.json(
+      { error: "A direct conversation must have exactly one other member" },
+      { status: 400 },
+    );
+  }
+
+  if (memberIds.length > 0) {
+    const memberDecision = authorize(subject, "chat:members.manage", {
+      kind: "chat",
+      channelId: "new",
+      channelOwnerId: subject.userId,
+    });
+    if (!memberDecision.allow) {
+      return Response.json({ error: memberDecision.reason }, { status: 403 });
+    }
+    const activeUsers = await prisma.user.findMany({
+      where: { id: { in: memberIds }, isActive: true },
+      select: { id: true },
+    });
+    if (activeUsers.length !== memberIds.length) {
+      return Response.json(
+        { error: "Every channel member must be an active workspace user" },
+        { status: 400 },
+      );
+    }
+  }
+
+  const participantIds = [subject.userId, ...memberIds];
+  const memberInclude = {
+    members: {
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            initials: true,
+            image: true,
+            isExternal: true,
+          },
+        },
+      },
+    },
+  } as const;
+  const name =
+    parsed.value.type === "direct"
+      ? `dm-${participantIds.slice().sort().join("-")}`
+      : parsed.value.name;
+
+  if (parsed.value.type === "direct") {
+    const channel = await prisma.$transaction(async (tx) => {
+      const directKey = `direct:${participantIds.slice().sort().join(":")}`;
+      await tx.$queryRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${directKey}, 0))`,
+      );
+
+      const candidates = await tx.channel.findMany({
+        where: {
+          type: "direct",
+          members: { some: { userId: subject.userId } },
+        },
+        include: memberInclude,
+      });
+      const expected = new Set(participantIds);
+      const existing = candidates.find(
+        (candidate) =>
+          candidate.members.length === expected.size &&
+          candidate.members.every((member) => expected.has(member.userId)),
+      );
+      if (existing) return existing;
+
+      return tx.channel.create({
+        data: {
+          name,
+          description: parsed.value.description,
+          type: "direct",
+          createdBy: subject.userId,
+          members: {
+            create: [
+              { userId: subject.userId, role: "owner" },
+              ...memberIds.map((userId) => ({ userId, role: "member" })),
+            ],
+          },
+        },
+        include: memberInclude,
+      });
+    });
+    return Response.json(channel, { status: 201 });
+  }
 
   const channel = await prisma.channel.create({
     data: {
-      name: name.toLowerCase().replace(/\s+/g, "-"),
-      description,
-      type,
-      createdBy: session.user.id,
+      name,
+      description: parsed.value.description,
+      type: parsed.value.type,
+      createdBy: subject.userId,
       members: {
         create: [
-          { userId: session.user.id, role: "owner" },
-          ...memberIds
-            .filter((id: string) => id !== session.user.id)
-            .map((id: string) => ({ userId: id, role: "member" })),
+          { userId: subject.userId, role: "owner" },
+          ...memberIds.map((userId) => ({ userId, role: "member" })),
         ],
       },
     },
-    include: {
-      members: { include: { user: { select: { id: true, name: true, initials: true, isExternal: true } } } },
-    },
+    include: memberInclude,
   });
 
-  return Response.json(channel);
+  return Response.json(channel, { status: 201 });
 }

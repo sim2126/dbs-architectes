@@ -24,7 +24,7 @@ export type RegionAccess = AuthRegionAccess;
 // ─── Subject builder (private — predicates need a Subject) ─────
 
 function subject(role: string, regions: RegionAccess[] = []): Subject {
-  return { userId: "__predicate__", role, regions };
+  return { userId: "__predicate__", role, isExternal: false, regions };
 }
 
 // ─── Role predicates ─────────────────────────────────────────

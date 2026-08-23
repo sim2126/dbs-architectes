@@ -16,6 +16,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/platform/db";
 import {
   PermissionError,
@@ -25,7 +26,11 @@ import {
 import { issueToken, INVITATION_TTL_MS } from "@/platform/auth/tokens";
 import { sendEmail } from "@/platform/email/send";
 import { authorize } from "@/platform/authz";
-import { isExternalAddress, WORKSPACE_DOMAIN } from "@/features/users/domain/guests";
+import {
+  isExternalAddress,
+  safeInvitationRole,
+  WORKSPACE_DOMAIN,
+} from "@/features/users/domain/guests";
 
 const PICKABLE_ROLES = new Set(["admin", "director", "manager", "employee", "intern"]);
 
@@ -72,6 +77,7 @@ export async function POST(request: NextRequest) {
   const wantsGuest = body.isExternal === true;
   const looksExternal = isExternalAddress(email);
   const isExternal = wantsGuest || looksExternal;
+  const effectiveRole = safeInvitationRole(body.role, isExternal);
 
   if (isExternal && !authorize(actorSubject, "user:invite.external", null).allow) {
     return Response.json(
@@ -94,30 +100,36 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Revoke any pending invite for the same email so we never have two
-  // live tokens floating around.
-  await prisma.invitation.updateMany({
-    where: { email, status: "pending" },
-    data: { status: "revoked" },
-  });
-
   const { raw, hash } = issueToken();
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
 
-  const invitation = await prisma.invitation.create({
-    data: {
-      email,
-      role: body.role,
-      isExternal,
-      tokenHash: hash,
-      invitedBy: actorUserId,
-      expiresAt,
-      status: "pending",
-    },
-    select: {
-      id: true, email: true, role: true, status: true,
-      expiresAt: true, createdAt: true,
-    },
+  const invitation = await prisma.$transaction(async (tx) => {
+    // Application-level revoke-then-create is not enough: two concurrent
+    // requests can both revoke zero rows and leave two live bearer tokens.
+    // Serialise replacement for this normalised address inside the database,
+    // then perform both writes in the same transaction.
+    await tx.$queryRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))`,
+    );
+    await tx.invitation.updateMany({
+      where: { email, status: "pending" },
+      data: { status: "revoked" },
+    });
+    return tx.invitation.create({
+      data: {
+        email,
+        role: effectiveRole,
+        isExternal,
+        tokenHash: hash,
+        invitedBy: actorUserId,
+        expiresAt,
+        status: "pending",
+      },
+      select: {
+        id: true, email: true, role: true, isExternal: true, status: true,
+        expiresAt: true, createdAt: true,
+      },
+    });
   });
 
   const url = inviteUrl(request, raw);
@@ -128,7 +140,9 @@ export async function POST(request: NextRequest) {
     text: [
       `Hello,`,
       ``,
-      `${inviterLabel} invited you to join DBS Friday as a ${body.role}.`,
+      isExternal
+        ? `${inviterLabel} invited you to a guest conversation in DBS Friday.`
+        : `${inviterLabel} invited you to join DBS Friday as a ${effectiveRole}.`,
       ``,
       `Set your password and join the workspace here (link expires in 7 days):`,
       `  ${url}`,
@@ -172,7 +186,7 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "desc" },
     take: 100,
     select: {
-      id: true, email: true, role: true, status: true,
+      id: true, email: true, role: true, isExternal: true, status: true,
       expiresAt: true, acceptedAt: true, createdAt: true,
       inviter: { select: { name: true, initials: true } },
     },

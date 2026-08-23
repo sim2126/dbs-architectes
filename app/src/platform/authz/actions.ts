@@ -52,6 +52,8 @@ export const ACTIONS = {
   "chat:read":              "Read messages in a channel",
   "chat:post":              "Post a message in a channel",
   "chat:react":             "React to a message",
+  "chat:channel.create":    "Create a conversation channel",
+  "chat:members.manage":    "Add people to a conversation channel",
   "chat:message.update":    "Edit own message",
   "chat:message.delete":    "Delete a message",
 

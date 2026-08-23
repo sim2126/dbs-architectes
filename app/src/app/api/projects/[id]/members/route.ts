@@ -56,10 +56,16 @@ export async function POST(
   // check the upsert silently creates an orphan row referencing nothing.
   const target = await prisma.user.findUnique({
     where: { id: body.userId },
-    select: { id: true, isActive: true, name: true, email: true, initials: true, role: true, image: true },
+    select: { id: true, isActive: true, isExternal: true, name: true, email: true, initials: true, role: true, image: true },
   });
   if (!target || !target.isActive) {
     return Response.json({ error: "User not found or inactive" }, { status: 404 });
+  }
+  if (target.isExternal) {
+    return Response.json(
+      { error: "Guests join conversations, not project assignments" },
+      { status: 400 },
+    );
   }
 
   const assignment = await prisma.projectAssignment.upsert({

@@ -21,11 +21,15 @@ export function ThreadActions({
   threadId,
   sourceText,
   projectId,
+  channelId,
+  canCreateTask = true,
 }: {
   threadId: string;
   sourceText: string;
   /** Set when the channel is project-scoped, so the task lands on the project. */
   projectId?: string | null;
+  channelId: string;
+  canCreateTask?: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
@@ -42,6 +46,7 @@ export function ThreadActions({
           // the title's truncation.
           description: sourceText,
           projectId: projectId ?? undefined,
+          sourceMessageId: threadId,
         }),
       });
       if (!res.ok) {
@@ -51,13 +56,16 @@ export function ThreadActions({
       }
       setCreated(true);
       showToast("Task created from this thread", "success");
+    } catch {
+      showToast("Could not create the task. Please try again.", "danger");
     } finally {
       setCreating(false);
     }
   };
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${window.location.pathname}?thread=${threadId}`;
+    const params = new URLSearchParams({ channel: channelId, thread: threadId });
+    const url = `${window.location.origin}${window.location.pathname}?${params}`;
     try {
       await navigator.clipboard.writeText(url);
       showToast("Thread link copied", "success");
@@ -70,24 +78,26 @@ export function ThreadActions({
 
   return (
     <div className="flex items-center gap-1.5 px-4 py-2 border-b border-friday-border-soft shrink-0">
-      <button
-        type="button"
-        onClick={createTask}
-        disabled={creating || created}
-        className={cn(
-          "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs",
-          "border border-border hover:bg-friday-surface-2 transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          "disabled:opacity-60",
-        )}
-      >
-        {creating ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <CheckCircle2 className="h-3.5 w-3.5" />
-        )}
-        {created ? "Task created" : "Create task"}
-      </button>
+      {canCreateTask && (
+        <button
+          type="button"
+          onClick={createTask}
+          disabled={creating || created}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs",
+            "border border-border hover:bg-friday-surface-2 transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "disabled:opacity-60",
+          )}
+        >
+          {creating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          )}
+          {created ? "Task created" : "Create task"}
+        </button>
+      )}
 
       <button
         type="button"

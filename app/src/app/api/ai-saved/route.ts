@@ -1,18 +1,16 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { requireAiAccess } from "@/platform/ai/access";
 import type { Block } from "@/features/ai/server/agent/blocks";
 import type { Prisma } from "@prisma/client";
 
 // GET /api/ai-saved — list user's saved insights, pinned-first
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(request: NextRequest) {
+  const access = await requireAiAccess(request);
+  if (!access.allowed) return access.response;
 
   const items = await prisma.savedAiResponse.findMany({
-    where: { userId: session.user.id },
+    where: { userId: access.subject.userId },
     orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
     take: 200,
   });
@@ -23,10 +21,8 @@ export async function GET() {
 // POST /api/ai-saved — save a new snippet
 //   body: { sessionId?, messageId?, title?, text, blocks }
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(request);
+  if (!access.allowed) return access.response;
 
   const body = (await request.json()) as {
     sessionId?: string;
@@ -54,7 +50,7 @@ export async function POST(request: NextRequest) {
 
   const saved = await prisma.savedAiResponse.create({
     data: {
-      userId: session.user.id,
+      userId: access.subject.userId,
       sessionId: body.sessionId ?? null,
       messageId: body.messageId ?? null,
       title,

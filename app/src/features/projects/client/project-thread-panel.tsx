@@ -6,16 +6,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AtSign,
   ChevronDown,
   Globe,
   Loader2,
   MessageSquare,
-  MoreHorizontal,
-  Paperclip,
   Reply,
   Send,
-  Smile,
   ThumbsUp,
   X,
 } from "lucide-react";
@@ -23,6 +19,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
 import { cn } from "@/ui/utils";
 import { useLanguageStore } from "@/i18n/language-store";
+import { showToast } from "@/ui/components/toast";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +27,7 @@ export interface ThreadMessage {
   id: string;
   content: string;
   createdAt: string;
+  deletedAt?: string | null;
   user: {
     id: string;
     name: string | null;
@@ -41,18 +39,23 @@ export interface ThreadMessage {
   reactions: Array<{ emoji: string; user: { id: string; name: string | null } }>;
 }
 
+function isOlderUpdate(candidate: ThreadMessage, boundary: ThreadMessage): boolean {
+  const candidateTime = new Date(candidate.createdAt).getTime();
+  const boundaryTime = new Date(boundary.createdAt).getTime();
+  return candidateTime < boundaryTime ||
+    (candidateTime === boundaryTime && candidate.id < boundary.id);
+}
+
 // ── Single message (with reactions, replies, translate) ──────────────────────
 
 function UpdateItem({
   message,
   currentUserId,
-  projectId,
   targetLang,
   onReply,
 }: {
   message: ThreadMessage;
   currentUserId: string;
-  projectId: string;
   targetLang: string;
   onReply: (msg: ThreadMessage) => void;
 }) {
@@ -63,21 +66,50 @@ function UpdateItem({
     message.reactions.some((r) => r.emoji === "👍" && r.user.id === currentUserId),
   );
   const [showReplies, setShowReplies] = useState(false);
+  const [reacting, setReacting] = useState(false);
   const [translated, setTranslated] = useState<string | null>(null);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const displayText = translated && !showOriginal ? translated : message.content;
+  const isDeleted = Boolean(message.deletedAt);
+  const displayText = isDeleted
+    ? message.content
+    : translated && !showOriginal
+      ? translated
+      : message.content;
+
+  useEffect(() => {
+    // Polling replaces the authoritative reaction collection under the same
+    // keyed component. Reconcile the optimistic local state with that DTO.
+    setLikeCount(message.reactions.filter((reaction) => reaction.emoji === "👍").length);
+    setLiked(
+      message.reactions.some(
+        (reaction) => reaction.emoji === "👍" && reaction.user.id === currentUserId,
+      ),
+    );
+  }, [currentUserId, message.reactions]);
 
   const handleLike = async () => {
-    setLiked((v) => !v);
-    setLikeCount((c) => (liked ? c - 1 : c + 1));
-    await fetch(`/api/projects/${projectId}/thread/${message.id}/react`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji: "👍" }),
-    }).catch(() => {});
+    if (reacting || isDeleted) return;
+    const wasLiked = liked;
+    setReacting(true);
+    setLiked(!wasLiked);
+    setLikeCount((count) => (wasLiked ? count - 1 : count + 1));
+    try {
+      const response = await fetch(`/api/chat/messages/${message.id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: "👍" }),
+      });
+      if (!response.ok) throw new Error();
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount((count) => (wasLiked ? count + 1 : Math.max(0, count - 1)));
+      showToast("Could not update the reaction.", "danger");
+    } finally {
+      setReacting(false);
+    }
   };
 
   const handleTranslate = async () => {
@@ -120,7 +152,7 @@ function UpdateItem({
         </Avatar>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center mb-1">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-foreground">
                 {message.user.name ?? "Unknown"}
@@ -129,20 +161,20 @@ function UpdateItem({
                 {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
               </span>
             </div>
-            <button className="p-1 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
           </div>
 
-          {(translating || translated || translationError) && (
+          {!isDeleted && (translating || translated || translationError) && (
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
               AI Assistant · Translation · {targetLang.toUpperCase()}
             </p>
           )}
-          {translationError && (
+          {!isDeleted && translationError && (
             <p className="mb-1 text-xs text-destructive">{translationError}</p>
           )}
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+          <p className={cn(
+            "text-sm leading-relaxed whitespace-pre-wrap",
+            isDeleted ? "italic text-muted-foreground" : "text-foreground",
+          )}>
             {displayText}
           </p>
 
@@ -191,9 +223,10 @@ function UpdateItem({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 px-5 pb-3 ml-12">
+      {!isDeleted && <div className="flex items-center gap-1 px-5 pb-3 ml-12">
         <button
           onClick={handleLike}
+          disabled={reacting}
           className={cn(
             "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all",
             liked
@@ -223,7 +256,7 @@ function UpdateItem({
               ? "Show original"
               : "Translate"}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -242,42 +275,110 @@ export function ProjectThreadPanel({
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (
+    cursor?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    if (cursor) setLoadingOlder(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/thread`);
-      const data = (await res.json()) as { messages?: ThreadMessage[] };
-      if (data.messages) setMessages(data.messages);
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const res = await fetch(
+        `/api/projects/${projectId}/thread${params.size ? `?${params}` : ""}`,
+        { signal: controller.signal },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        messages?: ThreadMessage[];
+        hasMore?: boolean;
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Could not load project updates.");
+      if (controller.signal.aborted) return;
+      const incoming = (data.messages ?? []).map((message) => ({
+        ...message,
+        replies: Array.isArray(message.replies) ? message.replies : [],
+        reactions: Array.isArray(message.reactions) ? message.reactions : [],
+      }));
+      setMessages((current) => {
+        if (!cursor) {
+          if (incoming.length === 0) return [];
+          const incomingIds = new Set(incoming.map((message) => message.id));
+          const oldestIncoming = incoming[0];
+          const retainedOlder = current.filter(
+            (message) =>
+              !incomingIds.has(message.id) &&
+              isOlderUpdate(message, oldestIncoming),
+          );
+          return [...retainedOlder, ...incoming];
+        }
+        const currentIds = new Set(current.map((message) => message.id));
+        return [...incoming.filter((message) => !currentIds.has(message.id)), ...current];
+      });
+      setHasOlder(data.hasMore === true);
+      setNextCursor(data.nextCursor ?? null);
+      setLoadError(null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message =
+        error instanceof Error ? error.message : "Could not load project updates.";
+      setLoadError(message);
+      if (!options.silent) showToast(message, "danger");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setLoadingOlder(false);
+      }
     }
   }, [projectId]);
 
   useEffect(() => {
-    fetchMessages();
+    void fetchMessages();
+    return () => requestRef.current?.abort();
   }, [fetchMessages]);
 
   useEffect(() => {
-    const id = setInterval(fetchMessages, 15000);
+    const id = setInterval(
+      () => void fetchMessages(undefined, { silent: true }),
+      15000,
+    );
     return () => clearInterval(id);
   }, [fetchMessages]);
 
   const handleSend = async () => {
-    const text = input.trim();
-    if (!text || sending) return;
+    const submittedInput = input;
+    const text = submittedInput.trim();
+    if (!text || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
-    setInput("");
     const prevReplyTo = replyTo;
-    setReplyTo(null);
     try {
       const res = await fetch(`/api/projects/${projectId}/thread`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text, parentId: prevReplyTo?.id }),
       });
-      const msg = (await res.json()) as Partial<ThreadMessage>;
+      const msg = (await res.json().catch(() => ({}))) as Partial<ThreadMessage> & {
+        error?: string;
+      };
+      if (!res.ok || !msg.id) {
+        showToast(msg.error ?? "Could not send the update.", "danger");
+        return;
+      }
+      setInput((current) => (current === submittedInput ? "" : current));
+      setReplyTo(null);
       if (msg.id) {
         if (prevReplyTo) {
           setMessages((prev) =>
@@ -294,7 +395,10 @@ export function ProjectThreadPanel({
           ]);
         }
       }
+    } catch {
+      showToast("Could not send the update.", "danger");
     } finally {
+      sendingRef.current = false;
       setSending(false);
       textareaRef.current?.focus();
     }
@@ -332,40 +436,6 @@ export function ProjectThreadPanel({
             replyTo && "rounded-t-none border-t-0",
           )}
         >
-          <div className="flex items-center gap-0.5 px-3 py-2 border-b border-border bg-muted/30">
-            {[
-              { icon: "B", label: "Bold", cls: "font-bold" },
-              { icon: "I", label: "Italic", cls: "italic" },
-              { icon: "U", label: "Underline", cls: "underline" },
-            ].map((b) => (
-              <button
-                key={b.label}
-                className={`px-2 py-1 text-xs ${b.cls} text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors`}
-              >
-                {b.icon}
-              </button>
-            ))}
-            <div className="w-px h-4 bg-border mx-1" />
-            <button
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
-              title="Mention"
-            >
-              <AtSign className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
-              title="Emoji"
-            >
-              <Smile className="w-3.5 h-3.5" />
-            </button>
-            <button
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
-              title="Attach file"
-            >
-              <Paperclip className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
           <textarea
             ref={textareaRef}
             value={input}
@@ -415,6 +485,17 @@ export function ProjectThreadPanel({
           <div className="flex justify-center py-16">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
+        ) : loadError && messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center gap-3 px-6">
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void fetchMessages()}
+              className="px-3 py-1.5 text-xs font-medium border border-border rounded-lg hover:bg-muted"
+            >
+              Try again
+            </button>
+          </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
@@ -429,16 +510,39 @@ export function ProjectThreadPanel({
           </div>
         ) : (
           <div>
+            {loadError && (
+              <div className="mx-4 my-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <span>Updates may be out of date.</span>
+                <button
+                  type="button"
+                  onClick={() => void fetchMessages()}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {[...messages].reverse().map((msg) => (
               <UpdateItem
                 key={msg.id}
                 message={msg}
                 currentUserId={currentUserId}
-                projectId={projectId}
                 targetLang={language}
                 onReply={setReplyTo}
               />
             ))}
+            {hasOlder && nextCursor && (
+              <div className="flex justify-center py-4">
+                <button
+                  type="button"
+                  disabled={loadingOlder}
+                  onClick={() => void fetchMessages(nextCursor)}
+                  className="px-3 py-1.5 text-xs font-medium border border-border rounded-lg hover:bg-muted disabled:opacity-60"
+                >
+                  {loadingOlder ? "Loading…" : "Load older updates"}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pencil, Trash2, Globe, Building2, ChevronDown, X, Check, Shield, Mail } from "lucide-react";
+import { Plus, Pencil, Building2, X, Mail } from "lucide-react";
 import { Button } from "@/ui/components/button";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/ui/components/dialog";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ROLES, EMPLOYMENT_STATUSES, COUNTRIES } from "@/ui/utils";
 import { cn } from "@/ui/utils";
 import { InviteUserDialog, PendingInvitations } from "./user-invitations";
+import { GuestBadge } from "@/ui/components/guest-badge";
 
 // ─── Types ───────────────────────────────────────────────────
 interface RegionAccess { country: string; operatingRegion?: string | null; accessLevel: string; }
@@ -23,6 +24,7 @@ interface UserData {
   role: string;
   initials?: string | null;
   isActive: boolean;
+  isExternal: boolean;
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -127,7 +129,7 @@ function EditUserDialog({
           {/* Role */}
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+            <Select disabled={user.isExternal} value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
@@ -190,6 +192,7 @@ function EditUserDialog({
                   <input
                     type="checkbox"
                     checked={form[key]}
+                    disabled={user.isExternal}
                     onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
                     className="w-4 h-4 accent-primary"
                   />
@@ -374,6 +377,7 @@ export function UsersClient({ users: initialUsers, currentUserId, departments }:
                         <p className="font-medium text-sm leading-none">
                           {user.name || "N/A"}
                           {user.id === currentUserId && <span className="ml-1 text-[10px] text-muted-foreground">(you)</span>}
+                          {user.isExternal && <GuestBadge className="ml-2" />}
                         </p>
                         <p className="text-[10px] text-muted-foreground mt-0.5">{user.projectCount} project{user.projectCount !== 1 ? "s" : ""}</p>
                       </div>

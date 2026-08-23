@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Brain,
-  Building2,
   Filter,
   Image as ImageIcon,
   Layers3,

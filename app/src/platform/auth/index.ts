@@ -60,6 +60,7 @@ const nextAuth = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role,
+          isExternal: user.isExternal,
           image: user.image,
           employmentStatus: user.employmentStatus,
           defaultCountry: user.defaultCountry,
@@ -76,11 +77,13 @@ const nextAuth = NextAuth({
         // the row id; loadSubject() looks it up on every gated request.
         const u = user as {
           role?: string;
+          isExternal?: boolean;
           employmentStatus?: string;
           defaultCountry?: string | null;
           defaultRegion?: string | null;
         };
         token.role = u.role;
+        token.isExternal = u.isExternal ?? false;
         token.id = user.id;
         token.employmentStatus = u.employmentStatus;
         token.defaultCountry = u.defaultCountry ?? null;
@@ -105,6 +108,7 @@ const nextAuth = NextAuth({
     async session({ session, token }) {
       if (token) {
         session.user.role = token.role as string;
+        session.user.isExternal = (token.isExternal as boolean | undefined) ?? false;
         session.user.id = token.id as string;
         session.user.employmentStatus = (token.employmentStatus as string) ?? "active";
         session.user.defaultCountry = (token.defaultCountry as string | null) ?? null;
@@ -123,7 +127,7 @@ export const { handlers, signIn, signOut } = nextAuth;
  * All protected pages and routes import this function, so deactivation,
  * role changes, and per-device revocation take effect immediately.
  */
-export async function auth() {
+export async function auth(options: { allowExternal?: boolean } = {}) {
   const session = await nextAuth.auth();
   if (!session?.user?.id || !session.user.sessionId) return null;
 
@@ -132,6 +136,7 @@ export async function auth() {
       where: { id: session.user.id },
       select: {
         role: true,
+        isExternal: true,
         isActive: true,
         employmentStatus: true,
         defaultCountry: true,
@@ -149,6 +154,7 @@ export async function auth() {
     !user.isActive ||
     user.employmentStatus === "suspended" ||
     user.employmentStatus === "terminated" ||
+    (user.isExternal && !options.allowExternal) ||
     !userSession ||
     userSession.userId !== session.user.id ||
     userSession.revokedAt
@@ -157,6 +163,7 @@ export async function auth() {
   }
 
   session.user.role = user.role;
+  session.user.isExternal = user.isExternal;
   session.user.employmentStatus = user.employmentStatus;
   session.user.defaultCountry = user.defaultCountry;
   session.user.defaultRegion = user.defaultRegion;
@@ -176,6 +183,7 @@ export async function auth() {
 declare module "next-auth" {
   interface User {
     role?: string;
+    isExternal?: boolean;
     employmentStatus?: string;
     defaultCountry?: string | null;
     defaultRegion?: string | null;
@@ -187,6 +195,7 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       role: string;
+      isExternal: boolean;
       employmentStatus: string;
       defaultCountry: string | null;
       defaultRegion: string | null;

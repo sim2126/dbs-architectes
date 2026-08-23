@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import {
-  AiArtifact,
-  parseStoredAssistantMessage,
-  PersistedToolStep,
-  serializeAssistantMessage,
-} from "@/features/ai/server/agent/artifacts";
-import type { Block } from "@/features/ai/server/agent/blocks";
+import { requireAiAccess } from "@/platform/ai/access";
+import { parseStoredAssistantMessage } from "@/features/ai/server/agent/artifacts";
 
-// GET /api/ai-chats/[id] — get messages for a session
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const access = await requireAiAccess(_req);
+  if (!access.allowed) return access.response;
   const { id } = await params;
-
   const chatSession = await prisma.aiChatSession.findFirst({
-    where: { id, userId: session.user.id },
-    include: {
-      messages: { orderBy: { createdAt: "asc" } },
-    },
+    where: { id, userId: access.subject.userId },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
   });
-
-  if (!chatSession) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
+  if (!chatSession) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({
     ...chatSession,
     messages: chatSession.messages.map((message) => {
@@ -35,9 +27,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           content: message.content,
           artifacts: [],
           steps: [],
+          blocks: [],
         };
       }
-
       const parsed = parseStoredAssistantMessage(message.content);
       return {
         id: message.id,
@@ -51,76 +43,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   });
 }
 
-// PATCH /api/ai-chats/[id] — update session title
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const access = await requireAiAccess(req);
+  if (!access.allowed) return access.response;
   const { id } = await params;
-  const { title } = await req.json() as { title: string };
-
-  const chatSession = await prisma.aiChatSession.updateMany({
-    where: { id, userId: session.user.id },
-    data: { title: title.slice(0, 100) },
+  const body = (await req.json().catch(() => null)) as { title?: unknown } | null;
+  if (!body || typeof body.title !== "string" || !body.title.trim()) {
+    return NextResponse.json({ error: "A title is required." }, { status: 400 });
+  }
+  const updated = await prisma.aiChatSession.updateMany({
+    where: { id, userId: access.subject.userId },
+    data: { title: body.title.trim().slice(0, 100) },
   });
-
-  if (chatSession.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/ai-chats/[id] — delete a session
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const access = await requireAiAccess(_req);
+  if (!access.allowed) return access.response;
   const { id } = await params;
-
-  await prisma.aiChatSession.deleteMany({ where: { id, userId: session.user.id } });
-
-  return NextResponse.json({ ok: true });
-}
-
-// POST /api/ai-chats/[id] — append messages + optionally update title
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  const { userContent, assistantContent, assistantArtifacts, assistantSteps, assistantBlocks, title } = await req.json() as {
-    userContent: string;
-    assistantContent: string;
-    assistantArtifacts?: AiArtifact[];
-    assistantSteps?: PersistedToolStep[];
-    assistantBlocks?: Block[];
-    title?: string;
-  };
-
-  // Verify ownership
-  const chatSession = await prisma.aiChatSession.findFirst({
-    where: { id, userId: session.user.id },
+  const deleted = await prisma.aiChatSession.deleteMany({
+    where: { id, userId: access.subject.userId },
   });
-  if (!chatSession) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  await prisma.$transaction([
-    prisma.aiChatMessage.create({ data: { sessionId: id, role: "user", content: userContent } }),
-    prisma.aiChatMessage.create({
-      data: {
-        sessionId: id,
-        role: "assistant",
-        content: serializeAssistantMessage({
-          text: assistantContent,
-          artifacts: assistantArtifacts ?? [],
-          steps: assistantSteps ?? [],
-          blocks: assistantBlocks ?? [],
-        }),
-      },
-    }),
-    prisma.aiChatSession.update({
-      where: { id },
-      data: { updatedAt: new Date(), ...(title ? { title } : {}) },
-    }),
-  ]);
-
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

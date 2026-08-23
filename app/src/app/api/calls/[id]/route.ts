@@ -70,7 +70,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   // Defer deleting the Daily room so transcription has time to post-process.
   // Summarization will be triggered manually by the host from the UI.
-  await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_ENDED, { id });
+  try {
+    await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_ENDED, { id });
+  } catch (error) {
+    // Ending the call is authoritative in the database; real-time delivery
+    // must not turn a completed mutation into an apparent failure.
+    console.warn("[calls] real-time end delivery failed", error);
+  }
 
   // Fire-and-forget room cleanup after 10 min so transcripts/recordings land.
   setTimeout(() => {

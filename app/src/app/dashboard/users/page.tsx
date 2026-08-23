@@ -29,6 +29,7 @@ export default async function UsersPage() {
         role:             u.role,
         initials:         u.initials,
         isActive:         u.isActive,
+        isExternal:       u.isExternal,
         canCreate:        u.canCreate,
         canEdit:          u.canEdit,
         canDelete:        u.canDelete,

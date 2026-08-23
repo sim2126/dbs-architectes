@@ -59,7 +59,8 @@ export function Project3DModal({
 
   // Mount Map3DElement when the modal opens
   useEffect(() => {
-    if (!open || !project || !containerRef.current) return;
+    const container = containerRef.current;
+    if (!open || !project || !container) return;
     let cancelled = false;
 
     const mount = async () => {
@@ -78,7 +79,7 @@ export function Project3DModal({
             setTimeout(() => reject(new Error("gmp-map-3d not registered")), 5000),
           ),
         ]);
-        if (cancelled || !containerRef.current) return;
+        if (cancelled) return;
 
         const el = document.createElement("gmp-map-3d") as HTMLElement;
         el.setAttribute(
@@ -102,8 +103,8 @@ export function Project3DModal({
         marker.setAttribute("altitude-mode", "relative-to-ground");
         el.appendChild(marker);
 
-        containerRef.current.innerHTML = "";
-        containerRef.current.appendChild(el);
+        container.innerHTML = "";
+        container.appendChild(el);
         mapElRef.current = el;
         setReady(true);
       } catch (err) {
@@ -116,7 +117,7 @@ export function Project3DModal({
 
     return () => {
       cancelled = true;
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      container.innerHTML = "";
       mapElRef.current = null;
       setReady(false);
       setUnsupported(false);

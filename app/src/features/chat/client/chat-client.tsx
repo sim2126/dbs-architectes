@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Hash, Plus, Send, Smile, Paperclip, Search,
-  MoreHorizontal, Reply, Edit2, Trash2,
+  Reply, Edit2, Trash2,
   Users, X, Video, Phone,
   AtSign, Loader2, Lock, UserPlus, Languages,
   FileText, Download, Upload, Eye,
@@ -13,9 +13,7 @@ import {
 import { useLanguageStore } from "@/i18n/language-store";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import { Button } from "@/ui/components/button";
-import { Input } from "@/ui/components/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
-import { Badge } from "@/ui/components/badge";
 import { cn } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
@@ -36,6 +34,7 @@ type PresignedUpload = {
   headers: Record<string, string>;
   expiresAt: string;
   backend: "s3" | "local";
+  receipt: string;
 };
 
 function formatBytes(n: number): string {
@@ -79,7 +78,35 @@ interface Message {
   user: User;
   reactions: Reaction[];
   replies: Message[];
+  replyCount?: number;
   parentId?: string | null;
+}
+
+function normaliseMessage(value: Message): Message {
+  return {
+    ...value,
+    reactions: Array.isArray(value.reactions) ? value.reactions : [],
+    replies: Array.isArray(value.replies)
+      ? value.replies.map((reply) => normaliseMessage(reply))
+      : [],
+  };
+}
+
+function mergeMessage(current: Message, incoming: Message): Message {
+  return {
+    ...current,
+    ...incoming,
+    reactions: incoming.reactions ?? current.reactions,
+    replies: incoming.replies ?? current.replies,
+    replyCount: incoming.replyCount ?? current.replyCount,
+  };
+}
+
+function isOlderMessage(candidate: Message, boundary: Message): boolean {
+  const candidateTime = new Date(candidate.createdAt).getTime();
+  const boundaryTime = new Date(boundary.createdAt).getTime();
+  return candidateTime < boundaryTime ||
+    (candidateTime === boundaryTime && candidate.id < boundary.id);
 }
 
 interface ChannelMember {
@@ -123,6 +150,7 @@ function MessageItem({
   onDelete,
   isThread = false,
   isGrouped = false,
+  allowInternalActions = true,
 }: {
   message: Message;
   currentUserId: string;
@@ -132,6 +160,7 @@ function MessageItem({
   onDelete: (msgId: string) => void;
   isThread?: boolean;
   isGrouped?: boolean;
+  allowInternalActions?: boolean;
 }) {
   const t = useT();
   const { translationLang } = useLanguageStore();
@@ -199,6 +228,16 @@ function MessageItem({
       )}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => { setShowActions(false); setShowEmojiPicker(false); }}
+      onFocusCapture={() => setShowActions(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setShowActions(false);
+          setShowEmojiPicker(false);
+        }
+      }}
+      onPointerUp={(event) => {
+        if (event.pointerType === "touch") setShowActions((visible) => !visible);
+      }}
     >
       {/* Avatar column — fixed width so text always starts at the same x */}
       <div className="w-9 shrink-0 pt-0.5">
@@ -264,12 +303,12 @@ function MessageItem({
             )}
 
             {/* Inline translation block */}
-            {translating && (
+            {allowInternalActions && translating && (
               <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" /> Translating…
               </div>
             )}
-            {showTranslation && (translated || translationError) && (
+            {allowInternalActions && showTranslation && (translated || translationError) && (
               <div className="mt-2 rounded-xl border border-blue-200/70 dark:border-blue-800/50 bg-blue-50/60 dark:bg-blue-950/20 px-3 py-2.5">
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-1.5">
@@ -294,7 +333,7 @@ function MessageItem({
         )}
 
         {/* Reactions */}
-        {Object.keys(groupedReactions).length > 0 && (
+        {!isDeleted && Object.keys(groupedReactions).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {Object.entries(groupedReactions).map(([emoji, reactors]) => {
               const isMine = reactors.some((r) => r.user.id === currentUserId);
@@ -319,7 +358,7 @@ function MessageItem({
         )}
 
         {/* Thread reply preview — clicking opens thread sidebar */}
-        {!isThread && message.replies.length > 0 && (
+        {!isThread && (message.replyCount ?? message.replies.length) > 0 && (
           <button
             onClick={() => onReply(message)}
             className="flex items-center gap-2 mt-1.5 group/thread"
@@ -334,7 +373,8 @@ function MessageItem({
               ))}
             </div>
             <span className="text-xs text-friday-accent font-medium group-hover/thread:underline">
-              {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}
+              {message.replyCount ?? message.replies.length}{" "}
+              {(message.replyCount ?? message.replies.length) === 1 ? "reply" : "replies"}
             </span>
             <span className="text-[11px] text-muted-foreground">
               Last reply {formatDistanceToNow(new Date(message.replies[message.replies.length - 1].createdAt))} ago
@@ -384,19 +424,22 @@ function MessageItem({
               </AnimatePresence>
             </div>
 
-            {/* Translate */}
-            <button
-              onClick={handleTranslate}
-              className={cn(
-                "p-1.5 rounded-lg transition-colors",
-                showTranslation && translated
-                  ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
-              )}
-              title={showTranslation && translated ? "Hide translation" : `Translate to ${translationLang.toUpperCase()}`}
-            >
-              <Languages className="w-3.5 h-3.5" />
-            </button>
+            {/* Translation is an internal AI surface, so guests never see
+                an affordance that the server will correctly refuse. */}
+            {allowInternalActions && (
+              <button
+                onClick={handleTranslate}
+                className={cn(
+                  "p-1.5 rounded-lg transition-colors",
+                  showTranslation && translated
+                    ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+                title={showTranslation && translated ? "Hide translation" : `Translate to ${translationLang.toUpperCase()}`}
+              >
+                <Languages className="w-3.5 h-3.5" />
+              </button>
+            )}
 
             {!isThread && (
               <button
@@ -593,7 +636,12 @@ function MessageInput({
   externalFile,
   onExternalFileConsumed,
 }: {
-  onSend: (payload: { content: string; attachment?: PendingAttachment }) => void;
+  onSend: (payload: {
+    content: string;
+    attachment?: PendingAttachment;
+    parentId?: string | null;
+    editMessageId?: string;
+  }) => Promise<boolean>;
   loading: boolean;
   placeholder: string;
   replyTo?: Message | null;
@@ -617,7 +665,7 @@ function MessageInput({
 
   // Pick up a file the parent drag-drop handler pushed in.
   useEffect(() => {
-    if (!externalFile) return;
+    if (!externalFile || editMessage) return;
     const timer = window.setTimeout(() => {
       setPending({
         file: externalFile,
@@ -628,7 +676,7 @@ function MessageInput({
       onExternalFileConsumed?.();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [externalFile, onExternalFileConsumed]);
+  }, [editMessage, externalFile, onExternalFileConsumed]);
 
   // Release object URLs for image previews when the attachment changes
   // or the composer unmounts. Without this every drag-drop leaks a blob.
@@ -654,12 +702,8 @@ function MessageInput({
     : [];
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (editMessage) setValue(editMessage.content);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    else setValue("");
     textareaRef.current?.focus();
-  }, [editMessage, replyTo]);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
@@ -700,24 +744,35 @@ function MessageInput({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
-  const handleSend = () => {
-    const text = value.trim();
+  const handleSend = async () => {
+    const submittedValue = value;
+    const text = submittedValue.trim();
     if ((!text && !pending) || loading) return;
-    onSend({ content: text, attachment: pending ?? undefined });
-    setValue("");
+    const sent = await onSend({
+      content: text,
+      attachment: pending ?? undefined,
+      parentId: replyTo?.id ?? null,
+      editMessageId: editMessage?.id,
+    });
+    if (!sent) return;
+    // Uploads can take long enough for the user to continue typing. Only
+    // clear the exact draft that was submitted; preserve newer text.
+    setValue((current) => (current === submittedValue ? "" : current));
     setPending(null);
     setMentionQuery(null);
     setEmojiOpen(false);
+    if (editMessage) onCancelEdit?.();
   };
 
   // ─── Attachment handlers ────────────────────────────────────
   const handlePickFile = () => fileInputRef.current?.click();
 
   const adoptFile = (file: File | null | undefined) => {
+    if (editMessage) return;
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       showToast("File is larger than 10 MB.", "danger");
@@ -839,6 +894,7 @@ function MessageInput({
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            disabled={Boolean(editMessage) && loading}
             placeholder={placeholder}
             rows={1}
             className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground leading-relaxed py-1 max-h-36 overflow-y-auto"
@@ -855,6 +911,7 @@ function MessageInput({
         <input
           ref={fileInputRef}
           type="file"
+          disabled={Boolean(editMessage)}
           className="hidden"
           onChange={(e) => {
             adoptFile(e.target.files?.[0]);
@@ -869,7 +926,7 @@ function MessageInput({
             <button
               type="button"
               onClick={handlePickFile}
-              disabled={Boolean(pending) || loading}
+              disabled={Boolean(pending) || Boolean(editMessage) || loading}
               className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title={pending ? "One attachment per message — remove the current one to swap" : t("chat.attach")}
             >
@@ -924,7 +981,7 @@ function MessageInput({
 
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => void handleSend()}
             disabled={(!value.trim() && !pending) || loading}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
@@ -945,31 +1002,57 @@ function MessageInput({
 // ─── Main Component ───────────────────────────────────────────
 export function ChatClient({ initialChannels, users, currentUser }: ChatClientProps) {
   const t = useT();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const channelParam = searchParams.get("channel");
+  const projectParam = searchParams.get("project");
+  const threadParam = searchParams.get("thread");
   const [channels, setChannels] = useState<Channel[]>(initialChannels);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(
-    initialChannels.find((c) => c.name === "general")?.id ?? initialChannels[0]?.id ?? null
+    initialChannels.find(
+      (channel) =>
+        channel.id === channelParam ||
+        (projectParam !== null && channel.projectId === projectParam),
+    )?.id ??
+      initialChannels.find((channel) => channel.name === "general")?.id ??
+      initialChannels[0]?.id ??
+      null,
   );
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const sendingMessageRef = useRef(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editMessage, setEditMessage] = useState<Message | null>(null);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [threadEditMessage, setThreadEditMessage] = useState<Message | null>(null);
+  const activeChannelIdRef = useRef(activeChannelId);
+  const threadMessageRef = useRef<Message | null>(threadMessage);
+  const messageRequestRef = useRef<AbortController | null>(null);
+  const messageRequestIdRef = useRef(0);
+  const messageCountRef = useRef(0);
+  const skipNextAutoScrollRef = useRef(false);
+  activeChannelIdRef.current = activeChannelId;
+  threadMessageRef.current = threadMessage;
+  messageCountRef.current = messages.length;
 
   // Threads are addressable. Without a URL a thread cannot be linked, shared
   // or reached with the back button — a manager saying "see the thread" has
   // nothing to send. The id lives in a query param so the channel route is
   // unchanged and an unknown id degrades to no thread rather than an error.
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const threadParam = searchParams.get("thread");
-
   const openThread = useCallback(
     (msg: Message | null) => {
       setThreadMessage(msg);
+      setThreadEditMessage(null);
       const params = new URLSearchParams(searchParams.toString());
-      if (msg) params.set("thread", msg.id);
+      if (msg) {
+        params.set("thread", msg.id);
+        params.set("channel", msg.channelId);
+      }
       else params.delete("thread");
       // replace, not push: opening a thread should not fill the back stack
       // with every panel toggle. scroll:false keeps the message list put.
@@ -979,11 +1062,28 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
     },
     [pathname, router, searchParams],
   );
+  const selectChannel = useCallback(
+    (channelId: string) => {
+      setActiveChannelId(channelId);
+      setThreadMessage(null);
+      setThreadEditMessage(null);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("channel", channelId);
+      params.delete("project");
+      params.delete("thread");
+      router.replace(`${pathname}?${params}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
   const [search, setSearch] = useState("");
   const [showNewChannel, setShowNewChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelDesc, setNewChannelDesc] = useState("");
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [creatingChannel, setCreatingChannel] = useState(false);
+  const [startingDmUserId, setStartingDmUserId] = useState<string | null>(null);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [addMemberId, setAddMemberId] = useState("");
+  const [addingMember, setAddingMember] = useState(false);
   // Drag-drop handoff to MessageInput. The thread region accepts file
   // drops anywhere; on drop we set this state and MessageInput's
   // externalFile effect picks it up + clears it.
@@ -991,32 +1091,142 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeout = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
-  // Fetch messages when channel changes
-  const fetchMessages = useCallback(async (channelId: string) => {
-    setLoadingMessages(true);
+  // Fetch messages when channel changes. Requests are both aborted and
+  // generation-checked: a slow response for channel A must never overwrite
+  // channel B after a quick switch.
+  const fetchMessages = useCallback(async (
+    channelId: string,
+    options: { cursor?: string; prepend?: boolean; silent?: boolean } = {},
+  ) => {
+    const requestId = ++messageRequestIdRef.current;
+    messageRequestRef.current?.abort();
+    const controller = new AbortController();
+    messageRequestRef.current = controller;
+    if (options.prepend) setLoadingOlder(true);
+    else if (!options.silent) setLoadingMessages(true);
     try {
-      const res = await fetch(`/api/chat/messages?channelId=${channelId}`);
-      const data = await res.json();
-      setMessages(data.messages ?? []);
-    } catch {
-      setMessages([]);
+      const params = new URLSearchParams({ channelId });
+      if (options.cursor) params.set("cursor", options.cursor);
+      if (options.silent) {
+        params.set("limit", String(Math.min(100, Math.max(50, messageCountRef.current))));
+      }
+      const res = await fetch(`/api/chat/messages?${params}`, {
+        signal: controller.signal,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        messages?: Message[];
+        hasMore?: boolean;
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!res.ok) {
+        if ((res.status === 403 || res.status === 404) && activeChannelIdRef.current === channelId) {
+          setChannels((current) => current.filter((item) => item.id !== channelId));
+          setActiveChannelId(null);
+        }
+        throw new Error(data.error ?? "Could not load this conversation.");
+      }
+      if (
+        controller.signal.aborted ||
+        requestId !== messageRequestIdRef.current ||
+        activeChannelIdRef.current !== channelId
+      ) {
+        return;
+      }
+      const incoming = (data.messages ?? []).map(normaliseMessage);
+      if (options.prepend) {
+        skipNextAutoScrollRef.current = true;
+        setMessages((current) => {
+          const newerIds = new Set(current.map((message) => message.id));
+          return [...incoming.filter((message) => !newerIds.has(message.id)), ...current];
+        });
+      } else if (options.silent && incoming.length > 0) {
+        // The API caps a page at 100. Preserve already-loaded history older
+        // than that authoritative window instead of making it disappear on
+        // every real-time invalidation.
+        setMessages((current) => {
+          const incomingIds = new Set(incoming.map((message) => message.id));
+          const oldestIncoming = incoming[0];
+          const retainedOlder = current.filter(
+            (message) =>
+              !incomingIds.has(message.id) &&
+              isOlderMessage(message, oldestIncoming),
+          );
+          return [...retainedOlder, ...incoming];
+        });
+      } else {
+        setMessages(incoming);
+      }
+      setHasOlder(data.hasMore === true);
+      setNextCursor(data.nextCursor ?? null);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (requestId === messageRequestIdRef.current && activeChannelIdRef.current === channelId) {
+        if (!options.prepend && !options.silent) setMessages([]);
+        showToast(
+          error instanceof Error ? error.message : "Could not load this conversation.",
+          "danger",
+        );
+      }
     } finally {
-      setLoadingMessages(false);
+      if (requestId === messageRequestIdRef.current) {
+        setLoadingMessages(false);
+        setLoadingOlder(false);
+      }
     }
   }, []);
 
+  const fetchOpenThread = useCallback(async (threadId: string) => {
+    try {
+      const response = await fetch(
+        `/api/chat/messages?threadId=${encodeURIComponent(threadId)}`,
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        thread?: Message;
+        error?: string;
+      };
+      if (!response.ok || !body.thread) {
+        if (
+          (response.status === 403 || response.status === 404) &&
+          threadMessageRef.current?.id === threadId
+        ) {
+          setThreadEditMessage(null);
+          openThread(null);
+        }
+        throw new Error(body.error ?? "This thread is no longer available.");
+      }
+      if (threadMessageRef.current?.id === threadId) {
+        setThreadMessage(normaliseMessage(body.thread));
+      }
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "This thread is no longer available.",
+        "warning",
+      );
+    }
+  }, [openThread]);
+
   useEffect(() => {
     if (activeChannelId) {
-      fetchMessages(activeChannelId);
+      setHasOlder(false);
+      setNextCursor(null);
+      void fetchMessages(activeChannelId);
       setReplyTo(null);
       setEditMessage(null);
       setThreadMessage(null);
+      setThreadEditMessage(null);
+    } else {
+      setMessages([]);
+      setEditMessage(null);
+      setThreadMessage(null);
+      setThreadEditMessage(null);
     }
   }, [activeChannelId, fetchMessages]);
+
+  useEffect(() => () => messageRequestRef.current?.abort(), []);
 
   // Restore a thread from the URL once its channel's messages have loaded.
   // This is what makes a pasted thread link work; without it the param is
@@ -1025,13 +1235,68 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   // view, which is the useful failure.
   useEffect(() => {
     if (!threadParam) return;
-    if (threadMessage?.id === threadParam) return;
+    if (
+      threadMessage?.id === threadParam &&
+      threadMessage.replies.length >=
+        (threadMessage.replyCount ?? threadMessage.replies.length)
+    ) {
+      return;
+    }
     const found = messages.find((m) => m.id === threadParam);
-    if (found) setThreadMessage(found);
-  }, [threadParam, messages, threadMessage?.id]);
+    if (
+      found &&
+      found.replies.length >= (found.replyCount ?? found.replies.length)
+    ) {
+      setThreadMessage(found);
+      return;
+    }
+
+    const controller = new AbortController();
+    void fetch(`/api/chat/messages?threadId=${encodeURIComponent(threadParam)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => ({}))) as {
+          thread?: Message;
+          error?: string;
+        };
+        if (!response.ok || !body.thread) {
+          if (response.status === 403 || response.status === 404) {
+            setThreadEditMessage(null);
+            openThread(null);
+          }
+          throw new Error(body.error ?? "This thread is no longer available.");
+        }
+        setThreadMessage(normaliseMessage(body.thread));
+        if (body.thread.channelId !== activeChannelId) {
+          setActiveChannelId(body.thread.channelId);
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        showToast(
+          error instanceof Error ? error.message : "This thread is no longer available.",
+          "warning",
+        );
+      });
+
+    return () => controller.abort();
+  }, [
+    activeChannelId,
+    threadParam,
+    messages,
+    threadMessage?.id,
+    threadMessage?.replies.length,
+    threadMessage?.replyCount,
+    openThread,
+  ]);
 
   // Auto-scroll
   useEffect(() => {
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -1042,63 +1307,71 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
     const pusher = getPusherClient();
     const channelSub = pusher.subscribe(`private-channel-${activeChannelId}`);
 
-    channelSub.bind(PUSHER_EVENTS.NEW_MESSAGE, (msg: Message) => {
-      setMessages((prev) => {
-        if (msg.parentId) {
-          return prev.map((m) =>
-            m.id === msg.parentId ? { ...m, replies: [...m.replies, msg] } : m
-          );
-        }
-        return [...prev, msg];
-      });
-      // Update unread count
+    // Real-time events are invalidations, not data transport. The API checks
+    // current membership and action grants on every refresh, closing the gap
+    // where a socket remains subscribed briefly after access is revoked.
+    const refreshFromAuthoritativeApi = () => {
+      void fetchMessages(activeChannelId, { silent: true });
+      const openThreadId = threadMessageRef.current?.id;
+      if (openThreadId) void fetchOpenThread(openThreadId);
       setChannels((prev) =>
         prev.map((c) => (c.id === activeChannelId ? { ...c, unread: 0 } : c))
       );
-    });
-
-    channelSub.bind(PUSHER_EVENTS.EDIT_MESSAGE, (updated: Message) => {
-      setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-    });
-
-    channelSub.bind(PUSHER_EVENTS.DELETE_MESSAGE, ({ id }: { id: string }) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, deletedAt: new Date().toISOString(), content: "This message was deleted." } : m))
-      );
-    });
-
-    channelSub.bind(PUSHER_EVENTS.REACTION_ADD, ({ messageId, reaction }: { messageId: string; reaction: Reaction }) => {
-      setMessages((prev) =>
-        prev.map((m) => m.id === messageId ? { ...m, reactions: [...m.reactions, reaction] } : m)
-      );
-    });
-
-    channelSub.bind(PUSHER_EVENTS.REACTION_REMOVE, ({ messageId, reactionId }: { messageId: string; reactionId: string }) => {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? { ...m, reactions: m.reactions.filter((r) => r.id !== reactionId) }
-            : m
-        )
-      );
-    });
-
-    channelSub.bind(PUSHER_EVENTS.TYPING_START, ({ userId, name }: { userId: string; name: string }) => {
-      if (userId !== currentUser.id) {
-        setTypingUsers((prev) => prev.includes(name) ? prev : [...prev, name]);
-      }
-    });
-
-    channelSub.bind(PUSHER_EVENTS.TYPING_STOP, ({ userId, name }: { userId: string; name: string }) => {
-      if (userId !== currentUser.id) {
-        setTypingUsers((prev) => prev.filter((u) => u !== name));
-      }
-    });
+    };
+    channelSub.bind(PUSHER_EVENTS.NEW_MESSAGE, refreshFromAuthoritativeApi);
+    channelSub.bind(PUSHER_EVENTS.EDIT_MESSAGE, refreshFromAuthoritativeApi);
+    channelSub.bind(PUSHER_EVENTS.DELETE_MESSAGE, refreshFromAuthoritativeApi);
+    channelSub.bind(PUSHER_EVENTS.REACTION_ADD, refreshFromAuthoritativeApi);
+    channelSub.bind(PUSHER_EVENTS.REACTION_REMOVE, refreshFromAuthoritativeApi);
 
     return () => {
       pusher.unsubscribe(`private-channel-${activeChannelId}`);
     };
-  }, [activeChannelId, currentUser.id]);
+  }, [activeChannelId, fetchMessages, fetchOpenThread]);
+
+  const applyAuthoritativeMessage = useCallback((wireMessage: Message) => {
+    const incoming = normaliseMessage(wireMessage);
+    setMessages((current) => {
+      if (incoming.parentId) {
+        return current.map((message) => {
+          if (message.id !== incoming.parentId) return message;
+          const existing = message.replies.find((reply) => reply.id === incoming.id);
+          const replies = existing
+            ? message.replies.map((reply) =>
+                reply.id === incoming.id ? mergeMessage(reply, incoming) : reply,
+              )
+            : [...message.replies, incoming];
+          return {
+            ...message,
+            replies,
+            replyCount: Math.max(message.replyCount ?? message.replies.length, replies.length),
+          };
+        });
+      }
+      const existing = current.find((message) => message.id === incoming.id);
+      return existing
+        ? current.map((message) =>
+            message.id === incoming.id ? mergeMessage(message, incoming) : message,
+          )
+        : [...current, incoming];
+    });
+    setThreadMessage((current) => {
+      if (!current) return current;
+      if (current.id === incoming.id) return mergeMessage(current, incoming);
+      if (incoming.parentId !== current.id) return current;
+      const existing = current.replies.find((reply) => reply.id === incoming.id);
+      const replies = existing
+        ? current.replies.map((reply) =>
+            reply.id === incoming.id ? mergeMessage(reply, incoming) : reply,
+          )
+        : [...current.replies, incoming];
+      return {
+        ...current,
+        replies,
+        replyCount: Math.max(current.replyCount ?? current.replies.length, replies.length),
+      };
+    });
+  }, []);
 
   // Send message — uploads first if an attachment is present, then
   // creates the message. Failure modes are explicit: upload errors are
@@ -1107,13 +1380,18 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   const sendMessage = async (payload: {
     content: string;
     attachment?: PendingAttachment;
-  }) => {
-    if (!activeChannelId) return;
+    parentId?: string | null;
+    editMessageId?: string;
+  }): Promise<boolean> => {
+    if (!activeChannelId || sendingMessageRef.current) return false;
+    const targetChannelId = activeChannelId;
+    sendingMessageRef.current = true;
     setSendingMessage(true);
 
     try {
       let fileUrl: string | null = null;
       let fileName: string | null = null;
+      let fileReceipt: string | null = null;
 
       if (payload.attachment) {
         const file = payload.attachment.file;
@@ -1125,12 +1403,14 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
             filename: file.name,
             contentType: file.type || "application/octet-stream",
             contentLength: file.size,
+            purpose: "chat",
+            targetId: targetChannelId,
           }),
         });
         if (!presignRes.ok) {
           const body = (await presignRes.json().catch(() => ({}))) as { error?: string };
           showToast(body.error ?? "Couldn't prepare upload", "danger");
-          return;
+          return false;
         }
         const presigned = (await presignRes.json()) as PresignedUpload;
 
@@ -1142,67 +1422,126 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
         });
         if (!uploadRes.ok) {
           showToast("Upload failed. Try again.", "danger");
-          return;
+          return false;
         }
         fileUrl = presigned.finalUrl;
         fileName = file.name;
+        fileReceipt = presigned.receipt;
       }
 
       // 3) Create the message (text + optional fileUrl/fileName)
-      if (editMessage) {
-        await fetch(`/api/chat/messages/${editMessage.id}`, {
+      if (payload.editMessageId) {
+        const editRes = await fetch(`/api/chat/messages/${payload.editMessageId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: payload.content }),
         });
-        setEditMessage(null);
+        const body = (await editRes.json().catch(() => ({}))) as Message & { error?: string };
+        if (!editRes.ok || !body.id) {
+          showToast(body.error ?? "Could not save the message.", "danger");
+          return false;
+        }
+        if (activeChannelIdRef.current === targetChannelId) {
+          applyAuthoritativeMessage(body);
+        }
       } else {
-        await fetch("/api/chat/messages", {
+        const messageRes = await fetch("/api/chat/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            channelId: activeChannelId,
+            channelId: targetChannelId,
             content: payload.content,
-            parentId: replyTo?.id ?? null,
+            parentId: payload.parentId ?? null,
             fileUrl,
             fileName,
+            fileReceipt,
           }),
         });
+        const body = (await messageRes.json().catch(() => ({}))) as Message & { error?: string };
+        if (!messageRes.ok || !body.id) {
+          showToast(body.error ?? "Could not send the message.", "danger");
+          return false;
+        }
+        if (activeChannelIdRef.current === targetChannelId) {
+          applyAuthoritativeMessage(body);
+        }
         setReplyTo(null);
       }
+      return true;
+    } catch {
+      showToast("Could not send the message. Please try again.", "danger");
+      return false;
     } finally {
+      sendingMessageRef.current = false;
       setSendingMessage(false);
     }
   };
 
   // React to message
   const reactToMessage = async (msgId: string, emoji: string) => {
-    await fetch(`/api/chat/messages/${msgId}/reactions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji }),
-    });
+    try {
+      const response = await fetch(`/api/chat/messages/${msgId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Could not update the reaction.", "danger");
+        return;
+      }
+      const channelId = activeChannelIdRef.current;
+      if (channelId) void fetchMessages(channelId, { silent: true });
+      const threadId = threadMessageRef.current?.id;
+      if (threadId) void fetchOpenThread(threadId);
+    } catch {
+      showToast("Could not update the reaction.", "danger");
+    }
   };
 
   // Delete message
   const deleteMessage = async (msgId: string) => {
-    await fetch(`/api/chat/messages/${msgId}`, { method: "DELETE" });
+    try {
+      const response = await fetch(`/api/chat/messages/${msgId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? "Could not delete the message.", "danger");
+        return;
+      }
+      const channelId = activeChannelIdRef.current;
+      if (channelId) void fetchMessages(channelId, { silent: true });
+      const threadId = threadMessageRef.current?.id;
+      if (threadId) void fetchOpenThread(threadId);
+    } catch {
+      showToast("Could not delete the message.", "danger");
+    }
   };
 
   // Create channel
   const createChannel = async () => {
-    if (!newChannelName.trim()) return;
-    const res = await fetch("/api/chat/channels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newChannelName, description: newChannelDesc }),
-    });
-    const ch = await res.json();
-    setChannels((prev) => [...prev, ch]);
-    setActiveChannelId(ch.id);
-    setShowNewChannel(false);
-    setNewChannelName("");
-    setNewChannelDesc("");
+    if (!newChannelName.trim() || creatingChannel) return;
+    setCreatingChannel(true);
+    try {
+      const res = await fetch("/api/chat/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newChannelName, description: newChannelDesc }),
+      });
+      const ch = (await res.json().catch(() => ({}))) as Channel & { error?: string };
+      if (!res.ok || !ch.id) {
+        showToast(ch.error ?? "Could not create the channel.", "danger");
+        return;
+      }
+      setChannels((prev) => [...prev, ch]);
+      selectChannel(ch.id);
+      setShowNewChannel(false);
+      setNewChannelName("");
+      setNewChannelDesc("");
+    } catch {
+      showToast("Could not create the channel.", "danger");
+    } finally {
+      setCreatingChannel(false);
+    }
   };
 
   // Group messages by date
@@ -1225,6 +1564,13 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   const dmChannels = channels.filter((c) => c.type === "direct");
   const filteredUsers = users
     .filter((u) => u.id !== currentUser.id)
+    .filter(
+      (u) =>
+        !currentUser.isExternal ||
+        dmChannels.some((channel) =>
+          channel.members.some((member) => member.userId === u.id),
+        ),
+    )
     .filter((u) =>
       searchQuery.length === 0
         ? true
@@ -1238,21 +1584,91 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
       (c) => c.type === "direct" && c.members.some((m) => m.userId === userId)
     );
     if (existing) {
-      setActiveChannelId(existing.id);
+      selectChannel(existing.id);
       return;
     }
-    const res = await fetch("/api/chat/channels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: `dm-${currentUser.id}-${userId}`,
-        type: "direct",
-        memberIds: [currentUser.id, userId],
-      }),
-    });
-    const ch = await res.json();
-    setChannels((prev) => [...prev, ch]);
-    setActiveChannelId(ch.id);
+    if (startingDmUserId) return;
+    setStartingDmUserId(userId);
+    try {
+      const res = await fetch("/api/chat/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `dm-${currentUser.id}-${userId}`,
+          type: "direct",
+          memberIds: [currentUser.id, userId],
+        }),
+      });
+      const ch = (await res.json().catch(() => ({}))) as Channel & { error?: string };
+      if (!res.ok || !ch.id) {
+        showToast(ch.error ?? "Could not open the direct conversation.", "danger");
+        return;
+      }
+      setChannels((prev) =>
+        prev.some((channel) => channel.id === ch.id) ? prev : [...prev, ch],
+      );
+      selectChannel(ch.id);
+    } catch {
+      showToast("Could not open the direct conversation.", "danger");
+    } finally {
+      setStartingDmUserId(null);
+    }
+  };
+
+  const canManageActiveChannel = Boolean(
+    activeChannel &&
+      activeChannel.type !== "direct" &&
+      !currentUser.isExternal &&
+      (currentUser.role === "admin" ||
+        currentUser.role === "super_admin" ||
+        activeChannel.createdBy === currentUser.id ||
+        activeChannel.members.some(
+          (member) =>
+            member.userId === currentUser.id &&
+            (member.role === "owner" || member.role === "admin"),
+        )),
+  );
+  const addableUsers = activeChannel
+    ? users.filter(
+        (user) =>
+          user.id !== currentUser.id &&
+          !activeChannel.members.some((member) => member.userId === user.id) &&
+          (!activeChannel.projectId || user.isExternal),
+      )
+    : [];
+
+  const addMember = async () => {
+    if (!activeChannel || !addMemberId || addingMember) return;
+    setAddingMember(true);
+    try {
+      const response = await fetch(`/api/chat/channels/${activeChannel.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: addMemberId }),
+      });
+      const member = (await response.json().catch(() => ({}))) as ChannelMember & {
+        error?: string;
+      };
+      if (!response.ok || !member.userId) {
+        showToast(member.error ?? "Could not add this person.", "danger");
+        return;
+      }
+      setChannels((current) =>
+        current.map((channel) =>
+          channel.id === activeChannel.id &&
+          !channel.members.some((existing) => existing.userId === member.userId)
+            ? { ...channel, members: [...channel.members, member] }
+            : channel,
+        ),
+      );
+      setShowAddMember(false);
+      setAddMemberId("");
+      showToast(`${member.user.name ?? "Member"} added to the conversation.`, "success");
+    } catch {
+      showToast("Could not add this person.", "danger");
+    } finally {
+      setAddingMember(false);
+    }
   };
 
   const getChannelDisplayName = (ch: Channel) => {
@@ -1266,9 +1682,9 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
     // (which is flex-1). Using h-screen here forces the chat taller than
     // its parent and pushes the composer below the viewport — that was
     // the original "you have to scroll to type" bug.
-    <div className="flex h-full min-h-0 overflow-hidden bg-background">
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-background">
       {/* ─── Directory column ─── */}
-      <div className="w-[260px] shrink-0 border-r border-border flex flex-col min-h-0 bg-muted/20">
+      <div className="w-[42vw] min-w-[160px] max-w-[260px] sm:min-w-[220px] shrink-0 border-r border-border flex flex-col min-h-0 bg-muted/20">
         {/* Workspace header — name + active-member chip. No gear; the
             global topbar owns workspace settings. */}
         <div className="px-4 py-3 border-b border-border shrink-0">
@@ -1306,13 +1722,15 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 {filteredChannels.length}
               </span>
             </span>
-            <button
-              onClick={() => setShowNewChannel(true)}
-              className="p-0.5 -mr-0.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-              title="New channel"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+            {!currentUser.isExternal && (
+              <button
+                onClick={() => setShowNewChannel(true)}
+                className="p-0.5 -mr-0.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                title="New channel"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {filteredChannels.length === 0 ? (
@@ -1327,7 +1745,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 return (
                   <li key={ch.id}>
                     <button
-                      onClick={() => setActiveChannelId(ch.id)}
+                      onClick={() => selectChannel(ch.id)}
                       className={cn(
                         "w-full flex items-center gap-2 h-[28px] px-2 rounded-md text-[12.5px] transition-colors text-left",
                         isActive
@@ -1384,6 +1802,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                   <li key={u.id}>
                     <button
                       onClick={() => startDM(u.id)}
+                      disabled={startingDmUserId !== null}
                       className={cn(
                         "w-full flex items-center gap-2 h-[30px] px-1.5 rounded-md text-[12.5px] transition-colors text-left",
                         isActive
@@ -1505,32 +1924,36 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                   <Users className="w-3 h-3" />
                   {activeChannel.members.length}
                 </span>
-                <a
-                  href="/dashboard/calls"
-                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="Voice call"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                </a>
-                <a
-                  href="/dashboard/calls"
-                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="Video call"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                </a>
-                <button
-                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="Add member"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
-                  title="More"
-                >
-                  <MoreHorizontal className="w-3.5 h-3.5" />
-                </button>
+                {!currentUser.isExternal && (
+                  <>
+                    <a
+                      href="/dashboard/calls"
+                      className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                      title="Voice call"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+                    <a
+                      href="/dashboard/calls"
+                      className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                      title="Video call"
+                    >
+                      <Video className="w-3.5 h-3.5" />
+                    </a>
+                  </>
+                )}
+                {canManageActiveChannel && (
+                  <button
+                    onClick={() => {
+                      setAddMemberId("");
+                      setShowAddMember(true);
+                    }}
+                    className="p-1.5 hover:bg-muted rounded transition-colors text-muted-foreground hover:text-foreground"
+                    title="Add member"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1555,6 +1978,29 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 </div>
               ) : (
                 <>
+                  {hasOlder && nextCursor && (
+                    <div className="flex justify-center py-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={loadingOlder}
+                        onClick={() => {
+                          if (activeChannelId && nextCursor) {
+                            void fetchMessages(activeChannelId, {
+                              cursor: nextCursor,
+                              prepend: true,
+                            });
+                          }
+                        }}
+                      >
+                        {loadingOlder ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        Load older messages
+                      </Button>
+                    </div>
+                  )}
                   {groupedMessages.map(({ date, messages: dayMsgs }) => (
                     <div key={date}>
                       <DateSeparator date={`${date}T12:00:00`} />
@@ -1573,31 +2019,18 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                             currentUserId={currentUser.id}
                             onReact={reactToMessage}
                             onReply={openThread}
-                            onEdit={setEditMessage}
+                            onEdit={(message) => {
+                              setThreadEditMessage(null);
+                              setEditMessage(message);
+                            }}
                             onDelete={deleteMessage}
                             isGrouped={isGrouped}
+                            allowInternalActions={!currentUser.isExternal}
                           />
                         );
                       })}
                     </div>
                   ))}
-                  {typingUsers.length > 0 && (
-                    <div className="px-4 py-1 flex items-center gap-2">
-                      <div className="flex gap-0.5">
-                        {[0, 1, 2].map((i) => (
-                          <motion.div
-                            key={i}
-                            className="w-1.5 h-1.5 rounded-full bg-muted-foreground"
-                            animate={{ y: [0, -4, 0] }}
-                            transition={{ delay: i * 0.15, repeat: Infinity, duration: 0.8 }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
-                      </span>
-                    </div>
-                  )}
                   <div ref={messagesEndRef} />
                 </>
               )}
@@ -1605,6 +2038,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
 
             {/* Message Input */}
             <MessageInput
+              key={editMessage?.id ?? replyTo?.id ?? "channel-composer"}
               onSend={sendMessage}
               loading={sendingMessage}
               placeholder={`Message #${getChannelDisplayName(activeChannel)}`}
@@ -1636,10 +2070,10 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
         {threadMessage && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 360, opacity: 1 }}
+            animate={{ width: "min(360px, 100%)", opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="shrink-0 border-l border-border flex flex-col overflow-hidden bg-background"
+            className="absolute inset-y-0 right-0 z-30 shrink-0 border-l border-border flex flex-col overflow-hidden bg-background sm:static sm:z-auto"
           >
             <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
               <div>
@@ -1653,16 +2087,23 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 </p>
               </div>
               <button
-                onClick={() => openThread(null)}
+                onClick={() => {
+                  setThreadEditMessage(null);
+                  openThread(null);
+                }}
+                aria-label="Close thread"
                 className="p-1.5 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
             <ThreadActions
+              key={threadMessage.id}
               threadId={threadMessage.id}
               sourceText={threadMessage.content}
               projectId={activeChannel?.projectId ?? null}
+              channelId={threadMessage.channelId}
+              canCreateTask={!currentUser.isExternal && !threadMessage.deletedAt}
             />
             <div className="flex-1 overflow-y-auto py-2">
               {/* Parent message */}
@@ -1671,9 +2112,13 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 currentUserId={currentUser.id}
                 onReact={reactToMessage}
                 onReply={() => {}}
-                onEdit={setEditMessage}
+                onEdit={(message) => {
+                  setEditMessage(null);
+                  setThreadEditMessage(message);
+                }}
                 onDelete={deleteMessage}
                 isThread
+                allowInternalActions={!currentUser.isExternal}
               />
               <div className="px-4 my-3 flex items-center gap-3">
                 <div className="flex-1 h-px bg-border" />
@@ -1698,22 +2143,34 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                     currentUserId={currentUser.id}
                     onReact={reactToMessage}
                     onReply={() => {}}
-                    onEdit={setEditMessage}
+                    onEdit={(message) => {
+                      setEditMessage(null);
+                      setThreadEditMessage(message);
+                    }}
                     onDelete={deleteMessage}
                     isThread
                     isGrouped={isGrouped}
+                    allowInternalActions={!currentUser.isExternal}
                   />
                 );
               })}
             </div>
-            <MessageInput
-              onSend={sendMessage}
-              loading={sendingMessage}
-              placeholder="Reply in thread..."
-              replyTo={threadMessage}
-              onCancelReply={() => openThread(null)}
-              users={users}
-            />
+            {!threadMessage.deletedAt && (
+              <MessageInput
+                key={`${threadMessage.id}:${threadEditMessage?.id ?? "reply"}`}
+                onSend={sendMessage}
+                loading={sendingMessage}
+                placeholder="Reply in thread..."
+                replyTo={threadMessage}
+                onCancelReply={() => {
+                  setThreadEditMessage(null);
+                  openThread(null);
+                }}
+                editMessage={threadEditMessage}
+                onCancelEdit={() => setThreadEditMessage(null)}
+                users={users}
+              />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1768,8 +2225,78 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 <Button variant="outline" className="flex-1" onClick={() => setShowNewChannel(false)}>
                   Cancel
                 </Button>
-                <Button className="flex-1" onClick={createChannel} disabled={!newChannelName.trim()}>
-                  Create Channel
+                <Button className="flex-1" onClick={createChannel} disabled={!newChannelName.trim() || creatingChannel}>
+                  {creatingChannel ? "Creatingâ€¦" : "Create Channel"}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAddMember && activeChannel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            onClick={() => setShowAddMember(false)}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="add-channel-member-title"
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-background border border-border rounded-2xl p-6 w-96 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 id="add-channel-member-title" className="font-bold text-lg mb-4">
+                Add a member
+              </h3>
+              {addableUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Everyone eligible is already in this conversation.
+                </p>
+              ) : (
+                <div>
+                  <label
+                    htmlFor="channel-member"
+                    className="text-xs font-semibold text-muted-foreground uppercase tracking-wider"
+                  >
+                    Person
+                  </label>
+                  <select
+                    id="channel-member"
+                    value={addMemberId}
+                    onChange={(event) => setAddMemberId(event.target.value)}
+                    className="mt-1 w-full border border-border rounded-lg px-3 py-2 text-sm bg-background outline-none"
+                  >
+                    <option value="">Select a person</option>
+                    {addableUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name ?? "Unnamed user"}{user.isExternal ? " (guest)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex gap-3 mt-5">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowAddMember(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => void addMember()}
+                  disabled={!addMemberId || addingMember}
+                >
+                  {addingMember ? "Adding…" : "Add member"}
                 </Button>
               </div>
             </motion.div>

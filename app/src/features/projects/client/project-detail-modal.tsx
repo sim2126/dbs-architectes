@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquare, X } from "lucide-react";
-import { Dialog, DialogContent } from "@/ui/components/dialog";
+import { MessageSquare } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/components/dialog";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { getPhaseColor } from "@/ui/tokens";
+import { getPhaseColor, getStatusColor } from "@/ui/tokens";
 import { ProjectCellEditor } from "./project-cell-editor";
 import { PROJECT_COLUMNS } from "../domain/editable-columns";
 
@@ -85,20 +85,11 @@ export function ProjectDetailModal({
             />
           )}
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute top-3 right-3 rounded-md bg-friday-surface/90 p-1.5 text-friday-fg-muted hover:text-foreground backdrop-blur transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <X className="h-4 w-4" />
-          </button>
-
           <div className="px-6 pt-5 pb-4 border-b border-friday-border-soft">
             <p className="font-mono text-xs text-muted-foreground">{project.code}</p>
-            <h2 className="font-display italic text-foreground text-3xl leading-[1.1] mt-1.5">
+            <DialogTitle className="font-display italic text-foreground text-3xl leading-[1.1] tracking-normal mt-1.5 pr-8">
               {project.title.replace(project.code + " ", "")}
-            </h2>
+            </DialogTitle>
 
             <div className="flex items-center gap-2 mt-3.5">
               <span
@@ -106,6 +97,12 @@ export function ProjectDetailModal({
                 style={{ background: getPhaseColor(project.phase) }}
               >
                 {project.phase}
+              </span>
+              <span
+                className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium text-white"
+                style={{ background: getStatusColor(project.workStatus) }}
+              >
+                {project.workStatus}
               </span>
               {project.country && (
                 <span className="text-xs text-muted-foreground">{project.country}</span>

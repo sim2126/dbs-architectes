@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { Loader2, Upload, X } from "lucide-react";
 import {
   Dialog,
@@ -40,7 +39,6 @@ interface AddProjectModalProps {
 export function AddProjectModal({
   open,
   onClose,
-  users,
   onSuccess,
 }: AddProjectModalProps) {
   const [loading, setLoading] = useState(false);
@@ -147,6 +145,8 @@ export function AddProjectModal({
             >
               {imagePreview ? (
                 <div className="relative">
+                  {/* Blob previews cannot be fetched by the Next.js image optimiser. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={imagePreview}
                     alt="Preview"

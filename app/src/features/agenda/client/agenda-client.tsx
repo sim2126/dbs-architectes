@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -17,11 +16,10 @@ import {
   Loader2,
   CalendarCheck,
   CalendarX,
-  ExternalLink,
   Unlink,
   Link as LinkIcon,
 } from "lucide-react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, isToday, addMonths, subMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, addMonths, subMonths } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { Button } from "@/ui/components/button";
 import { Badge } from "@/ui/components/badge";
@@ -82,7 +80,7 @@ const PRIORITY_COLORS = {
   critical: "text-red-500",
 };
 
-export function AgendaClient({ initialItems, projects, currentUserId }: AgendaClientProps) {
+export function AgendaClient({ initialItems, projects }: AgendaClientProps) {
   const [items, setItems] = useState(initialItems);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -410,7 +408,6 @@ export function AgendaClient({ initialItems, projects, currentUserId }: AgendaCl
               ) : (
                 <div className="space-y-2">
                   {upcomingItems.map((item) => {
-                    const Icon = TYPE_ICONS[item.type as keyof typeof TYPE_ICONS] || Circle;
                     const date = new Date(item.date);
                     const isOverdue = date < new Date() && item.status === "pending";
                     const isSyncing = syncingIds.has(item.id);

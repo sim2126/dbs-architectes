@@ -1,7 +1,7 @@
 "use client";
 
-import { Download, ExternalLink, FileText, X } from "lucide-react";
-import { Dialog, DialogContent } from "@/ui/components/dialog";
+import { Download, ExternalLink, FileText } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/ui/components/dialog";
 import { cn, formatSize } from "@/ui/utils";
 
 /**
@@ -148,16 +148,16 @@ export function FilePreview({
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-5xl p-0 gap-0 overflow-hidden">
-        <header className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-friday-border-soft">
+        <header className="flex items-start justify-between gap-3 px-5 pr-12 py-3.5 border-b border-friday-border-soft">
           <span className="flex items-start gap-2.5 min-w-0">
             <FileText
               className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground"
               aria-hidden
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground truncate">
+              <DialogTitle className="block text-sm font-medium leading-normal tracking-normal text-foreground truncate">
                 {attachment.filename}
-              </span>
+              </DialogTitle>
               <span className="block text-xs text-muted-foreground">
                 {typeof attachment.sizeBytes === "number"
                   ? formatSize(attachment.sizeBytes)
@@ -189,14 +189,6 @@ export function FilePreview({
             >
               <Download className="h-4 w-4" />
             </a>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close preview"
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </span>
         </header>
 
@@ -289,8 +281,9 @@ function TablePreview({ text }: { text: string }) {
               );
             }
             if (line.trim() === "") return null;
-            // Tabs from Excel extraction, commas from a CSV passed through.
-            const cells = line.includes("\t") ? line.split("\t") : line.split(",");
+            // Tabs come from Excel extraction. CSV rows need quote-aware
+            // parsing so values such as "Larch, untreated" stay in one cell.
+            const cells = line.includes("\t") ? line.split("\t") : parseCsvLine(line);
             return (
               <tr key={i} className="border-b border-friday-border-soft">
                 {cells.map((cell, c) => (
@@ -308,6 +301,33 @@ function TablePreview({ text }: { text: string }) {
       </table>
     </div>
   );
+}
+
+/** RFC 4180-style single-row parsing, including escaped double quotes. */
+export function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let value = "";
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      cells.push(value);
+      value = "";
+    } else {
+      value += char;
+    }
+  }
+
+  cells.push(value);
+  return cells;
 }
 
 /**

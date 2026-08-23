@@ -25,19 +25,23 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import ws from "ws";
-import JSZip from "jszip";
-import ExcelJS from "exceljs";
 import {
   extractText,
   ExtractError,
 } from "../src/features/ai/server/ingest/extract";
+import {
+  createDeterministicDocx as docx,
+  createDeterministicXlsx as xlsx,
+} from "./deterministic-archive";
+import { assertSafeDemoSeedTarget } from "./seed-safety";
 
+const seedTarget = assertSafeDemoSeedTarget();
 neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const adapter = new PrismaNeon({ connectionString: seedTarget.connectionString });
 const prisma = new PrismaClient({ adapter });
 
 /** Where the local-disk upload adapter serves from, so seeded rows carry the
@@ -58,6 +62,10 @@ const DEMO_EMAILS = [
   "partner@dbsarc.com",
   "intern@dbsarc.com",
   "viewer@dbsarc.com",
+  // The public "Try demo" account. Included so a visitor who clicks straight
+  // through from the sign-in page lands on a DBS AI surface with files and
+  // conversations, rather than on an empty state that reads as broken.
+  "demo@dbsarc.com",
 ];
 
 const MIME = {
@@ -146,66 +154,6 @@ function pdf(title: string, lines: string[]): Buffer {
     `startxref\n${xrefAt}\n%%EOF\n`;
 
   return Buffer.from(out, "latin1");
-}
-
-async function xlsx(
-  sheets: Array<{ name: string; rows: (string | number)[][] }>,
-): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Friday demo seed";
-  for (const s of sheets) {
-    const ws = wb.addWorksheet(s.name);
-    s.rows.forEach((r) => ws.addRow(r));
-    ws.getRow(1).font = { bold: true };
-  }
-  return Buffer.from(await wb.xlsx.writeBuffer());
-}
-
-/**
- * A minimal OOXML word document.
- *
- * Three parts is the whole requirement for a readable .docx: the content-type
- * map, the package relationship pointing at the main document, and the
- * document body itself. mammoth opens this, which is the bar.
- */
-async function docx(paragraphs: string[]): Promise<Buffer> {
-  const xmlEsc = (s: string) =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
-  const zip = new JSZip();
-  zip.file(
-    "[Content_Types].xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`,
-  );
-  zip.file(
-    "_rels/.rels",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`,
-  );
-  const body = paragraphs
-    .map(
-      (p) =>
-        `<w:p><w:r><w:t xml:space="preserve">${xmlEsc(p)}</w:t></w:r></w:p>`,
-    )
-    .join("");
-  zip.file(
-    "word/document.xml",
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-<w:body>${body}</w:body>
-</w:document>`,
-  );
-  return zip.generateAsync({ type: "nodebuffer" });
 }
 
 /**
@@ -1246,6 +1194,7 @@ const DM_FILES: Array<{
 ];
 
 async function seedChatFiles(
+  prisma: Prisma.TransactionClient,
   byName: Map<string, { url: string; mime: string }>,
 ) {
   // Images render as an inline thumbnail, everything else as a file card.
@@ -1376,9 +1325,18 @@ async function seedChatFiles(
 // ─────────────────────────────────────────────────────────────────
 
 async function main() {
+  const users = await prisma.user.findMany({
+    where: { email: { in: DEMO_EMAILS } },
+    select: { id: true, email: true },
+  });
+  if (users.length === 0) {
+    throw new Error(
+      "No demo users found. Run `npm run db:seed` first; this seed attaches to those accounts.",
+    );
+  }
+
   console.log("Generating demo files...");
   const specs = await buildSpecs();
-  await mkdir(DISK_DIR, { recursive: true });
 
   type Prepared = Spec & {
     url: string;
@@ -1392,7 +1350,6 @@ async function main() {
   const prepared: Prepared[] = [];
 
   for (const spec of specs) {
-    await writeFile(path.join(DISK_DIR, spec.filename), spec.bytes);
     const url = `${URL_PREFIX}/${spec.filename}`;
 
     if (spec.failWith) {
@@ -1469,87 +1426,94 @@ async function main() {
     }
   }
 
-  const byName = new Map(prepared.map((p) => [p.filename, p]));
-
-  const users = await prisma.user.findMany({
-    where: { email: { in: DEMO_EMAILS } },
-    select: { id: true, email: true },
-  });
-  if (users.length === 0) {
-    throw new Error(
-      "No demo users found. Run `npm run db:seed` first — this seed attaches to those accounts.",
+  await prisma.$transaction(async (prisma) => {
+    if (users.length === 0) {
+      throw new Error(
+        "No demo users found. Run `npm run db:seed` first — this seed attaches to those accounts.",
+      );
+    }
+    console.log(
+      `\nSeeding ${prepared.length} files for ${users.length} accounts on ${seedTarget.identifier}.`,
     );
-  }
-  console.log(`\nSeeding ${prepared.length} files for ${users.length} accounts.`);
 
-  for (const user of users) {
-    // Idempotent: clear this user's seeded rows before inserting, matched on
-    // the demo URL prefix so anything they uploaded themselves is untouched.
-    await prisma.aiChatAttachment.deleteMany({
-      where: { userId: user.id, url: { startsWith: URL_PREFIX } },
-    });
-    await prisma.aiChatSession.deleteMany({
-      where: { userId: user.id, title: { in: CHATS.map((c) => c.title) } },
-    });
-
-    const sessionIdByTitle = new Map<string, string>();
-
-    for (const chat of CHATS) {
-      const when = new Date(Date.now() - chat.daysAgo * 86_400_000);
-      const session = await prisma.aiChatSession.create({
-        data: {
-          userId: user.id,
-          title: chat.title,
-          createdAt: when,
-          updatedAt: when,
-        },
+    for (const user of users) {
+      // Idempotent: clear this user's seeded rows before inserting, matched on
+      // the demo URL prefix so anything they uploaded themselves is untouched.
+      await prisma.aiChatAttachment.deleteMany({
+        where: { userId: user.id, url: { startsWith: URL_PREFIX } },
       });
-      sessionIdByTitle.set(chat.title, session.id);
+      await prisma.aiChatSession.deleteMany({
+        where: { userId: user.id, title: { in: CHATS.map((c) => c.title) } },
+      });
 
-      await prisma.aiChatMessage.createMany({
-        data: chat.turns.map((t, i) => ({
-          sessionId: session.id,
-          role: t.role,
-          content: t.content,
-          // Sequenced a minute apart so ordering is stable and the transcript
-          // does not read as though it happened in one instant.
-          createdAt: new Date(when.getTime() + i * 60_000),
+      const sessionIdByTitle = new Map<string, string>();
+
+      for (const chat of CHATS) {
+        const when = new Date(Date.now() - chat.daysAgo * 86_400_000);
+        const session = await prisma.aiChatSession.create({
+          data: {
+            userId: user.id,
+            title: chat.title,
+            createdAt: when,
+            updatedAt: when,
+          },
+        });
+        sessionIdByTitle.set(chat.title, session.id);
+
+        await prisma.aiChatMessage.createMany({
+          data: chat.turns.map((t, i) => ({
+            sessionId: session.id,
+            role: t.role,
+            content: t.content,
+            // Sequenced a minute apart so ordering is stable and the transcript
+            // does not read as though it happened in one instant.
+            createdAt: new Date(when.getTime() + i * 60_000),
+          })),
+        });
+      }
+
+      /** Which conversation a file belongs to, if any. */
+      const sessionForFile = new Map<string, string>();
+      for (const chat of CHATS) {
+        const id = sessionIdByTitle.get(chat.title)!;
+        for (const f of chat.files) sessionForFile.set(f, id);
+      }
+
+      await prisma.aiChatAttachment.createMany({
+        data: prepared.map((p, i) => ({
+          userId: user.id,
+          sessionId: sessionForFile.get(p.filename) ?? null,
+          filename: p.filename,
+          contentType: p.mime,
+          sizeBytes: p.bytes.byteLength,
+          url: p.url,
+          extractedText: p.extractedText,
+          extractedUnits: p.extractedUnits,
+          ingestedAt: p.ingested
+            ? new Date(Date.now() - (i % 9) * 86_400_000)
+            : null,
+          ingestError: p.error,
+          // Spread across three weeks so the Files list is not one flat block.
+          createdAt: new Date(Date.now() - (i % 21) * 86_400_000),
         })),
       });
     }
 
-    /** Which conversation a file belongs to, if any. */
-    const sessionForFile = new Map<string, string>();
-    for (const chat of CHATS) {
-      const id = sessionIdByTitle.get(chat.title)!;
-      for (const f of chat.files) sessionForFile.set(f, id);
-    }
+    // Chat gets the same files. Narrowed to what seedChatFiles needs rather
+    // than passing the whole prepared record.
+    await seedChatFiles(
+      prisma,
+      new Map(prepared.map((p) => [p.filename, { url: p.url, mime: p.mime }])),
+    );
+  }, { maxWait: 10_000, timeout: 120_000 });
 
-    await prisma.aiChatAttachment.createMany({
-      data: prepared.map((p, i) => ({
-        userId: user.id,
-        sessionId: sessionForFile.get(p.filename) ?? null,
-        filename: p.filename,
-        contentType: p.mime,
-        sizeBytes: p.bytes.byteLength,
-        url: p.url,
-        extractedText: p.extractedText,
-        extractedUnits: p.extractedUnits,
-        ingestedAt: p.ingested
-          ? new Date(Date.now() - (i % 9) * 86_400_000)
-          : null,
-        ingestError: p.error,
-        // Spread across three weeks so the Files list is not one flat block.
-        createdAt: new Date(Date.now() - (i % 21) * 86_400_000),
-      })),
-    });
+  // Publish generated fixtures only after the database transaction commits.
+  // A failed seed cannot dirty the tracked demo artefacts while the rows are
+  // rolled back.
+  await mkdir(DISK_DIR, { recursive: true });
+  for (const spec of specs) {
+    await writeFile(path.join(DISK_DIR, spec.filename), spec.bytes);
   }
-
-  // Chat gets the same files. Narrowed to what seedChatFiles needs rather
-  // than passing the whole prepared record.
-  await seedChatFiles(
-    new Map(prepared.map((p) => [p.filename, { url: p.url, mime: p.mime }])),
-  );
 
   const ready = prepared.filter((p) => p.ingested).length;
   const stored = prepared.filter((p) => !p.ingested && !p.error).length;

@@ -1,4 +1,5 @@
 import { auth } from "@/platform/auth";
+import { redirect } from "next/navigation";
 import { loadSubject } from "@/platform/authz";
 import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
@@ -23,8 +24,10 @@ function roleTier(role?: string | null): RoleTier {
 }
 
 export default async function DashboardPage() {
-  const session = await auth();
-  const user = session!.user;
+  const session = await auth({ allowExternal: true });
+  if (!session) redirect("/login");
+  if (session.user.isExternal) redirect("/dashboard/chat");
+  const user = session.user;
   const userId = user.id;
   const tier = roleTier(user.role);
 

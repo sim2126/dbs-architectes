@@ -4,26 +4,25 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search, Plus, Grid, ChevronDown, X, Building2, ExternalLink,
-  Check, GripVertical, ChevronRight, Users,
-  MapPin, Tag, CreditCard, FileText, Clock, ArrowUpRight,
-  Circle, Loader2, MessageSquare, MoreHorizontal, Trash2,
-  Globe, Navigation,
+  Search, Plus, Grid, ChevronDown, X, Building2,
+  Check, ChevronRight,
+  Loader2, ArrowUpRight, Trash2, Globe,
+  // Still referenced by the project detail panel — Tag, Clock and CreditCard
+  // as `icon:` values in the field list, the rest directly in JSX.
+  Users, FileText, Tag, MapPin, Clock, CreditCard, Navigation, MessageSquare,
 } from "lucide-react";
 import { ProjectsMapView } from "@/features/projects/client/projects-map";
 import Link from "next/link";
 import { Button } from "@/ui/components/button";
 import { Input } from "@/ui/components/input";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { Badge } from "@/ui/components/badge";
 import { AddProjectModal } from "@/features/projects/client/add-project-modal";
 import { ProjectCellEditor } from "@/features/projects/client/project-cell-editor";
 import { FavoriteStar } from "@/ui/components/favorite-star";
 import { showToast } from "@/ui/components/toast";
-import { CATEGORIES, PHASES, TYPOLOGIES, TERRAINS, ROOFS, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
+import { CATEGORIES, PHASES, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
 import { getPhaseColor, getStatusColor } from "@/ui/tokens";
-import { formatDistanceToNow } from "date-fns";
 import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
 import { ProjectDetailModal } from "@/features/projects/client/project-detail-modal";
@@ -210,7 +209,11 @@ export function ProjectsExplorer({ initialProjects, users, permissions, currentU
   const toggleGroup = (phase: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      next.has(phase) ? next.delete(phase) : next.add(phase);
+      if (next.has(phase)) {
+        next.delete(phase);
+      } else {
+        next.add(phase);
+      }
       return next;
     });
   };
@@ -502,6 +505,8 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
       <div className="py-2.5 pr-3 min-w-0">
         <div className="flex items-center gap-2">
           {project.image ? (
+            // Project images can use authenticated URLs that the Next.js image optimiser cannot fetch.
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={project.image} alt="" className="w-6 h-6 rounded object-cover shrink-0" />
           ) : (
             <div className="w-6 h-6 rounded bg-muted flex items-center justify-center shrink-0">
@@ -1033,6 +1038,8 @@ function ProjectCard({
     >
       <div className="aspect-[4/3] bg-muted relative overflow-hidden">
         {project.image ? (
+          // Project images can use authenticated URLs that the Next.js image optimiser cannot fetch.
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={project.image} alt={project.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">

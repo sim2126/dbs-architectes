@@ -46,6 +46,8 @@ export type Subject = {
   userId: string;
   /** Global workspace role, normalised. May be a legacy alias — keep raw. */
   role: string;
+  /** Outside the practice. External users are conversation-scoped. */
+  isExternal: boolean;
   regions: RegionAccess[];
   /** Per-user overrides. Absent means "role defaults only". */
   grants?: readonly PermissionGrant[];
@@ -82,6 +84,9 @@ export type ChatResource = {
   channelId: string;
   /** When acting on a specific message, the author's userId. */
   messageUserId?: string;
+  /** Channel-level membership management is restricted to its custodians. */
+  channelOwnerId?: string;
+  channelMemberRole?: string | null;
 };
 
 export type SheetResource = {
@@ -228,12 +233,32 @@ export function authorize(
   resource: Resource,
   _context?: AuthContext,
 ): Decision {
+  void _context;
+
   // ── Per-user overrides, consulted before role defaults ──────────
   // Deny always wins — over an allow-override and over any role.
   const override = subject.grants?.find((g) => g.action === action);
   if (override?.effect === "deny") {
     return deny("Access to this action has been revoked for your account.");
   }
+
+  // Guests are admitted to individual conversations, never to workspace
+  // surfaces. This check sits ahead of role defaults and allow-grants so an
+  // accidentally privileged role or stale grant cannot widen guest access.
+  // Channel membership itself is enforced by the chat data-access layer.
+  if (
+    subject.isExternal &&
+    action !== "chat:read" &&
+    action !== "chat:post" &&
+    action !== "chat:react" &&
+    action !== "chat:message.update" &&
+    action !== "chat:message.delete" &&
+    action !== "settings:self.read" &&
+    action !== "settings:self.update"
+  ) {
+    return deny("Guest access is limited to conversations they have been invited to.");
+  }
+
   if (override?.effect === "allow" && OVERRIDABLE_ACTIONS.has(action)) {
     return ALLOW;
   }
@@ -316,6 +341,8 @@ export function authorize(
       if (resource?.kind !== "project") return deny("Resource must be a project.");
       if (!canRegionAccess(subject, resource.country))
         return deny("You don't have access to this project's thread.");
+      if (!isAssigned(assignmentTier(resource.assignmentRole)))
+        return deny("Only assigned project members can read this project's thread.");
       return ALLOW;
     }
 
@@ -324,7 +351,8 @@ export function authorize(
       if (!isWriter(subject.role)) return deny("Read-only roles cannot post.");
       if (!canRegionAccess(subject, resource.country))
         return deny("You don't have access to this project's thread.");
-      // Anyone with write role + region access can post; assignment helps but isn't required
+      if (!isAssigned(assignmentTier(resource.assignmentRole)))
+        return deny("Only assigned project members can post to this project's thread.");
       return ALLOW;
     }
 
@@ -388,6 +416,23 @@ export function authorize(
         ? ALLOW
         : deny("Read-only roles cannot post or react.");
 
+    case "chat:channel.create":
+      if (subject.isExternal) return deny("Guests cannot create channels.");
+      return isWriter(subject.role)
+        ? ALLOW
+        : deny("Read-only roles cannot create channels.");
+
+    case "chat:members.manage": {
+      if (resource?.kind !== "chat") return deny("Resource must be a chat channel.");
+      if (subject.isExternal) return deny("Guests cannot manage channel members.");
+      if (isAdmin(subject.role)) return ALLOW;
+      if (resource.channelOwnerId === subject.userId) return ALLOW;
+      if (resource.channelMemberRole === "owner" || resource.channelMemberRole === "admin") {
+        return ALLOW;
+      }
+      return deny("Only channel owners or admins can add members.");
+    }
+
     case "chat:message.update": {
       if (resource?.kind !== "chat") return deny("Resource must be a chat message.");
       // Only the author may edit; admins do not edit others' messages
@@ -398,6 +443,7 @@ export function authorize(
     case "chat:message.delete": {
       if (resource?.kind !== "chat") return deny("Resource must be a chat message.");
       if (resource.messageUserId === subject.userId) return ALLOW;
+      if (subject.isExternal) return deny("You can only delete your own messages.");
       if (isAdmin(subject.role)) return ALLOW;
       return deny("You can only delete your own messages.");
     }

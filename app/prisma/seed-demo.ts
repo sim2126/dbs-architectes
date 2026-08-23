@@ -20,16 +20,18 @@
  */
 
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import bcrypt from "bcryptjs";
 import ws from "ws";
+import { assertSafeDemoSeedTarget } from "./seed-safety";
 
 // Prisma 7 requires a driver adapter; matching prisma/seed.ts exactly so
 // there is one way this project connects from a script.
+const seedTarget = assertSafeDemoSeedTarget();
 neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const adapter = new PrismaNeon({ connectionString: seedTarget.connectionString });
 const prisma = new PrismaClient({ adapter });
 
 const PASSWORD = "dbs2025";
@@ -75,8 +77,6 @@ const TEAM: Array<{ name: string; initials: string; role: string; country: strin
   { name: "Zoe Kaufmann",    initials: "ZK", role: "viewer",          country: "CH", jobTitle: "Client Representative" },
 ];
 
-const PHASES = ["ETUDE/AP", "MAE", "CHANTIER", "EXE/DG/DV/3D", "TERMINATO", "STUCK", "CONCORSO"] as const;
-const CATEGORIES = ["Residenziale", "Commerciale", "Pubblico", "Interni", "Concorso"] as const;
 const WORK_STATUSES = ["todo", "doing", "stuck", "completed"] as const;
 
 /** Invented projects. Communes are real Swiss/Italian places — a plausible
@@ -129,11 +129,11 @@ function dayOffset(days: number): Date {
  * Removes previously-seeded content so re-seeding does not layer demo data
  * on top of the scraped set. Order respects foreign keys.
  *
- * Deliberately explicit rather than a truncate-everything: auth artefacts
- * (sessions, password resets) and audit rows are left alone, so a signed-in
- * demo session survives a re-seed.
+ * Deliberately explicit rather than a truncate-everything. This includes auth
+ * artefacts because their users are replaced; the surrounding transaction
+ * restores both the old data and its sessions if seeding fails.
  */
-async function wipeSeededData() {
+async function wipeSeededData(prisma: Prisma.TransactionClient) {
   // Order matters: children before parents. Not every relation cascades, so
   // a missing table here surfaces as a P2003 foreign-key violation on the
   // user delete rather than something subtler.
@@ -176,9 +176,9 @@ async function wipeSeededData() {
   await prisma.user.deleteMany({});
 }
 
-async function main() {
-  console.log("Wiping previously-seeded content…");
-  await wipeSeededData();
+async function seedDatabase(prisma: Prisma.TransactionClient) {
+  console.log(`Wiping previously-seeded content on ${seedTarget.identifier}…`);
+  await wipeSeededData(prisma);
 
   const password = await bcrypt.hash(PASSWORD, 10);
 
@@ -448,6 +448,13 @@ async function main() {
   for (const a of ROLE_ACCOUNTS) {
     console.log(`  ${a.role.padEnd(16)} ${a.email}`);
   }
+}
+
+async function main() {
+  await prisma.$transaction(seedDatabase, {
+    maxWait: 10_000,
+    timeout: 120_000,
+  });
 }
 
 main()

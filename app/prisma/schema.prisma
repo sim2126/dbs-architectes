@@ -72,6 +72,8 @@ model User {
   favorites        Favorite[]
   savedAi          SavedAiResponse[]
   aiAttachments    AiChatAttachment[]
+  aiRequestEvents  AiRequestEvent[]
+  aiAgentLease     AiAgentLease?
   tasks            Task[]
   invitationsIssued Invitation[]      @relation("InvitationInviter")
   passwordResets    PasswordReset[]
@@ -278,6 +280,7 @@ model WorkItem {
   @@index([projectId, startDate])
   @@index([parentId, position])
   @@index([projectId, parentId, position])
+  @@unique([userId, sourceSystem, sourceId])
 }
 
 model GalleryImage {
@@ -357,7 +360,7 @@ model Channel {
   messages Message[]
 
   @@index([type, createdAt])
-  @@index([projectId, type])
+  @@unique([projectId, type])
   @@index([createdBy, createdAt])
 }
 
@@ -778,6 +781,28 @@ model AiChatAttachment {
 
   @@index([userId, createdAt])
   @@index([sessionId])
+  @@unique([userId, url])
+}
+
+model AiRequestEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model AiAgentLease {
+  userId    String   @id
+  requestId String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
 
 model SavedAiResponse {

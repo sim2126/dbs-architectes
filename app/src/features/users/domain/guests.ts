@@ -24,11 +24,17 @@
  */
 export const WORKSPACE_DOMAIN = "dbsarc.com";
 
+/** Guests carry the least-privileged writable role; isExternal is the gate. */
+export const EXTERNAL_USER_ROLE = "employee";
+
+export function safeInvitationRole(role: string, isExternal: boolean): string {
+  return isExternal ? EXTERNAL_USER_ROLE : role;
+}
+
 /** Domain of an address, lowercased. Null if the address is malformed. */
 export function domainOf(email: string): string | null {
-  const at = email.lastIndexOf("@");
-  if (at <= 0 || at === email.length - 1) return null;
-  return email.slice(at + 1).trim().toLowerCase();
+  const match = email.trim().match(/^[^@\s]+@([^@\s]+)$/);
+  return match?.[1]?.toLowerCase() ?? null;
 }
 
 /**

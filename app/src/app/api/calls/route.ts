@@ -31,7 +31,10 @@ export async function GET() {
   });
 
   // Flatten fields the client cares about; strip heavy transcript text
-  const calls = rawCalls.map(({ transcriptText: _t, ...c }) => c);
+  const calls = rawCalls.map(({ transcriptText, ...call }) => {
+    void transcriptText;
+    return call;
+  });
 
   return Response.json(calls);
 }
@@ -79,8 +82,19 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Notify all workspace members via Pusher
-  await pusherServer.trigger(presenceChannelName(), PUSHER_EVENTS.CALL_STARTED, call);
+  try {
+    // Presence is workspace-wide, so publish only an invalidation. Each client
+    // re-loads /api/calls, whose query applies the call/project access policy.
+    await pusherServer.trigger(
+      presenceChannelName(),
+      PUSHER_EVENTS.CALL_STARTED,
+      { id: call.id },
+    );
+  } catch (error) {
+    // The Call row and Daily room already exist. Returning 500 here would
+    // invite a retry that creates a duplicate room and call record.
+    console.warn("[calls] real-time start delivery failed", error);
+  }
 
   return Response.json(call);
 }

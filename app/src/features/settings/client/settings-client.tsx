@@ -891,7 +891,6 @@ function useCallbackLocal<T extends (...args: never[]) => unknown>(
     ref.current = fn;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useRef(((...args: never[]) => ref.current(...args)) as T).current;
 }
 
@@ -932,6 +931,7 @@ function previewSubject(role: PickableRole): Subject {
   return {
     userId: "__preview__",
     role,
+    isExternal: false,
     regions: [
       { country: "CH", accessLevel: "manage" },
       { country: "IT", accessLevel: "manage" },

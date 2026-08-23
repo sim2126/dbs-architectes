@@ -33,8 +33,6 @@ export const INGESTIBLE_TYPES: ReadonlyArray<{ mime: string; kind: IngestKind }>
   { mime: "image/bmp", kind: "image" },
   { mime: "image/heic", kind: "image" },
   { mime: "image/heif", kind: "image" },
-  { mime: "image/svg+xml", kind: "image" },
-
   { mime: "text/csv", kind: "table" },
   { mime: "application/csv", kind: "table" },
   { mime: "application/vnd.ms-excel", kind: "table" },
@@ -71,6 +69,80 @@ export function kindForType(mime: string): IngestKind | null {
 export { formatSize } from "@/ui/utils";
 
 export type AttachmentState = "stored" | "ready" | "failed";
+
+export const INGEST_PROCESSING_PREFIX = "__friday_ingest_processing__:";
+
+export function isIngestProcessing(error: string | null): boolean {
+  return error?.startsWith(INGEST_PROCESSING_PREFIX) ?? false;
+}
+
+/** MIME and filename must select the same reader; MIME alone is insufficient. */
+export function isIngestibleUpload(filename: string, mime: string): boolean {
+  const normalised = mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  const extensionsByMime: Readonly<Record<string, readonly string[]>> = {
+    "application/pdf": ["pdf"],
+    "image/png": ["png"],
+    "image/jpeg": ["jpg", "jpeg"],
+    "image/webp": ["webp"],
+    "image/gif": ["gif"],
+    "image/tiff": ["tif", "tiff"],
+    "image/bmp": ["bmp"],
+    "image/heic": ["heic", "heif"],
+    "image/heif": ["heif", "heic"],
+    "text/csv": ["csv"],
+    "application/csv": ["csv"],
+    // Some browsers label CSV files this way. Legacy binary .xls is not
+    // accepted because the extractor reads OOXML workbooks only.
+    "application/vnd.ms-excel": ["csv"],
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ["xlsx"],
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["docx"],
+  };
+  return extensionsByMime[normalised]?.includes(extension) ?? false;
+}
+
+/** AI previews accept only Friday's private file route and fixed demo assets. */
+export function isSafeAiAttachmentUrl(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//") || /[\u0000-\u001f]/.test(value)) {
+    return false;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value, "https://friday.invalid");
+  } catch {
+    return false;
+  }
+  if (parsed.origin !== "https://friday.invalid" || parsed.hash) return false;
+
+  if (parsed.pathname === "/api/uploads/file") {
+    const key = parsed.searchParams.get("key") ?? "";
+    return (
+      parsed.searchParams.size === 1 &&
+      key.startsWith("chat/") &&
+      key.length <= 240 &&
+      !key.includes("..") &&
+      /^[a-zA-Z0-9._/-]+$/.test(key)
+    );
+  }
+
+  const demoPrefix = "/uploads/demo/";
+  const demoFilename = parsed.pathname.startsWith(demoPrefix)
+    ? parsed.pathname.slice(demoPrefix.length)
+    : "";
+  return (
+    parsed.search === "" &&
+    demoFilename.length > 0 &&
+    !demoFilename.includes("/") &&
+    !demoFilename.includes("..") &&
+    /^[a-zA-Z0-9._-]+$/.test(demoFilename)
+  );
+}
+
+/** Processing is an internal claim, not a user-visible failure. */
+export function visibleIngestError(error: string | null): string | null {
+  return isIngestProcessing(error) ? null : error;
+}
 
 /**
  * What the user is told about a file.

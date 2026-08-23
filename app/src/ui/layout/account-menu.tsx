@@ -41,6 +41,7 @@ type AccountUser = {
   email?: string | null;
   image?: string | null;
   role?: string | null;
+  isExternal?: boolean;
 };
 
 export function AccountMenu({
@@ -83,7 +84,7 @@ export function AccountMenu({
                   {user?.name || "User"}
                 </span>
                 <span className="block text-[10px] text-muted-foreground truncate capitalize leading-tight mt-0.5">
-                  {user?.role?.replace("_", " ") || "viewer"}
+                  {user?.isExternal ? "guest" : user?.role?.replace("_", " ") || "viewer"}
                 </span>
               </span>
               <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -107,19 +108,23 @@ export function AccountMenu({
           </>
         )}
 
-        <DropdownMenuItem asChild>
-          <Link href="/dashboard/settings">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Link>
-        </DropdownMenuItem>
+        {!user?.isExternal && (
+          <>
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/settings">
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </Link>
+            </DropdownMenuItem>
 
-        <DropdownMenuItem asChild>
-          <Link href="/dashboard/settings?tab=profile">
-            <UserIcon className="h-4 w-4 mr-2" />
-            Profile
-          </Link>
-        </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard/settings?tab=profile">
+                <UserIcon className="h-4 w-4 mr-2" />
+                Profile
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
 
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>

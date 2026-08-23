@@ -14,17 +14,31 @@
  */
 
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { INGESTIBLE_TYPES, isIngestibleType } from "@/features/ai/domain/attachments";
-
-const MAX_BYTES = 25 * 1024 * 1024;
+import { requireAiAccess } from "@/platform/ai/access";
+import {
+  INGESTIBLE_TYPES,
+  isIngestibleUpload,
+  visibleIngestError,
+} from "@/features/ai/domain/attachments";
+import {
+  MAX_UPLOAD_BYTES,
+  UploadValidationError,
+  deleteStoredUpload,
+  verifyStoredUpload,
+} from "@/platform/integrations/uploads";
+import {
+  fridayFileUrl,
+  objectKeyFromFridayFileUrl,
+  UPLOAD_RECEIPT_TTL_MS,
+  UploadReceiptError,
+  verifyUploadReceipt,
+} from "@/platform/integrations/upload-receipt";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(req);
+  if (!access.allowed) return access.response;
+  const userId = access.subject.userId;
 
   const { searchParams } = new URL(req.url);
   const sessionId = searchParams.get("sessionId");
@@ -37,7 +51,7 @@ export async function GET(req: NextRequest) {
   // returns 404 rather than their document.
   if (id) {
     const one = await prisma.aiChatAttachment.findFirst({
-      where: { id, userId: session.user.id },
+      where: { id, userId },
       select: {
         id: true,
         filename: true,
@@ -55,12 +69,14 @@ export async function GET(req: NextRequest) {
     if (!one) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
-    return Response.json({ attachment: one });
+    return Response.json({
+      attachment: { ...one, ingestError: visibleIngestError(one.ingestError) },
+    });
   }
 
   const attachments = await prisma.aiChatAttachment.findMany({
     where: {
-      userId: session.user.id,
+      userId,
       // Absent sessionId lists everything the user has attached; present
       // narrows to one conversation.
       ...(sessionId ? { sessionId } : {}),
@@ -80,63 +96,119 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return Response.json({ attachments });
+  return Response.json({
+    attachments: attachments.map((attachment) => ({
+      ...attachment,
+      ingestError: visibleIngestError(attachment.ingestError),
+    })),
+  });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(req);
+  if (!access.allowed) return access.response;
+  const userId = access.subject.userId;
 
   const body = (await req.json().catch(() => null)) as {
-    filename?: unknown;
-    contentType?: unknown;
-    sizeBytes?: unknown;
-    url?: unknown;
+    receipt?: unknown;
     sessionId?: unknown;
   } | null;
 
-  if (
-    !body ||
-    typeof body.filename !== "string" ||
-    typeof body.contentType !== "string" ||
-    typeof body.url !== "string" ||
-    typeof body.sizeBytes !== "number"
-  ) {
+  if (!body || typeof body.receipt !== "string") {
     return Response.json(
-      { error: "filename, contentType, sizeBytes and url are required." },
+      { error: "A valid Friday upload receipt is required." },
+      { status: 400 },
+    );
+  }
+  const requestedSessionId =
+    typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
+  if (!requestedSessionId) {
+    return Response.json(
+      { error: "The upload receipt does not belong to this conversation." },
       { status: 400 },
     );
   }
 
-  if (!isIngestibleType(body.contentType)) {
+  let upload;
+  try {
+    upload = verifyUploadReceipt(body.receipt, userId, {
+      expectedPurpose: "ai",
+      expectedTargetId: requestedSessionId,
+    });
+  } catch (error) {
+    if (error instanceof UploadReceiptError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+
+  if (!isIngestibleUpload(upload.filename, upload.contentType)) {
     return Response.json(
       {
         error:
-          `${body.filename} is not a supported type. ` +
-          `Accepted: PDF, images, CSV and Excel.`,
+          `${upload.filename} is not a supported type. ` +
+          `Accepted: PDF, images, CSV, Excel and Word documents.`,
       },
       { status: 400 },
     );
   }
 
-  if (body.sizeBytes <= 0 || body.sizeBytes > MAX_BYTES) {
+  if (upload.sizeBytes <= 0 || upload.sizeBytes > MAX_UPLOAD_BYTES) {
     return Response.json(
-      { error: "Files must be under 25 MB." },
+      {
+        error: `Files must be under ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.`,
+      },
       { status: 400 },
     );
   }
 
-  const attachment = await prisma.aiChatAttachment.create({
-    data: {
-      userId: session.user.id,
-      sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
+  const ownedSession = await prisma.aiChatSession.findFirst({
+    where: { id: requestedSessionId, userId },
+    select: { id: true },
+  });
+  if (!ownedSession) {
+    return Response.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
+  try {
+    await verifyStoredUpload({
+      key: upload.objectKey,
+      sizeBytes: upload.sizeBytes,
+      contentType: upload.contentType,
+    });
+  } catch (error) {
+    if (error instanceof UploadValidationError) {
+      return Response.json({ error: error.userMessage }, { status: 400 });
+    }
+    throw error;
+  }
+
+  const url = fridayFileUrl(upload.objectKey);
+  // Storage verification may outlast the five-minute receipt window. Recheck
+  // immediately before the write so an expired object cannot gain a new
+  // reference while orphan collection is deciding whether it is safe to delete.
+  try {
+    verifyUploadReceipt(body.receipt, userId, {
+      expectedPurpose: "ai",
+      expectedTargetId: requestedSessionId,
+    });
+  } catch (error) {
+    if (error instanceof UploadReceiptError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+  const attachment = await prisma.aiChatAttachment.upsert({
+    where: { userId_url: { userId, url } },
+    update: {},
+    create: {
+      userId,
+      sessionId: requestedSessionId,
       // Strip any path component — a filename is not a path.
-      filename: body.filename.split(/[\\/]/).pop() ?? "attachment",
-      contentType: body.contentType,
-      sizeBytes: Math.round(body.sizeBytes),
-      url: body.url,
+      filename: upload.filename.split(/[\\/]/).pop() ?? "attachment",
+      contentType: upload.contentType,
+      sizeBytes: upload.sizeBytes,
+      url,
       // ingestedAt stays null. The file is stored; nothing has read it yet,
       // and claiming otherwise is how a user gets a confident answer about a
       // document the model never saw.
@@ -148,10 +220,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(req);
+  if (!access.allowed) return access.response;
+  const userId = access.subject.userId;
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -159,17 +230,37 @@ export async function DELETE(req: NextRequest) {
     return Response.json({ error: "id is required." }, { status: 400 });
   }
 
-  // deleteMany with the user filter, not delete by id — a delete by id alone
-  // would let one user remove another's row.
-  const { count } = await prisma.aiChatAttachment.deleteMany({
-    where: { id, userId: session.user.id },
+  // Scope the lookup to the caller before deleting by primary key.
+  const attachment = await prisma.aiChatAttachment.findFirst({
+    where: { id, userId },
+    select: { id: true, url: true, createdAt: true },
   });
-  if (count === 0) {
+  if (!attachment) {
     return Response.json({ error: "Not found." }, { status: 404 });
   }
 
-  // The stored object is deliberately left in place. Orphaning a blob is
-  // cheaper and safer than deleting one that another record may reference,
-  // and storage cleanup belongs in a sweep with its own audit trail.
-  return Response.json({ ok: true });
+  // Old objects are beyond their receipt replay window, so a reference check
+  // can safely collect them. Fresher objects remain for the scheduled orphan
+  // collector once the receipt grace period has elapsed.
+  await prisma.aiChatAttachment.delete({ where: { id: attachment.id } });
+
+  const safeToCollect =
+    Date.now() - attachment.createdAt.getTime() > UPLOAD_RECEIPT_TTL_MS + 30_000;
+  if (safeToCollect) {
+    const [aiReferences, messageReferences] = await Promise.all([
+      prisma.aiChatAttachment.count({ where: { url: attachment.url } }),
+      prisma.message.count({ where: { fileUrl: attachment.url } }),
+    ]);
+    if (aiReferences === 0 && messageReferences === 0) {
+      try {
+        await deleteStoredUpload(objectKeyFromFridayFileUrl(attachment.url));
+        return Response.json({ ok: true, storageCleanup: "complete" });
+      } catch {
+        // The DB deletion is authoritative. The scheduled collector retries
+        // storage cleanup without turning a successful user action into a 500.
+      }
+    }
+  }
+
+  return Response.json({ ok: true, storageCleanup: "queued" });
 }

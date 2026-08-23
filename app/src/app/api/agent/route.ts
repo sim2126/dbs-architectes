@@ -2,16 +2,30 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
-import { loadAttachmentContext } from "@/features/ai/server/ingest/load-attachment-context";
+import {
+  loadAttachmentContext,
+  type AttachmentContext,
+} from "@/features/ai/server/ingest/load-attachment-context";
 import { DBS_AGENT_SYSTEM_PROMPT } from "@/features/ai/server/agent/prompt";
 import { AGENT_TOOLS, executeTool } from "@/features/ai/server/agent/tools";
 import { buildArtifactsFromToolResult } from "@/features/ai/server/agent/artifacts";
-import { AGENT_RESPONSE_SCHEMA, parseAgentResponse } from "@/features/ai/server/agent/blocks";
+import {
+  AGENT_RESPONSE_SCHEMA,
+  blocksToPlainText,
+  parseAgentResponse,
+  type Block,
+} from "@/features/ai/server/agent/blocks";
+import {
+  generateSessionTitle,
+  serializeAssistantMessage,
+  type AiArtifact,
+  type PersistedToolStep,
+} from "@/features/ai/server/agent/artifacts";
 import { aiDisabledResponse, isAiDisabled } from "@/features/ai/domain/ai-flags";
 import {
   filterHistoryForGrounding,
+  MAX_HISTORY_TURNS,
   reconstructHistory,
-  sanitiseLegacyHistory,
 } from "@/features/ai/server/agent/context-reconstruction";
 import {
   extendGroundingWithTrustedToolResult,
@@ -30,9 +44,32 @@ import {
   toSafeAiFailure,
 } from "@/platform/ai/provider";
 import { validateGrounding } from "@/platform/ai/validation";
+import { requireAiAccess } from "@/platform/ai/access";
+import {
+  acquireAiAgentLease,
+  consumeAiRequestQuota,
+  refundAiRequestQuota,
+  releaseAiAgentLease,
+} from "@/platform/ai/request-guard";
+import { rateLimitedResponse } from "@/platform/auth/rate-limit";
 
 // Max tool call rounds to prevent infinite loops
 const MAX_TOOL_ROUNDS = 6;
+const MAX_AGENT_MESSAGE_CHARS = 20_000;
+const MAX_AGENT_REQUEST_BYTES = 96 * 1024;
+
+/**
+ * Execution ceiling for the agent loop.
+ *
+ * Without this the platform default applies, and a request killed at that
+ * default leaves the concurrency lease behind — the lease release runs in a
+ * `finally` inside the stream, which a killed function never reaches.
+ *
+ * 120s matches calls/[id]/summarize and gives twice the headroom over the
+ * stated target of under 60 seconds for a detailed answer. LEASE_TTL_MS in
+ * platform/ai/request-guard.ts is derived from this number; move them together.
+ */
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -40,54 +77,78 @@ export async function POST(req: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  const access = await requireAiAccess(req);
+  if (!access.allowed) return access.response;
+
   // Cost-control window: short-circuit before constructing the OpenAI
   // client so a missing/removed key never produces a cryptic 401.
   if (isAiDisabled()) return aiDisabledResponse();
 
-  // New contract: client sends just the new user message + sessionId.
-  // Server reconstructs the full prior conversation (including past tool
-  // calls + their results) from the DB so multi-turn memory works
-  // properly. Backwards-compatible: if no sessionId is given (legacy
-  // client) we fall back to the messages array the client supplied.
-  const body = (await req.json()) as {
-    messages?: OpenAI.Chat.ChatCompletionMessageParam[];
+  let body: {
     sessionId?: string;
     message?: string;
-  };
-
-  let priorHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-  let latestUserPrompt = "";
-
-  if (body.sessionId && typeof body.message === "string" && body.message.trim()) {
-    // Verify ownership and load history from DB.
-    const chat = await prisma.aiChatSession.findFirst({
-      where: { id: body.sessionId, userId: session.user.id },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
-    });
-    if (chat) {
-      priorHistory = reconstructHistory(chat.messages);
+  } | null;
+  try {
+    body = await readAgentRequest(req);
+  } catch (error) {
+    if (error instanceof AgentRequestTooLargeError) {
+      return Response.json({ error: error.message }, { status: 413 });
     }
-    latestUserPrompt = body.message;
-    priorHistory.push({ role: "user", content: body.message });
-  } else if (Array.isArray(body.messages)) {
-    priorHistory = sanitiseLegacyHistory(body.messages);
-    const latest = [...priorHistory]
-      .reverse()
-      .find((m) => m.role === "user" && m.content);
-    latestUserPrompt =
-      typeof latest?.content === "string"
-        ? latest.content
-        : Array.isArray(latest?.content)
-          ? latest.content
-              .map((it) => ("text" in it && typeof it.text === "string" ? it.text : ""))
-              .join(" ")
-          : "";
-  } else {
+    throw error;
+  }
+  if (
+    !body ||
+    typeof body.sessionId !== "string" ||
+    body.sessionId.length > 100 ||
+    typeof body.message !== "string" ||
+    !body.message.trim()
+  ) {
     return Response.json({ error: "Missing message or sessionId" }, { status: 400 });
   }
+  if (body.message.trim().length > MAX_AGENT_MESSAGE_CHARS) {
+    return Response.json(
+      { error: `Messages are limited to ${MAX_AGENT_MESSAGE_CHARS.toLocaleString("en-GB")} characters.` },
+      { status: 413 },
+    );
+  }
 
-  const userRole = (session.user as { role?: string }).role ?? "viewer";
-  const surface = surfaceForAgentRequest(latestUserPrompt, Boolean(body.sessionId));
+  let requestLimit;
+  try {
+    requestLimit = await consumeAiRequestQuota(access.subject.userId);
+  } catch {
+    return Response.json(
+      { error: "AI Assistant request controls are unavailable. Please try again shortly." },
+      { status: 503 },
+    );
+  }
+  if (!requestLimit.allowed) {
+    return rateLimitedResponse(
+      requestLimit.retryAfterMs,
+      "AI Assistant request limit reached. Please wait before trying again.",
+    );
+  }
+
+  const chatSessionId = body.sessionId;
+
+  const chat = await prisma.aiChatSession.findFirst({
+    where: { id: chatSessionId, userId: session.user.id },
+    include: {
+      messages: {
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: MAX_HISTORY_TURNS * 2,
+      },
+    },
+  });
+  if (!chat) {
+    return Response.json({ error: "Conversation not found." }, { status: 404 });
+  }
+  const latestUserPrompt = body.message.trim();
+  let priorHistory = reconstructHistory([...chat.messages].reverse());
+  priorHistory.push({ role: "user", content: latestUserPrompt });
+  const isFirstTurn = chat.messages.length === 0;
+
+  const userRole = access.subject.role;
+  const surface = surfaceForAgentRequest(latestUserPrompt, true);
   let resolvedContext: ResolvedContext;
   try {
     resolvedContext = await resolveGrounding(buildAgentGroundingContract({
@@ -112,20 +173,40 @@ export async function POST(req: NextRequest) {
    * uploaded PDF an instruction channel. Its own message, with its own
    * framing, keeps the trust boundary visible to the model.
    *
-   * Failure here is non-fatal: an assistant that answers from workspace
-   * context alone is far better than one that refuses because a file could
-   * not be read.
+   * Failure is closed: answering as though an attached document was read is
+   * silent corruption, even if the workspace-only answer sounds plausible.
    */
-  let attachmentPrompt = "";
+  let attachmentContext: AttachmentContext;
   try {
-    const attachmentContext = await loadAttachmentContext({
+    attachmentContext = await loadAttachmentContext({
       userId: session.user.id,
-      sessionId: body.sessionId ?? null,
+      sessionId: chatSessionId,
     });
-    attachmentPrompt = attachmentContext.prompt;
-  } catch (err) {
-    console.warn("[agent] attachment context unavailable", err);
+  } catch {
+    return Response.json(
+      { error: "AI Assistant could not verify the attached files. Please try again." },
+      { status: 503 },
+    );
   }
+  if (attachmentContext.unavailable.length > 0) {
+    const processing = attachmentContext.unavailable.filter(
+      (file) => file.state === "processing",
+    );
+    const failed = attachmentContext.unavailable.filter((file) => file.state === "failed");
+    const details = [
+      processing.length
+        ? `Still reading: ${processing.map((file) => file.filename).join(", ")}.`
+        : "",
+      failed.length
+        ? `Could not read: ${failed.map((file) => file.filename).join(", ")}. Remove or retry the file before asking about it.`
+        : "",
+    ].filter(Boolean).join(" ");
+    return Response.json(
+      { error: `AI Assistant cannot answer with incomplete attachment context. ${details}` },
+      { status: 409 },
+    );
+  }
+  const attachmentPrompt = attachmentContext.prompt;
 
   const systemPrompt = DBS_AGENT_SYSTEM_PROMPT.replace(
     "{today_date}",
@@ -140,14 +221,49 @@ export async function POST(req: NextRequest) {
       "List the exact resolved IDs or values for every entity referenced in the blocks; use empty arrays when none are referenced.",
       serialiseResolvedContext(context),
     ].join("\n");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 60_000,
+    maxRetries: 1,
+  });
+
+  const agentRequestId = crypto.randomUUID();
+  let lease;
+  try {
+    lease = await acquireAiAgentLease(access.subject.userId, agentRequestId);
+  } catch {
+    return Response.json(
+      { error: "AI Assistant request controls are unavailable. Please try again shortly." },
+      { status: 503 },
+    );
+  }
+  if (!lease.allowed) {
+    // The quota slot was taken before this check; hand it back rather than
+    // charging the caller for a request that never reached the provider.
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
+    return Response.json(
+      { error: "AI Assistant is already answering another request. Please wait for it to finish." },
+      {
+        status: 409,
+        headers: { "Retry-After": String(Math.max(1, Math.ceil(lease.retryAfterMs / 1000))) },
+      },
+    );
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (data: object) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // The browser may close while the provider is finishing. Persistence
+          // remains server-owned and must still complete in that case.
+        }
       };
+      const persistedSteps: PersistedToolStep[] = [];
+      const persistedArtifacts: AiArtifact[] = [];
+      let turnPersisted = false;
 
       try {
         const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -268,6 +384,13 @@ export async function POST(req: NextRequest) {
                   args,
                   toolCallId: tc.id,
                 });
+                persistedSteps.push({
+                  name: tc.function.name,
+                  label: tc.function.name,
+                  args,
+                  status: "running",
+                  toolCallId: tc.id,
+                });
 
                 let result: unknown;
                 try {
@@ -290,6 +413,7 @@ export async function POST(req: NextRequest) {
                   latestUserPrompt,
                 );
                 for (const artifact of artifacts) {
+                  persistedArtifacts.push(artifact);
                   send({ type: "artifact", artifact });
                 }
 
@@ -304,6 +428,13 @@ export async function POST(req: NextRequest) {
                   toolCallId: tc.id,
                   result: resultStr.slice(0, 8000),
                 });
+                const persistedStep = persistedSteps.find(
+                  (step) => step.toolCallId === tc.id,
+                );
+                if (persistedStep) {
+                  persistedStep.status = "done";
+                  persistedStep.result = resultStr.slice(0, 8000);
+                }
 
                 return {
                   message: {
@@ -344,14 +475,66 @@ export async function POST(req: NextRequest) {
             issues: validated.issues,
           });
         }
-        send({ type: "blocks", blocks: validated.output.blocks });
+        const responseBlocks: Block[] = [...validated.output.blocks];
+        const truncatedFiles = attachmentContext.included.filter((file) => file.truncated);
+        const attachmentLimitations = [
+          truncatedFiles.length
+            ? `Only part of ${truncatedFiles.map((file) => file.filename).join(", ")} was available for this answer.`
+            : "",
+          attachmentContext.omitted.length
+            ? `${attachmentContext.omitted.length} older attached file(s) were outside this answer's context limit: ${attachmentContext.omitted.map((file) => file.filename).join(", ")}.`
+            : "",
+        ].filter(Boolean).join(" ");
+        if (attachmentLimitations) {
+          responseBlocks.push({
+            type: "callout",
+            tone: "warning",
+            text: attachmentLimitations,
+          });
+        }
 
-        send({ type: "done" });
+        const persisted = await persistAgentTurn({
+          sessionId: chatSessionId,
+          userContent: latestUserPrompt,
+          assistantText: blocksToPlainText(responseBlocks),
+          assistantBlocks: responseBlocks,
+          artifacts: persistedArtifacts,
+          steps: persistedSteps,
+          isFirstTurn,
+        });
+        turnPersisted = true;
+        send({ type: "blocks", blocks: responseBlocks });
+        send({ type: "done", ...persisted });
       } catch (err) {
         const failure = toSafeAiFailure(surface, err);
+        if (!turnPersisted) {
+          try {
+            const failureBlocks: Block[] = [
+              { type: "callout", tone: "warning", text: failure.message },
+            ];
+            await persistAgentTurn({
+              sessionId: chatSessionId,
+              userContent: latestUserPrompt,
+              assistantText: failure.message,
+              assistantBlocks: failureBlocks,
+              artifacts: persistedArtifacts,
+              steps: persistedSteps,
+              isFirstTurn,
+            });
+            turnPersisted = true;
+          } catch {
+            // The stream still returns a safe provider-style failure. The
+            // persistence error remains server-side and is never serialised.
+          }
+        }
         send({ type: "error", kind: failure.kind, message: failure.message });
       } finally {
-        controller.close();
+        await releaseAiAgentLease(access.subject.userId, agentRequestId).catch(() => undefined);
+        try {
+          controller.close();
+        } catch {
+          // Already cancelled by the browser.
+        }
       }
     },
   });
@@ -363,4 +546,92 @@ export async function POST(req: NextRequest) {
       Connection: "keep-alive",
     },
   });
+}
+
+class AgentRequestTooLargeError extends Error {
+  constructor() {
+    super("The AI Assistant request is too large.");
+    this.name = "AgentRequestTooLargeError";
+  }
+}
+
+async function readAgentRequest(req: NextRequest): Promise<{
+  sessionId?: string;
+  message?: string;
+} | null> {
+  const declaredLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_AGENT_REQUEST_BYTES) {
+    throw new AgentRequestTooLargeError();
+  }
+  if (!req.body) return null;
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > MAX_AGENT_REQUEST_BYTES) {
+        await reader.cancel();
+        throw new AgentRequestTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  try {
+    return JSON.parse(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), received).toString("utf8")) as {
+      sessionId?: string;
+      message?: string;
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistAgentTurn(input: {
+  sessionId: string;
+  userContent: string;
+  assistantText: string;
+  assistantBlocks: Block[];
+  artifacts: AiArtifact[];
+  steps: PersistedToolStep[];
+  isFirstTurn: boolean;
+}): Promise<{ sessionId: string; title?: string; updatedAt: string }> {
+  const title = input.isFirstTurn ? generateSessionTitle(input.userContent) : undefined;
+  const updatedAt = new Date();
+  await prisma.$transaction([
+    prisma.aiChatMessage.create({
+      data: {
+        sessionId: input.sessionId,
+        role: "user",
+        content: input.userContent,
+      },
+    }),
+    prisma.aiChatMessage.create({
+      data: {
+        sessionId: input.sessionId,
+        role: "assistant",
+        content: serializeAssistantMessage({
+          text: input.assistantText,
+          artifacts: input.artifacts,
+          steps: input.steps,
+          blocks: input.assistantBlocks,
+        }),
+      },
+    }),
+    prisma.aiChatSession.update({
+      where: { id: input.sessionId },
+      data: { updatedAt, ...(title ? { title } : {}) },
+    }),
+  ]);
+  return {
+    sessionId: input.sessionId,
+    ...(title ? { title } : {}),
+    updatedAt: updatedAt.toISOString(),
+  };
 }

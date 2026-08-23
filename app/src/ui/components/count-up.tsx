@@ -45,13 +45,13 @@ export function CountUp({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+    let frame = 0;
     if (reduced) {
       hasRun.current = true;
-      setValue(to);
-      return;
+      frame = requestAnimationFrame(() => setValue(to));
+      return () => cancelAnimationFrame(frame);
     }
 
-    let frame = 0;
     const run = () => {
       const start = performance.now();
       const step = (now: number) => {

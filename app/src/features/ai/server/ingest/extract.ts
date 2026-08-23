@@ -10,11 +10,22 @@
  * failure the `ingestedAt` flag exists to prevent.
  */
 
-import { kindForType, type IngestKind } from "../../domain/attachments";
+import OpenAI from "openai";
+import {
+  isIngestibleUpload,
+  kindForType,
+  type IngestKind,
+} from "../../domain/attachments";
+import {
+  createOpenAIStructuredCompletion,
+  parseStructuredOutput,
+} from "@/platform/ai/provider";
 
 /** Cap on stored text. Beyond this, context cost outweighs the marginal page,
  *  and truncation is stated rather than hidden. */
 export const MAX_EXTRACTED_CHARS = 120_000;
+export const EXTRACTION_TRUNCATION_MARKER =
+  "[Friday: extraction stopped at the safe text limit; the remainder was not read.]";
 
 export type ExtractResult = {
   text: string;
@@ -27,6 +38,147 @@ export class ExtractError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ExtractError";
+  }
+}
+
+const MAX_ARCHIVE_ENTRIES = 2_000;
+const MAX_ARCHIVE_EXPANDED_BYTES = 50 * 1024 * 1024;
+const MAX_PDF_PAGES = 500;
+const MAX_TABLE_ROWS = 100_000;
+
+/** Check that stored bytes still match the metadata signed at upload time. */
+export function validateAttachmentBytes(input: {
+  bytes: Uint8Array;
+  contentType: string;
+  filename: string;
+  expectedBytes: number;
+  storedContentType?: string | null;
+}): void {
+  const { bytes, filename } = input;
+  const contentType = normaliseMime(input.contentType);
+  if (!isIngestibleUpload(filename, contentType)) {
+    throw new ExtractError("The filename does not match the declared file type.");
+  }
+  if (bytes.byteLength !== input.expectedBytes) {
+    throw new ExtractError("The stored file does not match the uploaded file size.");
+  }
+  if (
+    input.storedContentType &&
+    normaliseMime(input.storedContentType) !== contentType
+  ) {
+    throw new ExtractError("The stored file content type does not match the upload.");
+  }
+
+  const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (contentType === "application/pdf") {
+    assertExtension(extension, ["pdf"]);
+    assertMagic(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d]);
+  } else if (contentType === "image/png") {
+    assertMagic(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  } else if (contentType === "image/jpeg") {
+    assertMagic(bytes, [0xff, 0xd8, 0xff]);
+  } else if (contentType === "image/gif") {
+    const header = ascii(bytes, 0, 6);
+    if (header !== "GIF87a" && header !== "GIF89a") invalidSignature();
+  } else if (contentType === "image/webp") {
+    if (ascii(bytes, 0, 4) !== "RIFF" || ascii(bytes, 8, 4) !== "WEBP") {
+      invalidSignature();
+    }
+  } else if (contentType === "image/bmp") {
+    assertMagic(bytes, [0x42, 0x4d]);
+  } else if (contentType === "image/tiff") {
+    const little = matchesMagic(bytes, [0x49, 0x49, 0x2a, 0x00]);
+    const big = matchesMagic(bytes, [0x4d, 0x4d, 0x00, 0x2a]);
+    if (!little && !big) invalidSignature();
+  } else if (contentType === "image/heic" || contentType === "image/heif") {
+    if (ascii(bytes, 4, 4) !== "ftyp") invalidSignature();
+  } else if (
+    contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    assertExtension(extension, contentType.includes("spreadsheet") ? ["xlsx"] : ["docx"]);
+    assertMagic(bytes, [0x50, 0x4b]);
+    assertSafeZip(bytes);
+  } else if (contentType === "text/csv" || contentType === "application/csv") {
+    assertExtension(extension, ["csv"]);
+    if (bytes.includes(0)) {
+      throw new ExtractError("The CSV contains binary data and could not be read safely.");
+    }
+  }
+}
+
+function normaliseMime(value: string): string {
+  return value.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
+function ascii(bytes: Uint8Array, offset: number, length: number): string {
+  return String.fromCharCode(...bytes.slice(offset, offset + length));
+}
+
+function matchesMagic(bytes: Uint8Array, signature: number[]): boolean {
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function assertMagic(bytes: Uint8Array, signature: number[]): void {
+  if (!matchesMagic(bytes, signature)) invalidSignature();
+}
+
+function invalidSignature(): never {
+  throw new ExtractError("The file contents do not match the declared file type.");
+}
+
+function assertExtension(extension: string, allowed: string[]): void {
+  if (!allowed.includes(extension)) {
+    throw new ExtractError("The filename does not match the declared file type.");
+  }
+}
+
+/** Read the ZIP central directory without expanding it. OOXML parsers otherwise
+ * accept tiny archives whose entries inflate to hundreds of megabytes. */
+function assertSafeZip(bytes: Uint8Array): void {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const searchStart = Math.max(0, bytes.byteLength - 65_557);
+  let endOffset = -1;
+  for (let offset = bytes.byteLength - 22; offset >= searchStart; offset--) {
+    if (view.getUint32(offset, true) === 0x06054b50) {
+      endOffset = offset;
+      break;
+    }
+  }
+  if (endOffset < 0) invalidSignature();
+
+  const entries = view.getUint16(endOffset + 10, true);
+  const centralSize = view.getUint32(endOffset + 12, true);
+  const centralOffset = view.getUint32(endOffset + 16, true);
+  if (
+    entries > MAX_ARCHIVE_ENTRIES ||
+    centralOffset + centralSize > bytes.byteLength
+  ) {
+    throw new ExtractError("The document archive is too complex to read safely.");
+  }
+
+  let offset = centralOffset;
+  let expandedBytes = 0;
+  for (let index = 0; index < entries; index++) {
+    if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
+      invalidSignature();
+    }
+    const compressedSize = view.getUint32(offset + 20, true);
+    const uncompressedSize = view.getUint32(offset + 24, true);
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+      throw new ExtractError("ZIP64 documents are not supported for AI reading.");
+    }
+    expandedBytes += uncompressedSize;
+    if (
+      expandedBytes > MAX_ARCHIVE_EXPANDED_BYTES ||
+      (compressedSize > 0 && uncompressedSize / compressedSize > 200)
+    ) {
+      throw new ExtractError("The document expands beyond the safe reading limit.");
+    }
+    const filenameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    offset += 46 + filenameLength + extraLength + commentLength;
   }
 }
 
@@ -63,7 +215,12 @@ function cap(text: string, units: number): ExtractResult {
   if (text.length <= MAX_EXTRACTED_CHARS) {
     return { text, units, truncated: false };
   }
-  return { text: text.slice(0, MAX_EXTRACTED_CHARS), units, truncated: true };
+  const suffix = `\n\n${EXTRACTION_TRUNCATION_MARKER}`;
+  return {
+    text: text.slice(0, MAX_EXTRACTED_CHARS - suffix.length) + suffix,
+    units,
+    truncated: true,
+  };
 }
 
 // ── PDF ───────────────────────────────────────────────────────────
@@ -83,14 +240,18 @@ async function extractPdf(bytes: Uint8Array): Promise<ExtractResult> {
       bytes.byteLength,
     );
     const pdf = await getDocumentProxy(plain);
+    if (pdf.numPages > MAX_PDF_PAGES) {
+      throw new ExtractError(
+        `PDFs are limited to ${MAX_PDF_PAGES.toLocaleString("en-GB")} pages for AI reading.`,
+      );
+    }
     const { totalPages, text } = await unpdfExtract(pdf, { mergePages: true });
     // mergePages:true narrows the return type to a single string, so no
     // array branch is needed — TypeScript rejects one as unreachable.
     return cap(text, totalPages);
-  } catch (err) {
-    throw new ExtractError(
-      `Could not read the PDF: ${err instanceof Error ? err.message : "unknown error"}`,
-    );
+  } catch (error) {
+    if (error instanceof ExtractError) throw error;
+    throw new ExtractError("Could not read the PDF safely.");
   }
 }
 
@@ -112,6 +273,11 @@ async function extractTable(
     // prose would lose the column structure that makes it useful.
     const text = new TextDecoder("utf-8").decode(bytes);
     const rows = text.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+    if (rows > MAX_TABLE_ROWS) {
+      throw new ExtractError(
+        `Tables are limited to ${MAX_TABLE_ROWS.toLocaleString("en-GB")} rows for AI reading.`,
+      );
+    }
     return cap(text, rows);
   }
 
@@ -122,12 +288,15 @@ async function extractTable(
 
     const parts: string[] = [];
     let sheets = 0;
+    let rows = 0;
     workbook.eachSheet((sheet) => {
       sheets += 1;
       // Sheet names carry meaning in a project workbook — "Phase 2 costs" is
       // context the rows alone do not give.
       parts.push(`### ${sheet.name}`);
       sheet.eachRow({ includeEmpty: false }, (row) => {
+        rows += 1;
+        if (rows > MAX_TABLE_ROWS) return;
         const cells = (row.values as unknown[])
           .slice(1)
           .map((v) => (v === null || v === undefined ? "" : formatCell(v)));
@@ -135,11 +304,15 @@ async function extractTable(
       });
       parts.push("");
     });
+    if (rows > MAX_TABLE_ROWS) {
+      throw new ExtractError(
+        `Tables are limited to ${MAX_TABLE_ROWS.toLocaleString("en-GB")} rows for AI reading.`,
+      );
+    }
     return cap(parts.join("\n"), sheets);
-  } catch (err) {
-    throw new ExtractError(
-      `Could not read the spreadsheet: ${err instanceof Error ? err.message : "unknown error"}`,
-    );
+  } catch (error) {
+    if (error instanceof ExtractError) throw error;
+    throw new ExtractError("Could not read the spreadsheet safely.");
   }
 }
 
@@ -188,12 +361,12 @@ async function extractDoc(bytes: Uint8Array): Promise<ExtractResult> {
       .split(/\n+/)
       .filter((line) => line.trim().length > 0);
     return cap(paragraphs.join("\n\n"), paragraphs.length);
-  } catch (err) {
+  } catch (error) {
+    if (error instanceof ExtractError) throw error;
     // The usual cause is a legacy .doc renamed to .docx — mammoth cannot open
     // an OLE container. Saying which file is wrong beats a parser stack trace.
     throw new ExtractError(
-      `Could not read the document: ${err instanceof Error ? err.message : "unknown error"}. ` +
-        `Legacy .doc files must be saved as .docx first.`,
+      "Could not read the document safely. Legacy .doc files must be saved as .docx first.",
     );
   }
 }
@@ -224,57 +397,78 @@ async function extractImage(
   }
 
   const base64 = Buffer.from(bytes).toString("base64");
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      // store:false per the provider posture in MEMORY.md — attachment
-      // contents are DBS's and are not retained by the provider.
-      store: false,
-      // Extraction, not interpretation. Temperature 0 for the same reason the
-      // grounding contract clamps it: this output becomes context for a later
-      // answer, and invention here propagates.
-      temperature: 0,
-      max_tokens: 2000,
-      messages: [
-        {
-          role: "system",
-          content:
-            "Transcribe and describe the supplied image for later reference. " +
-            "Report all legible text verbatim, including dimensions, room " +
-            "names, revision marks and title-block fields. Then describe what " +
-            "the image shows in two or three sentences. Do not infer values " +
-            "that are not visible, and say explicitly when something is " +
-            "illegible rather than guessing it.",
+  try {
+    const client = new OpenAI({ apiKey, timeout: 30_000, maxRetries: 1 });
+    const completion = await createOpenAIStructuredCompletion(
+      client,
+      {
+        max_tokens: 2000,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Transcribe the supplied image for later reference. Report all legible text verbatim, including dimensions, room names, revision marks and title-block fields. Describe what the image shows in two or three sentences. Never infer a value that is not visible; record uncertainty in legibilityNotes.",
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: `data:${contentType};base64,${base64}` },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        model: "gpt-4o-mini",
+        temperature: 0,
+        schemaName: "AttachmentImageExtraction",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            transcription: { type: "string" },
+            description: { type: "string" },
+            legibilityNotes: { type: "array", items: { type: "string" } },
+          },
+          required: ["transcription", "description", "legibilityNotes"],
         },
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:${contentType};base64,${base64}` },
-            },
-          ],
-        },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new ExtractError(
-      `Vision provider returned ${res.status}. ${detail.slice(0, 160)}`,
+      },
     );
+    const output = parseStructuredOutput(
+      completion.choices[0]?.message.content ?? "",
+      parseImageExtraction,
+    );
+    const text = [
+      output.transcription && `Transcription\n${output.transcription}`,
+      output.description && `Description\n${output.description}`,
+      output.legibilityNotes.length > 0
+        ? `Legibility notes\n${output.legibilityNotes.map((note) => `- ${note}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("\n\n");
+    return cap(text, 1);
+  } catch {
+    throw new ExtractError("Image reading is temporarily unavailable. Please retry shortly.");
   }
+}
 
-  const json = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+function parseImageExtraction(value: Record<string, unknown>): {
+  transcription: string;
+  description: string;
+  legibilityNotes: string[];
+} {
+  if (
+    typeof value.transcription !== "string" ||
+    typeof value.description !== "string" ||
+    !Array.isArray(value.legibilityNotes) ||
+    !value.legibilityNotes.every((note) => typeof note === "string")
+  ) {
+    throw new TypeError("Invalid image extraction response.");
+  }
+  return {
+    transcription: value.transcription,
+    description: value.description,
+    legibilityNotes: value.legibilityNotes as string[],
   };
-  const text = json.choices?.[0]?.message?.content ?? "";
-  // One image, one unit.
-  return cap(text, 1);
 }

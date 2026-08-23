@@ -5,7 +5,16 @@ import {
   PermissionError,
   permissionResponse,
   requirePermission,
+  type Subject,
 } from "@/platform/authz";
+import { resolveChannelAccess } from "@/features/chat/server/channel-access";
+import {
+  decodeMessageCursor,
+  encodeMessageCursor,
+} from "@/features/chat/domain/message-cursor";
+import { rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { channelInvalidation } from "@/features/chat/domain/realtime";
+import { channelName, PUSHER_EVENTS, pusherServer } from "@/platform/integrations/pusher";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -17,20 +26,16 @@ function boundedLimit(value: string | null, fallback = 50, max = 100) {
 // requirePermission() has approved the action, so the membership upsert
 // is only triggered for callers who already have access.
 async function getOrCreateThreadChannel(projectId: string, userId: string) {
-  let channel = await prisma.channel.findFirst({
-    where: { projectId, type: "project" },
+  const channel = await prisma.channel.upsert({
+    where: { projectId_type: { projectId, type: "project" } },
+    create: {
+      name: `project-${projectId}`,
+      type: "project",
+      projectId,
+      createdBy: userId,
+    },
+    update: {},
   });
-
-  if (!channel) {
-    channel = await prisma.channel.create({
-      data: {
-        name:      `project-${projectId}`,
-        type:      "project",
-        projectId,
-        createdBy: userId,
-      },
-    });
-  }
 
   await prisma.channelMember.upsert({
     where:  { channelId_userId: { channelId: channel.id, userId } },
@@ -49,30 +54,53 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const cursor = searchParams.get("cursor") || "";
   const limit = boundedLimit(searchParams.get("limit"));
+  const decodedCursor = decodeMessageCursor(cursor);
+  if (cursor && !decodedCursor) {
+    return Response.json({ error: "Invalid cursor" }, { status: 400 });
+  }
 
-  let subjectUserId: string;
+  let subject: Subject;
   try {
-    const { subject, resource } = await requirePermission(request, "thread:read", {
+    const { subject: grantedSubject, resource } = await requirePermission(request, "thread:read", {
       loadResource: (s) => loadProjectForAuth(id, s.userId),
       context: { route: `GET /api/projects/${id}/thread` },
     });
     if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
-    subjectUserId = subject.userId;
+    subject = grantedSubject;
   } catch (e) {
     if (e instanceof PermissionError) return permissionResponse(e);
     throw e;
   }
 
-  const channel = await getOrCreateThreadChannel(id, subjectUserId);
+  const channel = await getOrCreateThreadChannel(id, subject.userId);
+  const access = await resolveChannelAccess(channel.id, subject);
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
   const messages = await prisma.message.findMany({
     where: {
       channelId: channel.id,
-      deletedAt: null,
       parentId: null,
-      ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
+      AND: [
+        {
+          OR: [
+            { deletedAt: null },
+            { replies: { some: { deletedAt: null } } },
+          ],
+        },
+        ...(decodedCursor
+          ? [{
+              OR: [
+                { createdAt: { lt: decodedCursor.createdAt } },
+                {
+                  createdAt: decodedCursor.createdAt,
+                  id: { lt: decodedCursor.id },
+                },
+              ],
+            }]
+          : []),
+      ],
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     include: {
       user: { select: { id: true, name: true, initials: true, image: true, role: true } },
       replies: {
@@ -81,7 +109,6 @@ export async function GET(
         include: {
           user: { select: { id: true, name: true, initials: true, image: true, role: true } },
         },
-        take: 5,
       },
       reactions: {
         include: { user: { select: { id: true, name: true, initials: true } } },
@@ -91,7 +118,10 @@ export async function GET(
   });
   const hasMore = messages.length > limit;
   const page = hasMore ? messages.slice(0, limit) : messages;
-  const nextCursor = hasMore ? page.at(-1)?.createdAt.toISOString() ?? null : null;
+  const last = hasMore ? page.at(-1) : null;
+  const nextCursor = last
+    ? encodeMessageCursor({ createdAt: last.createdAt, id: last.id })
+    : null;
 
   return Response.json({ channelId: channel.id, messages: page.reverse(), hasMore, nextCursor });
 }
@@ -102,29 +132,74 @@ export async function POST(
 ) {
   const { id } = await params;
 
-  let subjectUserId: string;
+  let subject: Subject;
   try {
-    const { subject, resource } = await requirePermission(request, "thread:post", {
+    const { subject: grantedSubject, resource } = await requirePermission(request, "thread:post", {
       loadResource: (s) => loadProjectForAuth(id, s.userId),
       context: { route: `POST /api/projects/${id}/thread` },
     });
     if (!resource) return Response.json({ error: "Not found" }, { status: 404 });
-    subjectUserId = subject.userId;
+    subject = grantedSubject;
   } catch (e) {
     if (e instanceof PermissionError) return permissionResponse(e);
     throw e;
   }
 
-  const { content, parentId } = await request.json();
-  if (!content?.trim()) return Response.json({ error: "Empty message" }, { status: 400 });
+  const postLimit = rateLimit(subject.userId, {
+    key: "project-thread-post",
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (!postLimit.allowed) {
+    return rateLimitedResponse(
+      postLimit.retryAfterMs,
+      "You're sending updates too quickly. Please wait a moment.",
+    );
+  }
 
-  const channel = await getOrCreateThreadChannel(id, subjectUserId);
+  const body = (await request.json().catch(() => null)) as {
+    content?: unknown;
+    parentId?: unknown;
+  } | null;
+  if (typeof body?.content !== "string") {
+    return Response.json({ error: "Empty message" }, { status: 400 });
+  }
+  const content = body.content.trim();
+  if (!content || content.length > 20_000) {
+    return Response.json(
+      { error: "Message content must be between 1 and 20,000 characters." },
+      { status: 400 },
+    );
+  }
+  const parentId = body.parentId;
+  if (parentId !== undefined && parentId !== null && typeof parentId !== "string") {
+    return Response.json({ error: "Invalid parent message" }, { status: 400 });
+  }
+
+  const channel = await getOrCreateThreadChannel(id, subject.userId);
+  const access = await resolveChannelAccess(channel.id, subject);
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
+
+  if (parentId) {
+    const parent = await prisma.message.findUnique({
+      where: { id: parentId },
+      select: { channelId: true, parentId: true, deletedAt: true },
+    });
+    if (
+      !parent ||
+      parent.channelId !== channel.id ||
+      parent.parentId !== null ||
+      parent.deletedAt !== null
+    ) {
+      return Response.json({ error: "Thread not found in this project" }, { status: 400 });
+    }
+  }
 
   const message = await prisma.message.create({
     data: {
       channelId: channel.id,
-      userId:    subjectUserId,
-      content:   content.trim(),
+      userId:    subject.userId,
+      content,
       parentId:  parentId ?? null,
     },
     include: {
@@ -135,16 +210,11 @@ export async function POST(
   });
 
   try {
-    const { default: Pusher } = await import("pusher");
-    if (process.env.PUSHER_APP_ID) {
-      const pusher = new Pusher({
-        appId:   process.env.PUSHER_APP_ID!,
-        key:     process.env.NEXT_PUBLIC_PUSHER_KEY!,
-        secret:  process.env.PUSHER_SECRET!,
-        cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-      });
-      await pusher.trigger(`project-thread-${id}`, "new-message", message);
-    }
+    await pusherServer.trigger(
+      channelName(channel.id),
+      PUSHER_EVENTS.NEW_MESSAGE,
+      channelInvalidation(channel.id),
+    );
   } catch { /* Pusher unavailable — non-fatal */ }
 
   return Response.json(message);

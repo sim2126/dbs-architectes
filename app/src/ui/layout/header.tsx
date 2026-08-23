@@ -50,6 +50,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
 export function Header({ title }: { title?: string }) {
   const t = useT();
   const { data: session } = useSession();
+  const isExternal = session?.user?.isExternal === true;
   const [darkMode, setDarkMode] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("all");
@@ -99,7 +100,7 @@ export function Header({ title }: { title?: string }) {
   // ── Load activities ─────────────────────────────────────────
 
   const loadActivities = useCallback(async () => {
-    if (activitiesLoaded.current) return;
+    if (isExternal || activitiesLoaded.current) return;
     activitiesLoaded.current = true;
     setLoadingActivities(true);
     try {
@@ -109,7 +110,7 @@ export function Header({ title }: { title?: string }) {
     } finally {
       setLoadingActivities(false);
     }
-  }, []);
+  }, [isExternal]);
 
   // ── Load mentions ───────────────────────────────────────────
 
@@ -141,7 +142,7 @@ export function Header({ title }: { title?: string }) {
   // ── Pusher real-time updates ────────────────────────────────
 
   useEffect(() => {
-    if (!session?.user?.name) return;
+    if (isExternal || !session?.user?.name) return;
     try {
       const client = getPusherClient();
       // Listen for new messages to detect mentions in real time
@@ -160,7 +161,7 @@ export function Header({ title }: { title?: string }) {
     } catch {
       // Pusher unavailable — skip
     }
-  }, [session?.user?.name]);
+  }, [isExternal, session?.user?.name]);
 
   // ── Counts ──────────────────────────────────────────────────
 
@@ -199,7 +200,7 @@ export function Header({ title }: { title?: string }) {
        * so it stays optically centred in the viewport regardless of how wide
        * the page title on the left happens to be.
        */}
-      <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2">
+      {!isExternal && <div className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-2">
         <button
           onClick={openSearch}
           aria-label={`${t("common.search")} pages, projects`}
@@ -212,17 +213,17 @@ export function Header({ title }: { title?: string }) {
         </button>
 
         <AssistantPill />
-      </div>
+      </div>}
 
       <div className="flex items-center gap-2 shrink-0">
         {/* Compact search for viewports too narrow for the centred pair. */}
-        <button
+        {!isExternal && <button
           onClick={openSearch}
           aria-label={`${t("common.search")} pages, projects`}
           className="md:hidden p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         >
           <Search className="w-4 h-4" />
-        </button>
+        </button>}
 
         <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="h-8 w-8" title="Toggle theme">
           {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -311,8 +312,9 @@ export function Header({ title }: { title?: string }) {
                       {visibleMentions.map((mention) => {
                         const isUnread = !readMentionIds.has(mention.id);
                         return (
-                          <div
+                          <Link
                             key={`m-${mention.id}`}
+                            href={`/dashboard/chat?channel=${encodeURIComponent(mention.channelId)}`}
                             onClick={() => setReadMentionIds((r) => new Set([...r, mention.id]))}
                             className="flex gap-3 px-4 py-3 hover:bg-accent/50 cursor-pointer transition-colors border-b border-border/40 last:border-0"
                           >
@@ -337,7 +339,7 @@ export function Header({ title }: { title?: string }) {
                                 {formatDistanceToNow(new Date(mention.createdAt), { addSuffix: true })}
                               </p>
                             </div>
-                          </div>
+                          </Link>
                         );
                       })}
 

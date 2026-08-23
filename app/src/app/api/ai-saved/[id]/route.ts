@@ -1,22 +1,20 @@
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
+import { requireAiAccess } from "@/platform/ai/access";
 
 // PATCH /api/ai-saved/[id] — rename or toggle pinned
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(request);
+  if (!access.allowed) return access.response;
 
   const { id } = await params;
   const body = (await request.json()) as { title?: string; pinned?: boolean };
 
   const result = await prisma.savedAiResponse.updateMany({
-    where: { id, userId: session.user.id },
+    where: { id, userId: access.subject.userId },
     data: {
       ...(typeof body.title === "string" ? { title: body.title.slice(0, 200) } : {}),
       ...(typeof body.pinned === "boolean" ? { pinned: body.pinned } : {}),
@@ -34,14 +32,12 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = await requireAiAccess(request);
+  if (!access.allowed) return access.response;
 
   const { id } = await params;
   await prisma.savedAiResponse.deleteMany({
-    where: { id, userId: session.user.id },
+    where: { id, userId: access.subject.userId },
   });
 
   return Response.json({ ok: true });

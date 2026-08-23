@@ -437,6 +437,8 @@ export function ProjectsMapView({
             {/* Image / gradient header */}
             <div className="h-28 relative overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
               {selected.image ? (
+                // Project images can use authenticated URLs that the Next.js image optimiser cannot fetch.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={selected.image} alt="" className="w-full h-full object-cover opacity-70" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">

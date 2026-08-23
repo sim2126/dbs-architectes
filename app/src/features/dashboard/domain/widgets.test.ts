@@ -13,7 +13,7 @@ import {
 } from "./widgets";
 
 function subject(role: string, regions: Subject["regions"] = []): Subject {
-  return { userId: "user-1", role, regions };
+  return { userId: "user-1", role, isExternal: false, regions };
 }
 
 const ADMIN = subject("admin");
@@ -119,6 +119,7 @@ test("an allow grant on a resource-scoped action is ignored", () => {
   const scoped: Subject = {
     userId: "user-1",
     role: "employee",
+    isExternal: false,
     regions: [],
     grants: [{ action: "project:read", effect: "allow" }],
   };
@@ -167,6 +168,7 @@ test("the grant system cannot grant control of the grant system", () => {
   const escalating: Subject = {
     userId: "user-1",
     role: "employee",
+    isExternal: false,
     regions: [],
     grants: [{ action: "settings:permissions.update", effect: "allow" }],
   };
@@ -192,6 +194,7 @@ test("no grantable action carries resource-level scoping", () => {
     "agenda:delete",
     "chat:message.update",
     "chat:message.delete",
+    "chat:members.manage",
     "thread:read",
     "thread:post",
   ];
@@ -202,6 +205,55 @@ test("no grantable action carries resource-level scoping", () => {
         `would bypass its region/assignment checks`,
     );
   }
+});
+
+test("chat read revocation wins over role and live channel membership", () => {
+  const revoked: Subject = {
+    userId: "user-1",
+    role: "admin",
+    isExternal: false,
+    regions: [],
+    grants: [{ action: "chat:read", effect: "deny" }],
+  };
+  assert.equal(authorize(revoked, "chat:read", null).allow, false);
+});
+
+test("channel creation and membership management have dedicated policies", () => {
+  const employee: Subject = {
+    userId: "employee-1",
+    role: "employee",
+    isExternal: false,
+    regions: [],
+  };
+  assert.equal(authorize(employee, "chat:channel.create", null).allow, true);
+  assert.equal(
+    authorize(employee, "chat:members.manage", {
+      kind: "chat",
+      channelId: "channel-1",
+      channelOwnerId: "someone-else",
+      channelMemberRole: "member",
+    }).allow,
+    false,
+  );
+  assert.equal(
+    authorize(employee, "chat:members.manage", {
+      kind: "chat",
+      channelId: "channel-1",
+      channelOwnerId: employee.userId,
+    }).allow,
+    true,
+  );
+
+  const guest = { ...employee, isExternal: true };
+  assert.equal(authorize(guest, "chat:channel.create", null).allow, false);
+  assert.equal(
+    authorize(guest, "chat:members.manage", {
+      kind: "chat",
+      channelId: "channel-1",
+      channelOwnerId: guest.userId,
+    }).allow,
+    false,
+  );
 });
 
 test("widget order values are unique within a slot", () => {

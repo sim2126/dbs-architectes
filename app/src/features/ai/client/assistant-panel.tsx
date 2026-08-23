@@ -8,7 +8,6 @@ import {
   Bookmark,
   BookmarkCheck,
   ChevronsRight,
-  FileText,
   History,
   Loader2,
   Maximize2,
@@ -17,7 +16,6 @@ import {
   Plus,
   Search,
   Sparkles,
-  Trash2,
 } from "lucide-react";
 import { cn } from "@/ui/utils";
 import { showToast } from "@/ui/components/toast";
@@ -28,6 +26,14 @@ import {
 } from "@/ui/stores/assistant-store";
 import { INTENT_PRESETS, type IntentPreset } from "../domain/intents";
 import { ACCEPT_ATTRIBUTE } from "../domain/attachments";
+import { BlocksView } from "./agent-blocks";
+import { blocksToPlainText, type Block } from "../server/agent/blocks";
+import { readServerSentEvents } from "@/platform/ai/sse";
+import {
+  AiUploadError,
+  ingestAiAttachment,
+  uploadAiAttachment,
+} from "./upload-attachment";
 import {
   ListOrEmpty,
   ListRow,
@@ -47,7 +53,17 @@ import {
  * composer; they are not separate endpoints with their own behaviour.
  */
 
-type Turn = { role: "user" | "assistant"; content: string };
+type Turn = { role: "user" | "assistant"; content: string; blocks?: Block[] };
+
+type PanelAgentEvent = {
+  type: "text" | "blocks" | "done" | "error";
+  content?: string;
+  blocks?: Block[];
+  message?: string;
+  sessionId?: string;
+  title?: string;
+  updatedAt?: string;
+};
 
 /**
  * The panel shows chat and its history, and nothing else.
@@ -144,13 +160,26 @@ export function AssistantPanel() {
   }, []);
 
   const newChat = useCallback(() => {
-    // No request. The session is created lazily by /api/agent on the first
-    // message, so starting a chat you never use leaves no empty row behind.
+    // The session is created when the first message or file is submitted, so
+    // opening and closing an unused composer leaves no empty history row.
     setSessionId(null);
     setTurns([]);
     setDraft("");
     setSavedTurns(new Set());
     setView("chat");
+  }, []);
+
+  const createSession = useCallback(async (): Promise<string> => {
+    const response = await fetch("/api/ai-chats", { method: "POST" });
+    if (!response.ok) throw new Error("Could not create a conversation.");
+    const created = (await response.json()) as AiSession;
+    if (!created.id) throw new Error("Could not create a conversation.");
+    setSessionId(created.id);
+    setSessions((current) => [
+      created,
+      ...current.filter((item) => item.id !== created.id),
+    ]);
+    return created.id;
   }, []);
 
   const openSession = useCallback(async (id: string) => {
@@ -161,7 +190,7 @@ export function AssistantPanel() {
       return;
     }
     const data = (await res.json()) as {
-      messages?: Array<{ role: string; content: string }>;
+      messages?: Array<{ role: string; content: string; blocks?: Block[] }>;
     };
     setSessionId(id);
     setSavedTurns(new Set());
@@ -169,7 +198,11 @@ export function AssistantPanel() {
       (data.messages ?? [])
         // System and tool turns are transcript plumbing and read as gibberish.
         .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role as Turn["role"], content: m.content })),
+        .map((m) => ({
+          role: m.role as Turn["role"],
+          content: m.content,
+          blocks: m.blocks ?? [],
+        })),
     );
   }, []);
 
@@ -191,8 +224,9 @@ export function AssistantPanel() {
     async (index: number, turn: Turn) => {
       setSavingIndex(index);
       try {
+        const text = turn.content || blocksToPlainText(turn.blocks ?? []);
         const firstLine =
-          turn.content.split("\n").find((l) => l.trim().length > 0) ?? "";
+          text.split("\n").find((l) => l.trim().length > 0) ?? "";
         const res = await fetch("/api/ai-saved", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -200,8 +234,8 @@ export function AssistantPanel() {
             // First line as the title: scannable without asking a model to
             // name it, and cheaper than a second round trip.
             title: firstLine.slice(0, 80) || "Saved insight",
-            text: turn.content,
-            blocks: [],
+            text,
+            blocks: turn.blocks ?? [],
             sessionId: sessionId ?? undefined,
           }),
         });
@@ -229,75 +263,33 @@ export function AssistantPanel() {
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
 
+      let targetSessionId = sessionId;
+      if (!targetSessionId) {
+        try {
+          targetSessionId = await createSession();
+        } catch {
+          showToast("Could not create a conversation for these files.", "danger");
+          return;
+        }
+      }
+
       for (const file of Array.from(files)) {
         try {
-          const presign = await fetch("/api/uploads/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              filename: file.name,
-              contentType: file.type,
-              contentLength: file.size,
-            }),
-          });
-          if (!presign.ok) {
-            const body = (await presign.json().catch(() => null)) as
-              | { error?: string }
-              | null;
-            showToast(body?.error ?? `Could not upload ${file.name}.`, "danger");
-            continue;
-          }
-          const { uploadUrl, url } = (await presign.json()) as {
-            uploadUrl?: string;
-            url?: string;
-          };
-
-          if (uploadUrl) {
-            const put = await fetch(uploadUrl, {
-              method: "PUT",
-              headers: { "Content-Type": file.type },
-              body: file,
-            });
-            if (!put.ok) {
-              showToast(`Upload failed for ${file.name}.`, "danger");
-              continue;
-            }
-          }
-
-          const record = await fetch("/api/ai-attachments", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              filename: file.name,
-              contentType: file.type,
-              sizeBytes: file.size,
-              url: url ?? uploadUrl ?? "",
-              sessionId: sessionId ?? undefined,
-            }),
-          });
-          if (!record.ok) {
-            const body = (await record.json().catch(() => null)) as
-              | { error?: string }
-              | null;
-            showToast(body?.error ?? `Could not attach ${file.name}.`, "danger");
-            continue;
-          }
-          showToast(`${file.name} attached`, "success");
-
-          // Kick extraction, but do not wait on it. A vision call per image
-          // would make attaching three files feel broken; the route is a pull,
-          // so an unread file is simply picked up on the next call.
-          void fetch("/api/ai-attachments/ingest", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          });
-        } catch {
-          showToast(`Could not attach ${file.name}.`, "danger");
+          const attachment = await uploadAiAttachment(file, targetSessionId);
+          showToast(`${file.name} uploaded. AI Assistant is reading it.`, "success");
+          await ingestAiAttachment(attachment.id);
+          showToast(`${file.name} is ready`, "success");
+        } catch (error) {
+          showToast(
+            error instanceof AiUploadError
+              ? error.message
+              : `Could not attach ${file.name}.`,
+            "danger",
+          );
         }
       }
     },
-    [sessionId],
+    [createSession, sessionId],
   );
 
   const send = useCallback(
@@ -305,14 +297,17 @@ export function AssistantPanel() {
       const message = text.trim();
       if (!message || sending) return;
 
-      setDraft("");
-      setTurns((t) => [...t, { role: "user", content: message }]);
+      let turnAdded = false;
       setSending(true);
       try {
+        const targetSessionId = sessionId ?? await createSession();
+        setDraft("");
+        setTurns((turns) => [...turns, { role: "user", content: message }]);
+        turnAdded = true;
         const res = await fetch("/api/agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, sessionId: sessionId ?? undefined }),
+          body: JSON.stringify({ message, sessionId: targetSessionId }),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -320,29 +315,66 @@ export function AssistantPanel() {
           // Drop the optimistic turn — leaving it implies the message was
           // sent and answered when it was not.
           setTurns((t) => t.slice(0, -1));
+          setDraft(message);
+          turnAdded = false;
           return;
         }
-        const data = (await res.json()) as {
-          reply?: string;
-          content?: string;
-          sessionId?: string;
-        };
-        if (data.sessionId) setSessionId(data.sessionId);
-        const reply = data.reply ?? data.content;
-        if (!reply) {
+        if (!res.body) throw new Error("The assistant returned no stream.");
+        let content = "";
+        let blocks: Block[] = [];
+        let streamError = "";
+        let completed = false;
+        await readServerSentEvents<PanelAgentEvent>(res.body, (event) => {
+          if (event.type === "text" && event.content) content += event.content;
+          if (event.type === "blocks" && event.blocks) blocks = event.blocks;
+          if (event.type === "error") {
+            streamError = event.message ?? "The assistant could not answer.";
+          }
+          if (event.type === "done") {
+            completed = true;
+            if (event.sessionId) setSessionId(event.sessionId);
+            setSessions((items) => items.map((item) =>
+              item.id === targetSessionId
+                ? {
+                    ...item,
+                    ...(event.title ? { title: event.title } : {}),
+                    ...(event.updatedAt ? { updatedAt: event.updatedAt } : {}),
+                  }
+                : item,
+            ));
+          }
+        });
+        if (streamError) {
+          showToast(streamError, "danger");
+          setTurns((turns) => [
+            ...turns,
+            {
+              role: "assistant",
+              content: streamError,
+              blocks: [{ type: "callout", tone: "warning", text: streamError }],
+            },
+          ]);
+          return;
+        }
+        if (!completed || (!content && blocks.length === 0)) {
           showToast("The assistant returned nothing.", "warning");
-          setTurns((t) => t.slice(0, -1));
+          setTurns((turns) => turns.slice(0, -1));
+          setDraft(message);
           return;
         }
-        setTurns((t) => [...t, { role: "assistant", content: reply }]);
+        setTurns((turns) => [
+          ...turns,
+          { role: "assistant", content: content || blocksToPlainText(blocks), blocks },
+        ]);
       } catch {
         showToast("The assistant is unreachable.", "danger");
-        setTurns((t) => t.slice(0, -1));
+        if (turnAdded) setTurns((turns) => turns.slice(0, -1));
+        setDraft(message);
       } finally {
         setSending(false);
       }
     },
-    [sending, sessionId],
+    [createSession, sending, sessionId],
   );
 
   /*
@@ -503,7 +535,11 @@ export function AssistantPanel() {
                           : "border border-friday-border-soft text-foreground",
                       )}
                     >
-                      {turn.content}
+                      {turn.blocks && turn.blocks.length > 0 ? (
+                        <BlocksView blocks={turn.blocks} />
+                      ) : (
+                        turn.content
+                      )}
                     </div>
                     {turn.role === "assistant" && (
                       <button

@@ -1,7 +1,13 @@
 import { prisma } from "@/platform/db";
 import { StatisticsClient } from "@/features/statistics";
+import { auth } from "@/platform/auth";
+import { redirect } from "next/navigation";
 
 export default async function StatisticsPage() {
+  const session = await auth({ allowExternal: true });
+  if (!session) redirect("/login");
+  if (session.user.isExternal) redirect("/dashboard/chat");
+
   const [rawProjects, rawUsers] = await Promise.all([
     prisma.project.findMany({
       select: {

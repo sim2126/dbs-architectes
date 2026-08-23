@@ -12,15 +12,18 @@
     "test:work-items": "tsx --test src/features/work-items/domain/compat.test.ts",
     "test:dashboard": "tsx --test src/features/dashboard/domain/widgets.test.ts",
     "test:projects": "tsx --test src/features/projects/domain/editable-columns.test.ts",
-    "test:guests": "tsx --test src/features/users/domain/guests.test.ts",
+    "test:guests": "tsx --test src/features/users/domain/guests.test.ts src/features/chat/domain/*.test.ts",
     "test:attachments": "tsx --test src/features/ai/domain/attachments.test.ts",
+    "test:release-hygiene": "tsx --test prisma/seed-safety.test.ts prisma/deterministic-archive.test.ts prisma/migration-contract.test.ts",
     "test:work-grouping": "tsx --test src/features/work-items/domain/grouping.test.ts",
+    "audit:production": "node scripts/check-production-audit.mjs",
+    "uploads:gc": "tsx scripts/cleanup-uploads.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed-demo.ts",
     "db:seed:ai": "tsx prisma/seed-ai-files.ts",
     "db:seed:legacy": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "prisma db push && tsx prisma/seed-demo.ts"
+    "setup": "tsx prisma/check-seed-target.ts && prisma db push && tsx prisma/seed-demo.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -61,6 +64,7 @@
     "exceljs": "^4.4.0",
     "framer-motion": "^12.38.0",
     "googleapis": "^171.4.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
     "mammoth": "^1.12.1",
     "next": "^16.2.11",
@@ -101,7 +105,9 @@
   "overrides": {
     "find-my-way": "9.7.0",
     "form-data": "4.0.6",
-    "postcss": "8.5.22",
+    "fast-uri": "3.1.5",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
     "qs": "6.15.3",
     "sharp": "0.35.3"
   }

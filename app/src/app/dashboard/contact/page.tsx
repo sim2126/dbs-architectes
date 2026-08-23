@@ -12,7 +12,6 @@ import {
   Video,
   Building2,
   Shield,
-  ChevronDown,
   Filter,
   UserCheck,
   Crown,
@@ -161,7 +160,6 @@ export default function ContactPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [dmLoading, setDmLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/team")
@@ -197,19 +195,14 @@ export default function ContactPage() {
   }, [members, search, roleFilter, deptFilter]);
 
   async function handleMessage(userId: string) {
-    setDmLoading(userId);
-    try {
-      // Create or find existing DM channel
-      const res = await fetch("/api/chat/channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "direct", memberIds: [userId] }),
-      });
-      if (res.ok) {
-        router.push("/dashboard/chat");
-      }
-    } finally {
-      setDmLoading(null);
+    // Create or find existing DM channel
+    const res = await fetch("/api/chat/channels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "direct", memberIds: [userId] }),
+    });
+    if (res.ok) {
+      router.push("/dashboard/chat");
     }
   }
 

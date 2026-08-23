@@ -252,8 +252,9 @@ test("streaming provider failures are normalised after the first chunk", async (
   });
 
   await assert.rejects(async () => {
-    for await (const _chunk of stream) {
+    for await (const chunk of stream) {
       // Consume the stream so failures after headers are exercised.
+      void chunk;
     }
   }, (error: unknown) => {
     const failure = toSafeAiFailure("dbs-gpt", error);

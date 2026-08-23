@@ -13,17 +13,14 @@ import {
   Loader2,
   MessageSquarePlus,
   MoreHorizontal,
+  Paperclip,
   Pencil,
   RotateCcw,
   Send,
-  Sparkles,
   Table2,
   Trash2,
-  User,
-  CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "@/ui/components/avatar";
 import { Button } from "@/ui/components/button";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,7 +28,6 @@ import { cn } from "@/ui/utils";
 import { AiLogo } from "@/features/ai/client/ai-logo";
 import {
   AiArtifact,
-  generateSessionTitle,
   PersistedToolStep,
 } from "@/features/ai/server/agent/artifacts";
 import type { Block } from "@/features/ai/server/agent/blocks";
@@ -39,9 +35,22 @@ import { BlocksView } from "@/features/ai/client/agent-blocks";
 import {
   AttachmentRow,
   ListOrEmpty,
+  relativeDay,
   type AiAttachment,
+  type AiSaved,
 } from "@/features/ai/client/ai-lists";
 import { FilePreview } from "@/ui/components/file-preview";
+import {
+  ACCEPT_ATTRIBUTE,
+  isSafeAiAttachmentUrl,
+} from "@/features/ai/domain/attachments";
+import {
+  AiUploadError,
+  ingestAiAttachment,
+  uploadAiAttachment,
+} from "@/features/ai/client/upload-attachment";
+import { readServerSentEvents } from "@/platform/ai/sse";
+import { showToast } from "@/ui/components/toast";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -88,6 +97,9 @@ interface SSEEvent {
   // for cross-turn context reconstruction.
   toolCallId?: string;
   result?: string;
+  sessionId?: string;
+  title?: string;
+  updatedAt?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────
@@ -110,17 +122,6 @@ const TOOL_LABELS: Record<string, string> = {
   get_team_workload: "Analysing team workload",
   get_statistics: "Pulling portfolio statistics",
   get_activity_log: "Loading activity log",
-};
-
-const TOOL_ICONS: Record<string, string> = {
-  search_projects: "🔍",
-  get_project_details: "📋",
-  get_project_thread: "💬",
-  get_team_messages: "📢",
-  get_agenda: "📅",
-  get_team_workload: "👥",
-  get_statistics: "📊",
-  get_activity_log: "📝",
 };
 
 // Format args for display — hide nulls/empty, humanize keys
@@ -453,10 +454,12 @@ function MessageBubble({
 
 function ChatHistorySidebar({
   sessions,
+  saved,
   attachments,
   attachmentsError,
   activeId,
   onSelect,
+  onSelectSaved,
   onOpenFile,
   onDeleteFile,
   onNew,
@@ -464,10 +467,12 @@ function ChatHistorySidebar({
   onRename,
 }: {
   sessions: ChatSession[];
+  saved: AiSaved[];
   attachments: AiAttachment[] | null;
   attachmentsError: boolean;
   activeId: string | null;
   onSelect: (id: string) => void;
+  onSelectSaved: (item: AiSaved) => void;
   onOpenFile: (attachment: AiAttachment) => void;
   onDeleteFile: (id: string) => void;
   onNew: () => void;
@@ -478,6 +483,7 @@ function ChatHistorySidebar({
   const [editValue, setEditValue] = useState("");
   const [menuId, setMenuId] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(true);
+  const [savedOpen, setSavedOpen] = useState(true);
 
   const groupByDate = (sessions: ChatSession[]) => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -600,6 +606,40 @@ function ChatHistorySidebar({
         <div className="border-t border-friday-border-soft pt-2">
           <button
             type="button"
+            onClick={() => setSavedOpen((open) => !open)}
+            className="flex w-full items-center gap-1 px-3 py-1 text-left font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle hover:text-friday-fg transition-colors"
+            aria-expanded={savedOpen}
+          >
+            {savedOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <span className="flex-1">Saved</span>
+            {saved.length > 0 && <span className="tracking-normal">{saved.length}</span>}
+          </button>
+          {savedOpen && (
+            <div className="px-1 pb-2">
+              <ListOrEmpty
+                empty={saved.length === 0}
+                note="No saved insights yet."
+              >
+                {saved.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectSaved(item)}
+                      className="w-full rounded-md px-2 py-2 text-left hover:bg-friday-surface-2 transition-colors"
+                    >
+                      <span className="block truncate text-sm text-friday-fg">{item.title}</span>
+                      <span className="block text-[11px] text-friday-fg-subtle">{relativeDay(item.createdAt)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ListOrEmpty>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-friday-border-soft pt-2">
+          <button
+            type="button"
             onClick={() => setFilesOpen((open) => !open)}
             className="flex w-full items-center gap-1 px-3 py-1 text-left font-mono text-[9.5px] uppercase tracking-[0.22em] text-friday-fg-subtle hover:text-friday-fg transition-colors"
             aria-expanded={filesOpen}
@@ -656,6 +696,7 @@ export default function DBSGPTPage() {
   const router = useRouter();
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [savedInsights, setSavedInsights] = useState<AiSaved[]>([]);
   const [attachments, setAttachments] = useState<AiAttachment[] | null>(null);
   const [attachmentsError, setAttachmentsError] = useState(false);
   const [previewFile, setPreviewFile] = useState<AiAttachment | null>(null);
@@ -672,12 +713,9 @@ export default function DBSGPTPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const seqRef = useRef(0);
-  const pendingUserContent = useRef("");
-  const pendingAssistantContent = useRef("");
-  const pendingAssistantArtifacts = useRef<AiArtifact[]>([]);
-  const pendingAssistantSteps = useRef<ToolStep[]>([]);
-  const pendingAssistantBlocks = useRef<Block[]>([]);
   const pendingGroundingWarning = useRef(false);
 
   const makeId = (role: string) => `${role}-${++seqRef.current}`;
@@ -689,6 +727,10 @@ export default function DBSGPTPage() {
   // Load sessions
   useEffect(() => {
     fetch("/api/ai-chats").then((r) => r.json()).then((d: ChatSession[]) => setSessions(d)).catch(() => {});
+    fetch("/api/ai-saved")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("saved unavailable")))
+      .then((items: AiSaved[]) => setSavedInsights(items))
+      .catch(() => setSavedInsights([]));
   }, []);
 
   const loadAttachments = useCallback(async () => {
@@ -716,15 +758,25 @@ export default function DBSGPTPage() {
    * click, then the full row — including extracted text — replaces it. Without
    * that second fetch a spreadsheet or document would always render its
    * "not read yet" fallback, because the listing deliberately omits the text.
-   */
+  */
   const handleOpenFile = useCallback(async (attachment: AiAttachment) => {
+    if (!isSafeAiAttachmentUrl(attachment.url)) {
+      showToast("This attachment has an invalid storage location.", "danger");
+      return;
+    }
     setPreviewFile(attachment);
     try {
       const res = await fetch(
         `/api/ai-attachments?id=${encodeURIComponent(attachment.id)}`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
       const data = (await res.json()) as { attachment: AiAttachment };
+      if (!isSafeAiAttachmentUrl(data.attachment.url)) {
+        throw new Error("Invalid attachment storage location");
+      }
       // Guard against a slow response landing after the user opened another
       // file or closed the dialog.
       setPreviewFile((current) =>
@@ -792,7 +844,6 @@ export default function DBSGPTPage() {
     const chatParam = params.get("chat");
     if (chatParam) setActiveSessionId(chatParam);
   // Mount-only — subsequent URL changes are driven by the effect below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mirror activeSessionId into the URL via replaceState so refreshes /
@@ -876,6 +927,30 @@ export default function DBSGPTPage() {
     return data.id;
   }, []);
 
+  const attachFiles = useCallback(async (files: FileList | null) => {
+    if (!files?.length || uploadingFiles) return;
+    setUploadingFiles(true);
+    try {
+      const targetSessionId = activeSessionId ?? await createSession();
+      for (const file of Array.from(files)) {
+        try {
+          const attachment = await uploadAiAttachment(file, targetSessionId);
+          showToast(`${file.name} uploaded. AI Assistant is reading it.`, "success");
+          await ingestAiAttachment(attachment.id);
+          showToast(`${file.name} is ready`, "success");
+        } catch (error) {
+          showToast(
+            error instanceof AiUploadError ? error.message : `Could not attach ${file.name}.`,
+            "danger",
+          );
+        }
+      }
+      await loadAttachments();
+    } finally {
+      setUploadingFiles(false);
+    }
+  }, [activeSessionId, createSession, loadAttachments, uploadingFiles]);
+
   // "New chat" no longer hits the DB — we just reset local state. The
   // session row is created lazily by sendMessage() when the user
   // actually sends their first message, so abandoned new-chat rows
@@ -893,6 +968,14 @@ export default function DBSGPTPage() {
     setActiveSessionId(id);
   }, [activeSessionId]);
 
+  const handleSelectSaved = useCallback((item: AiSaved) => {
+    if (!item.sessionId) {
+      showToast("This saved insight is no longer linked to a conversation.", "warning");
+      return;
+    }
+    handleSelect(item.sessionId);
+  }, [handleSelect]);
+
   const handleDelete = useCallback(async (id: string) => {
     await fetch(`/api/ai-chats/${id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -907,34 +990,6 @@ export default function DBSGPTPage() {
   const handleRename = useCallback(async (id: string, title: string) => {
     await fetch(`/api/ai-chats/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
     setSessions((prev) => prev.map((s) => s.id === id ? { ...s, title } : s));
-  }, []);
-
-  const saveMessages = useCallback(async (
-    sessionId: string,
-    userContent: string,
-    assistantContent: string,
-    assistantArtifacts: AiArtifact[],
-    assistantSteps: ToolStep[],
-    assistantBlocks: Block[],
-    isFirst: boolean
-  ) => {
-    const title = isFirst ? generateSessionTitle(userContent) : undefined;
-    await fetch(`/api/ai-chats/${sessionId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userContent,
-        assistantContent,
-        assistantArtifacts,
-        assistantSteps,
-        assistantBlocks,
-        title,
-      }),
-    });
-    setSessions((prev) => prev.map((s) => s.id === sessionId
-      ? { ...s, updatedAt: new Date().toISOString(), ...(title ? { title } : {}) }
-      : s
-    ));
   }, []);
 
   const openSheet = useCallback((sheetId: string) => {
@@ -999,7 +1054,6 @@ export default function DBSGPTPage() {
     if (!content.trim() || loading) return;
 
     let sessionId = activeSessionId;
-    const isFirst = messages.length === 0;
     if (!sessionId) sessionId = await createSession();
 
     const userMsg: ChatMessage = { id: makeId("user"), role: "user", content };
@@ -1009,11 +1063,6 @@ export default function DBSGPTPage() {
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInput("");
     setLoading(true);
-    pendingUserContent.current = content;
-    pendingAssistantContent.current = "";
-    pendingAssistantArtifacts.current = [];
-    pendingAssistantSteps.current = [];
-    pendingAssistantBlocks.current = [];
     pendingGroundingWarning.current = false;
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -1029,28 +1078,14 @@ export default function DBSGPTPage() {
         body: JSON.stringify({ sessionId, message: content }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
       if (!res.body) throw new Error("No stream");
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event: SSEEvent = JSON.parse(line.slice(6));
-
-            if (event.type === "text" && event.content) {
-              pendingAssistantContent.current += event.content;
+      await readServerSentEvents<SSEEvent>(res.body, (event) => {
+        if (event.type === "text" && event.content) {
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
                   ? { ...m, content: m.content + event.content }
@@ -1065,7 +1100,6 @@ export default function DBSGPTPage() {
                 status: "running",
                 toolCallId: event.toolCallId,
               };
-              pendingAssistantSteps.current = [...pendingAssistantSteps.current, nextStep];
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
                   ? {
@@ -1078,7 +1112,6 @@ export default function DBSGPTPage() {
                   : m
               ));
             } else if (event.type === "artifact" && event.artifact) {
-              pendingAssistantArtifacts.current = [...pendingAssistantArtifacts.current, event.artifact];
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
                   ? {
@@ -1092,17 +1125,6 @@ export default function DBSGPTPage() {
               // parallel calls of the same tool); fall back to name+running.
               const targetId = event.toolCallId;
               const stepResult = event.result;
-              let markedRef = false;
-              pendingAssistantSteps.current = pendingAssistantSteps.current.map((step) => {
-                const idMatch = targetId && step.toolCallId === targetId;
-                const nameMatch =
-                  !targetId && !markedRef && step.name === event.name && step.status === "running";
-                if (idMatch || nameMatch) {
-                  markedRef = true;
-                  return { ...step, status: "done", result: stepResult };
-                }
-                return step;
-              });
               setMessages((prev) => prev.map((m) => {
                 if (m.id !== assistantId) return m;
                 let marked = false;
@@ -1131,7 +1153,6 @@ export default function DBSGPTPage() {
                     },
                   ]
                 : event.blocks;
-              pendingAssistantBlocks.current = blocks;
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId ? { ...m, blocks } : m
               ));
@@ -1139,16 +1160,24 @@ export default function DBSGPTPage() {
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId ? { ...m, isStreaming: false } : m
               ));
+              if (event.sessionId) setActiveSessionId(event.sessionId);
+              if (event.sessionId && (event.title || event.updatedAt)) {
+                setSessions((items) => items.map((item) =>
+                  item.id === event.sessionId
+                    ? {
+                        ...item,
+                        ...(event.title ? { title: event.title } : {}),
+                        ...(event.updatedAt ? { updatedAt: event.updatedAt } : {}),
+                      }
+                    : item,
+                ));
+              }
             } else if (event.type === "error") {
               // Log the raw upstream error for debugging; surface a friendly
               // message to the user so internal stack traces never leak into
               // the chat bubble.
               console.error("[DBS AI] agent stream error:", event.message);
               const friendly = "Hmm — something broke on our end. Try that again?";
-              pendingAssistantContent.current = friendly;
-              pendingAssistantBlocks.current = [
-                { type: "callout", tone: "warning", text: friendly },
-              ];
               setMessages((prev) => prev.map((m) =>
                 m.id === assistantId
                   ? {
@@ -1159,38 +1188,16 @@ export default function DBSGPTPage() {
                     }
                   : m,
               ));
-            }
-          } catch {
-            // malformed SSE line
-          }
         }
-      }
-
-      if (
-        sessionId &&
-        (pendingAssistantContent.current ||
-          pendingAssistantArtifacts.current.length > 0 ||
-          pendingAssistantBlocks.current.length > 0)
-      ) {
-        await saveMessages(
-          sessionId,
-          pendingUserContent.current,
-          pendingAssistantContent.current,
-          pendingAssistantArtifacts.current,
-          pendingAssistantSteps.current,
-          pendingAssistantBlocks.current,
-          isFirst,
-        );
-      }
+      });
     } catch (err) {
       // Connection-level failure (network, abort, etc.). Same policy: log the
       // raw error, show a branded-friendly message in the UI.
       console.error("[DBS AI] request failed:", err);
-      const friendly = "It's not you — our end hit a snag. Give it another try in a moment.";
-      pendingAssistantContent.current = friendly;
-      pendingAssistantBlocks.current = [
-        { type: "callout", tone: "warning", text: friendly },
-      ];
+      const friendly =
+        err instanceof Error && err.message.startsWith("AI Assistant")
+          ? err.message
+          : "It's not you — our end hit a snag. Give it another try in a moment.";
       setMessages((prev) => prev.map((m) =>
         m.id === assistantId
           ? {
@@ -1201,27 +1208,10 @@ export default function DBSGPTPage() {
             }
           : m,
       ));
-      // Still persist so the session gets its title and the friendly error is
-      // visible in history instead of leaving an orphan "New chat" sidebar row.
-      if (sessionId) {
-        try {
-          await saveMessages(
-            sessionId,
-            pendingUserContent.current,
-            friendly,
-            pendingAssistantArtifacts.current,
-            pendingAssistantSteps.current,
-            pendingAssistantBlocks.current,
-            isFirst,
-          );
-        } catch {
-          /* save failure on an already-erroring path — swallow */
-        }
-      }
     } finally {
       setLoading(false);
     }
-  }, [loading, messages, activeSessionId, createSession, saveMessages]);
+  }, [loading, activeSessionId, createSession]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
@@ -1260,9 +1250,9 @@ export default function DBSGPTPage() {
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatHistorySidebar
-            sessions={sessions} attachments={attachments}
+            sessions={sessions} saved={savedInsights} attachments={attachments}
             attachmentsError={attachmentsError} activeId={activeSessionId}
-            onSelect={handleSelect} onOpenFile={handleOpenFile}
+            onSelect={handleSelect} onSelectSaved={handleSelectSaved} onOpenFile={handleOpenFile}
             onDeleteFile={handleDeleteFile} onNew={handleNew}
             onDelete={handleDelete} onRename={handleRename}
           />
@@ -1390,6 +1380,30 @@ export default function DBSGPTPage() {
         {/* Input */}
         <div className="shrink-0 border-t border-border bg-card/90 px-6 py-4">
           <div className="mx-auto max-w-3xl flex gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPT_ATTRIBUTE}
+              className="hidden"
+              onChange={(event) => {
+                void attachFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              disabled={uploadingFiles || !aiStatus.enabled}
+              onClick={() => fileInputRef.current?.click()}
+              aria-label="Attach files"
+              className="h-[52px] w-[52px] rounded-2xl shrink-0"
+            >
+              {uploadingFiles
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Paperclip className="h-4 w-4" />}
+            </Button>
             <textarea
               ref={textareaRef}
               placeholder={

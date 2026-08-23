@@ -8,9 +8,27 @@ on:
 
 jobs:
   build:
-    name: Typecheck, Grounding Eval & Build
+    name: Frontend Quality & Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: friday_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d friday_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_ci
 
     steps:
       - uses: actions/checkout@v4
@@ -35,12 +53,25 @@ jobs:
       - name: Generate Prisma client
         working-directory: app
         run: npx prisma generate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder' }}
+
+      - name: Validate database migrations
+        working-directory: app
+        run: npx prisma migrate deploy
+
+      - name: Verify migrated schema parity
+        working-directory: app
+        run: >-
+          npx prisma migrate diff --exit-code
+          --from-config-datasource
+          --to-schema=prisma/schema.prisma
 
       - name: TypeScript check
         working-directory: app
         run: npx tsc --noEmit
+
+      - name: Lint
+        working-directory: app
+        run: npm run lint
 
       - name: Grounding evaluation
         run: pnpm eval:grounding
@@ -49,11 +80,42 @@ jobs:
         working-directory: app
         run: npm run test:ai
 
+      - name: Guest isolation tests
+        working-directory: app
+        run: npm run test:guests
+
+      - name: Attachment contract tests
+        working-directory: app
+        run: npm run test:attachments
+
+      - name: Release hygiene tests
+        working-directory: app
+        run: npm run test:release-hygiene
+
+      - name: WorkItem compatibility tests
+        working-directory: app
+        run: npm run test:work-items
+
+      - name: Dashboard domain tests
+        working-directory: app
+        run: npm run test:dashboard
+
+      - name: Project editing contract tests
+        working-directory: app
+        run: npm run test:projects
+
+      - name: Work grouping tests
+        working-directory: app
+        run: npm run test:work-grouping
+
+      - name: Production dependency audit
+        working-directory: app
+        run: npm run audit:production
+
       - name: Build
         working-directory: app
         run: npm run build
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/ci' }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'ci-secret-placeholder' }}
           NEXTAUTH_URL: http://localhost:3000
           NEXT_PUBLIC_API_URL: ''

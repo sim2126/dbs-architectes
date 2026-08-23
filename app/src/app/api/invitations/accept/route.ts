@@ -19,6 +19,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/platform/db";
 import { hashToken } from "@/platform/auth/tokens";
 import { clientIp, rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
+import { safeInvitationRole } from "@/features/users/domain/guests";
 
 async function findValidInvitation(rawToken: string) {
   const tokenHash = hashToken(rawToken);
@@ -31,6 +32,7 @@ async function findValidInvitation(rawToken: string) {
       isExternal: true,
       status: true,
       expiresAt: true,
+      invitedBy: true,
       inviter: { select: { name: true } },
     },
   });
@@ -62,7 +64,8 @@ export async function GET(request: NextRequest) {
 
   return Response.json({
     email: invitation.email,
-    role: invitation.role,
+    role: safeInvitationRole(invitation.role, invitation.isExternal),
+    isExternal: invitation.isExternal,
     inviterName: invitation.inviter?.name ?? null,
     expiresAt: invitation.expiresAt.toISOString(),
   });
@@ -130,7 +133,7 @@ export async function POST(request: NextRequest) {
         name,
         initials,
         password: hashed,
-        role: invitation.role,
+        role: safeInvitationRole(invitation.role, invitation.isExternal),
         // Carried from the invitation rather than re-derived from the email
         // domain. The admin's decision at invite time is the source of
         // truth; re-deriving here could silently reclassify someone whose
@@ -150,6 +153,25 @@ export async function POST(request: NextRequest) {
         acceptedUserId: created.id,
       },
     });
+    if (invitation.isExternal) {
+      // A guest account is conversation-scoped. Give it one explicit,
+      // useful entry point with the inviter instead of allowing the first
+      // sign-in to land on an empty Chat screen.
+      const participants = [invitation.invitedBy, created.id].sort();
+      await tx.channel.create({
+        data: {
+          name: `dm-${participants.join("-")}`,
+          type: "direct",
+          createdBy: invitation.invitedBy,
+          members: {
+            create: [
+              { userId: invitation.invitedBy, role: "owner" },
+              { userId: created.id, role: "member" },
+            ],
+          },
+        },
+      });
+    }
     return created;
   });
 

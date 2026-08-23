@@ -18,7 +18,9 @@ import {
   SelectValue,
 } from "@/ui/components/select";
 import { showToast } from "@/ui/components/toast";
+import { GuestBadge } from "@/ui/components/guest-badge";
 import { cn } from "@/ui/utils";
+import { domainOf, isExternalAddress } from "../domain/guests";
 
 const INVITABLE_ROLES = ["admin", "director", "manager", "employee", "intern"] as const;
 type InvitableRole = (typeof INVITABLE_ROLES)[number];
@@ -35,6 +37,7 @@ interface Invitation {
   id: string;
   email: string;
   role: string;
+  isExternal: boolean;
   status: "pending" | "accepted" | "revoked" | "expired";
   expiresAt: string;
   createdAt: string;
@@ -136,8 +139,9 @@ export function PendingInvitations() {
               )}
               style={{ gridTemplateColumns: "2fr 1.1fr 1.4fr 1fr 1.2fr" }}
             >
-              <span className="font-mono text-[11.5px] text-friday-fg truncate">
-                {invitation.email}
+              <span className="font-mono text-[11.5px] text-friday-fg truncate inline-flex items-center gap-2">
+                <span className="truncate">{invitation.email}</span>
+                {invitation.isExternal && <GuestBadge />}
               </span>
               <span className="text-friday-fg-muted">
                 {ROLE_LABEL[invitation.role as InvitableRole] ?? invitation.role}
@@ -197,6 +201,7 @@ export function InviteUserDialog({
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InvitableRole>("employee");
+  const [markedExternal, setMarkedExternal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -204,20 +209,29 @@ export function InviteUserDialog({
     if (!open) return;
     setEmail("");
     setRole("employee");
+    setMarkedExternal(false);
     setError(null);
   }, [open]);
+
+  const normalisedEmail = email.trim().toLowerCase();
+  const addressForcesExternal =
+    domainOf(normalisedEmail) !== null && isExternalAddress(normalisedEmail);
+  const willBeGuest = markedExternal || addressForcesExternal;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email || submitting) return;
     setSubmitting(true);
     setError(null);
-    const normalisedEmail = email.trim().toLowerCase();
     try {
       const response = await fetch("/api/invitations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalisedEmail, role }),
+        body: JSON.stringify({
+          email: normalisedEmail,
+          role: willBeGuest ? "employee" : role,
+          isExternal: willBeGuest,
+        }),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -263,9 +277,31 @@ export function InviteUserDialog({
               required
             />
           </div>
+          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={willBeGuest}
+              disabled={addressForcesExternal}
+              onChange={(event) => setMarkedExternal(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span>
+              Guest — outside the practice. Guests can only see conversations
+              they are explicitly invited to.
+            </span>
+          </label>
+          {addressForcesExternal && (
+            <p className="text-xs text-muted-foreground">
+              Addresses outside dbsarc.com are always invited as guests.
+            </p>
+          )}
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <Select value={role} onValueChange={(value) => setRole(value as InvitableRole)}>
+            <Select
+              value={willBeGuest ? "employee" : role}
+              disabled={willBeGuest}
+              onValueChange={(value) => setRole(value as InvitableRole)}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {INVITABLE_ROLES.map((value) => (
@@ -274,7 +310,9 @@ export function InviteUserDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Admins manage users and workspace settings. Directors and managers can run projects firm-wide. Members and interns are project-scoped.
+              {willBeGuest
+                ? "Guest access is conversation-only; staff roles and project access do not apply."
+                : "Admins manage users and workspace settings. Directors and managers can run projects firm-wide. Members and interns are project-scoped."}
             </p>
           </div>
           {error && <p className="text-xs text-destructive">{error}</p>}

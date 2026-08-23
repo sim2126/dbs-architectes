@@ -5,9 +5,11 @@ import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import bcrypt from "bcryptjs";
 import ws from "ws";
+import { assertSafeDemoSeedTarget } from "./seed-safety";
 
+const seedTarget = assertSafeDemoSeedTarget();
 neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const adapter = new PrismaNeon({ connectionString: seedTarget.connectionString });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {

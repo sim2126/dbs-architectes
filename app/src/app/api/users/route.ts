@@ -3,6 +3,7 @@ import { auth } from "@/platform/auth";
 import { prisma } from "@/platform/db";
 import { isAdmin, defaultPermissionsForRole } from "@/platform/authz/permissions";
 import bcrypt from "bcryptjs";
+import { isExternalAddress } from "@/features/users/domain/guests";
 
 export async function GET() {
   const session = await auth();
@@ -48,6 +49,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { name, email, password, role, employmentStatus, departmentId, managerId, defaultCountry, defaultRegion } = body;
 
+  if (typeof email !== "string" || isExternalAddress(email)) {
+    return Response.json(
+      { error: "People outside dbsarc.com must be invited as guests" },
+      { status: 400 },
+    );
+  }
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return Response.json({ error: "Email already exists" }, { status: 400 });
 
@@ -79,7 +87,7 @@ export async function POST(request: NextRequest) {
     },
     select: {
       id: true, name: true, email: true, role: true, initials: true,
-      isActive: true, canCreate: true, canEdit: true, canDelete: true,
+      isActive: true, isExternal: true, canCreate: true, canEdit: true, canDelete: true,
       employmentStatus: true, defaultCountry: true, defaultRegion: true,
       departmentId: true, createdAt: true,
     },

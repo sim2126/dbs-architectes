@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Video, Phone, PhoneOff, Users, Clock, Plus, Mic, MicOff,
-  VideoOff, ScreenShare, Maximize2, X, Loader2, PhoneIncoming,
-  Calendar, Building2, ExternalLink,
+  Video, Phone, PhoneOff, Users, Clock, Plus,
+  ScreenShare, Maximize2, X, Loader2, PhoneIncoming,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Button } from "@/ui/components/button";
@@ -41,7 +40,6 @@ interface CallRecord {
 export default function CallsPage() {
   const { data: session } = useSession();
   const [calls, setCalls] = useState<CallRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeCall, setActiveCall] = useState<(CallRecord & { token?: string }) | null>(null);
   const [showNewCall, setShowNewCall] = useState(false);
   const [callTitle, setCallTitle] = useState("");
@@ -50,20 +48,36 @@ export default function CallsPage() {
   const [incomingCall, setIncomingCall] = useState<CallRecord | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  const fetchCalls = useCallback(async (incomingId?: string) => {
+    const res = await fetch("/api/calls");
+    if (!res.ok) {
+      return;
+    }
+    const data = (await res.json()) as CallRecord[];
+    setCalls(data);
+
+    if (incomingId) {
+      // Pusher carries only an id because presence-workspace is intentionally
+      // broad. The authorised list decides whether this caller may see the
+      // call and receive its incoming-call prompt.
+      const incoming = data.find((call) => call.id === incomingId);
+      if (incoming && incoming.startedBy !== session?.user?.id) {
+        setIncomingCall(incoming);
+        setTimeout(() => setIncomingCall(null), 30000);
+      }
+    }
+  }, [session?.user?.id]);
+
   useEffect(() => {
-    fetchCalls();
-  }, []);
+    void fetchCalls();
+  }, [fetchCalls]);
 
   useEffect(() => {
     const pusher = getPusherClient();
     const ch = pusher.subscribe("presence-workspace");
 
-    ch.bind(PUSHER_EVENTS.CALL_STARTED, (call: CallRecord) => {
-      setCalls((prev) => [call, ...prev]);
-      if (call.startedBy !== session?.user?.id) {
-        setIncomingCall(call);
-        setTimeout(() => setIncomingCall(null), 30000);
-      }
+    ch.bind(PUSHER_EVENTS.CALL_STARTED, ({ id }: { id: string }) => {
+      void fetchCalls(id);
     });
 
     ch.bind(PUSHER_EVENTS.CALL_ENDED, ({ id }: { id: string }) => {
@@ -72,14 +86,7 @@ export default function CallsPage() {
     });
 
     return () => pusher.unsubscribe("presence-workspace");
-  }, [session, activeCall]);
-
-  const fetchCalls = async () => {
-    const res = await fetch("/api/calls");
-    const data = await res.json();
-    setCalls(data);
-    setLoading(false);
-  };
+  }, [activeCall?.id, fetchCalls]);
 
   const startCall = async () => {
     setCreating(true);

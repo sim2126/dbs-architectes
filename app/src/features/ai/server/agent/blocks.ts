@@ -335,3 +335,39 @@ export function parseAgentResponse(jsonText: string): AgentResponse | null {
     return null;
   }
 }
+
+/** Plain-text memory/copy fallback derived from the validated block envelope. */
+export function blocksToPlainText(blocks: readonly Block[]): string {
+  return blocks.map((block) => {
+    switch (block.type) {
+      case "prose":
+      case "callout":
+        return block.text;
+      case "stat_cards":
+        return block.stats
+          .map((stat) => `${stat.label}: ${stat.value}${stat.sublabel ? ` (${stat.sublabel})` : ""}`)
+          .join("\n");
+      case "project_list":
+        return block.projects
+          .map((project) =>
+            `${project.code} — ${project.title}: ${project.phase}, ${project.workStatus}` +
+            (project.note ? `; ${project.note}` : ""),
+          )
+          .join("\n");
+      case "people":
+        return block.people
+          .map((person) => [person.name, person.role, person.caption].filter(Boolean).join(" — "))
+          .join("\n");
+      case "agenda":
+        return block.items
+          .map((item) => `${item.date}: ${item.title} (${item.status})`)
+          .join("\n");
+      case "table":
+        return [
+          block.caption,
+          block.columns.join(" | "),
+          ...block.rows.map((row) => row.join(" | ")),
+        ].filter(Boolean).join("\n");
+    }
+  }).filter(Boolean).join("\n\n");
+}

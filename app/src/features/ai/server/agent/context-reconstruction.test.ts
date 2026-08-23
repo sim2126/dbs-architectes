@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type OpenAI from "openai";
-import { filterHistoryForGrounding, sanitiseLegacyHistory } from "./context-reconstruction";
+import {
+  boundHistory,
+  filterHistoryForGrounding,
+  sanitiseLegacyHistory,
+} from "./context-reconstruction";
 import type { ResolvedContext } from "@/platform/ai/grounding";
 
 test("legacy history drops client-controlled system and tool messages", () => {
@@ -63,5 +67,47 @@ test("history drops a tool round-trip after project access is revoked", () => {
   assert.deepEqual(filterHistoryForGrounding(history, resolved), [
     { role: "user", content: "Show the project" },
     { role: "user", content: "What should we do next?" },
+  ]);
+});
+
+test("history keeps only the newest complete turns within its budgets", () => {
+  const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "user", content: "first question" },
+    { role: "assistant", content: "first answer" },
+    { role: "user", content: "second question" },
+    { role: "assistant", content: "second answer" },
+    { role: "user", content: "latest question" },
+    { role: "assistant", content: "latest answer" },
+  ];
+
+  assert.deepEqual(boundHistory(history, { maxTurns: 2, maxChars: 10_000 }), [
+    { role: "user", content: "second question" },
+    { role: "assistant", content: "second answer" },
+    { role: "user", content: "latest question" },
+    { role: "assistant", content: "latest answer" },
+  ]);
+});
+
+test("history omits an oversized turn instead of splitting it", () => {
+  const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "user", content: "small" },
+    { role: "assistant", content: "also small" },
+    { role: "user", content: "x".repeat(500) },
+    { role: "assistant", content: "latest" },
+  ];
+
+  assert.deepEqual(boundHistory(history, { maxTurns: 20, maxChars: 100 }), []);
+});
+
+test("history drops a leading partial turn from a bounded database query", () => {
+  const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "assistant", content: "orphaned answer" },
+    { role: "user", content: "complete question" },
+    { role: "assistant", content: "complete answer" },
+  ];
+
+  assert.deepEqual(boundHistory(history), [
+    { role: "user", content: "complete question" },
+    { role: "assistant", content: "complete answer" },
   ]);
 });

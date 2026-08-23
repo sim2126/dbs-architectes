@@ -1,4 +1,5 @@
 import { auth } from "@/platform/auth";
+import { redirect } from "next/navigation";
 import { prisma } from "@/platform/db";
 import { AgendaClient } from "@/features/agenda";
 import {
@@ -8,7 +9,9 @@ import {
 } from "@/features/work-items";
 
 export default async function AgendaPage() {
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
+  if (!session) redirect("/login");
+  if (session.user.isExternal) redirect("/dashboard/chat");
 
   const [agendaItems, projects] = await Promise.all([
     prisma.workItem.findMany({
@@ -45,7 +48,7 @@ export default async function AgendaPage() {
         };
       })}
       projects={projects}
-      currentUserId={session!.user.id}
+      currentUserId={session.user.id}
     />
   );
 }

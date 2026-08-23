@@ -71,6 +71,7 @@ interface SidebarProps {
     email?: string | null;
     image?: string | null;
     role?: string;
+    isExternal?: boolean;
   };
 }
 
@@ -104,6 +105,7 @@ export function Sidebar({ user }: SidebarProps) {
   }, [collapsed, setCollapsed]);
 
   const isAdmin = user?.role === "super_admin" || user?.role === "admin";
+  const isExternal = user?.isExternal === true;
   const isManager =
     isAdmin ||
     user?.role === "director" ||
@@ -118,7 +120,7 @@ export function Sidebar({ user }: SidebarProps) {
 
   return (
     <>
-      <CommandPalette />
+      {!isExternal && <CommandPalette />}
       {/*
        * Wrapper is relative so the collapse button can sit exactly on the
        * sidebar/content boundary without being clipped by overflow:hidden.
@@ -148,7 +150,7 @@ export function Sidebar({ user }: SidebarProps) {
           {/* ── Logo — height matches the top header (h-14 = 56px) ── */}
           <div className="flex items-center h-14 px-4 border-b border-border shrink-0">
             <Link
-              href="/dashboard"
+              href={isExternal ? "/dashboard/chat" : "/dashboard"}
               aria-label="DBS Friday.com"
               className="flex items-baseline gap-2 min-w-0 group"
             >
@@ -200,6 +202,7 @@ export function Sidebar({ user }: SidebarProps) {
             {/* Main items */}
             <div className="space-y-0.5">
               {navItems.map((item) => {
+                if (isExternal) return null;
                 const isActive = item.href === "/dashboard"
                   ? pathname === "/dashboard"
                   : pathname === item.href || pathname.startsWith(item.href + "/");
@@ -235,7 +238,7 @@ export function Sidebar({ user }: SidebarProps) {
             </div>
 
             {/* Starred — auto-hidden when user has nothing favourited */}
-            <StarredSidebarSection collapsed={collapsed} />
+            {!isExternal && <StarredSidebarSection collapsed={collapsed} />}
 
             {/* Collaboration */}
             <div>
@@ -254,6 +257,7 @@ export function Sidebar({ user }: SidebarProps) {
               {collapsed && <div className="my-1 mx-2 h-px bg-border/60" />}
               <div className="space-y-0.5">
                 {collaborationItems.map((item) => {
+                  if (isExternal && item.href !== "/dashboard/chat") return null;
                   if ("adminOnly" in item && item.adminOnly && !isAdmin) return null;
                   if ("managerOnly" in item && item.managerOnly && !isManager) return null;
                   const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -290,7 +294,7 @@ export function Sidebar({ user }: SidebarProps) {
             </div>
 
             {/* AI Workflow */}
-            <div>
+            {!isExternal && <div>
               <AnimatePresence>
                 {!collapsed && (
                   <motion.p
@@ -337,7 +341,7 @@ export function Sidebar({ user }: SidebarProps) {
                   );
                 })}
               </div>
-            </div>
+            </div>}
           </nav>
 
           {/* ── Account ── */}

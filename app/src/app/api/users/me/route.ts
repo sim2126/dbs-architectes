@@ -10,7 +10,7 @@ import { prisma } from "@/platform/db";
 const SELF_EDITABLE = ["name", "phone", "defaultCountry", "image"] as const;
 
 export async function GET() {
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const user = await prisma.user.findUnique({
@@ -33,7 +33,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await auth();
+  const session = await auth({ allowExternal: true });
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json()) as Record<string, unknown>;
