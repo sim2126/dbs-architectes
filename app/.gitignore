@@ -24,12 +24,6 @@
 .DS_Store
 *.pem
 
-# Per-developer working-agreement notes. Loaded by Claude at the
-# workspace level, not part of the shipped codebase.
-CLAUDE.md
-AGENTS.md
-MEMORY.md
-
 # debug
 npm-debug.log*
 yarn-debug.log*

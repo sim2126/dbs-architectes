@@ -41,13 +41,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-.claude/
-
-# Per-developer working-agreement notes loaded by Claude at the
-# workspace level. Each engineer keeps a local copy.
-CLAUDE.md
-AGENTS.md
-MEMORY.md
 
 # Logs
 *.log
