@@ -10,5 +10,10 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Needed by `prisma migrate diff --from-migrations`, which replays the
+    // migration directory into a throwaway database. Undefined unless set, so
+    // ordinary commands are unaffected. Without it the schema-parity check in
+    // CI can only be reproduced by pushing.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });
