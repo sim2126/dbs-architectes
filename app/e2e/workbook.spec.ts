@@ -178,6 +178,46 @@ test.describe("workbook board", () => {
     await page.request.delete(`/api/projects/${created.id}`);
   });
 
+  test("a change made elsewhere appears without reloading", async ({ page, browser }) => {
+    // The board is shared: several people have it open at once. This is the
+    // behaviour that stops one of them overwriting a change they cannot see.
+    const target = (await projects(page)).find((p) => p.workStatus !== "stuck")!;
+    await board(page);
+    const cell = page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}:`) });
+    await cell.scrollIntoViewIfNeeded();
+    await expect(cell).toBeVisible();
+
+    // Wait until the board says it is live. Between mount and subscription
+    // Pusher delivers nothing, so changing the row before then proves only
+    // that the event was dropped.
+    await expect(page.getByLabel("Live updates on")).toBeVisible({ timeout: 20_000 });
+
+    // A second person, in their own browser, moves it.
+    const other = await browser.newContext({ storageState: stateFor("pm") });
+    const res = await other.request.patch(`/api/projects/${target.id}`, {
+      data: { workStatus: "stuck" },
+    });
+    expect(res.ok(), await res.text()).toBeTruthy();
+    await other.close();
+
+    // The first person's board catches up on its own.
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}: ${STATUS_LABEL.stuck}`) }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    await page.request.patch(`/api/projects/${target.id}`, {
+      data: { workStatus: target.workStatus },
+    });
+  });
+
+  test("a row shows how much has been said about it", async ({ page }) => {
+    await board(page);
+    // Rows with a conversation carry the count in the button's own name, so
+    // it is available to a screen reader and not only as a badge.
+    const withUpdates = page.getByRole("button", { name: /^Updates on .+, \d+ so far$/ });
+    await expect(withUpdates.first()).toBeVisible();
+  });
+
   test("a row opens the panel where its conversation lives", async ({ page }) => {
     const target = (await projects(page))[0];
     await board(page);

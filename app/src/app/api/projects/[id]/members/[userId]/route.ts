@@ -14,6 +14,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 
 const VALID_ROLES = ["lead", "editor", "reviewer", "viewer"] as const;
 type AssignmentRole = (typeof VALID_ROLES)[number];
@@ -71,6 +72,8 @@ export async function PATCH(
     },
   });
 
+  await announceProjectChange(id);
+
   return Response.json({ ok: true, role: body.role });
 }
 
@@ -112,6 +115,8 @@ export async function DELETE(
       userId: actorUserId,
     },
   });
+
+  await announceProjectChange(id);
 
   return Response.json({ ok: true });
 }

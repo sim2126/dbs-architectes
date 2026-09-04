@@ -43,6 +43,8 @@ import {
   getStatusOnColor,
 } from "@/ui/tokens";
 import { translatePhase, useT } from "@/i18n/translations";
+import { getPusherClient } from "@/platform/integrations/pusher-client";
+import { presenceChannelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { ProjectThreadPanel } from "./project-thread-panel";
 
 // ── Wire shape ───────────────────────────────────────────────────────────────
@@ -66,6 +68,8 @@ export type BoardProject = {
   billing: string | null;
   notes: string | null;
   updatedAt: string;
+  /** Messages in this project's conversation, for the row badge. */
+  updateCount?: number;
   assignments: Assignment[];
   capabilities?: {
     read: boolean;
@@ -104,6 +108,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const [groupByKey, setGroupByKey] = useState<"phase" | "workStatus">("phase");
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [canAdd, setCanAdd] = useState(false);
+  const [liveUpdates, setLiveUpdates] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +126,63 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  /*
+   * Several people at DBS have this board open at once. Without this, one of
+   * them edits a row the others cannot see has moved, and the next person to
+   * type into it silently overwrites the change.
+   *
+   * What arrives is an id, not a row: a socket subscribed a moment ago may
+   * since have lost access, so the board re-reads through the API and gets
+   * only what this caller may see. Reloads are coalesced, because a bulk
+   * action on twenty rows announces twenty times.
+   */
+  useEffect(() => {
+    const channelName = presenceChannelName();
+    let client: ReturnType<typeof getPusherClient> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      client = getPusherClient();
+      const channel = client.subscribe(channelName);
+      channel.bind(PUSHER_EVENTS.PROJECT_CHANGED, () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => void load(), 400);
+      });
+      /*
+       * Whether the board is actually live is worth saying out loud. Between
+       * mount and subscription there is a second in which a change made
+       * elsewhere is simply not delivered, and a dropped connection can last
+       * much longer — a board that looks current but is not is worse than one
+       * that admits it.
+       */
+      channel.bind("pusher:subscription_succeeded", () => setLiveUpdates(true));
+      channel.bind("pusher:subscription_error", () => setLiveUpdates(false));
+      client.connection.bind("state_change", ({ current }: { current: string }) => {
+        if (current !== "connected") setLiveUpdates(false);
+      });
+    } catch (error) {
+      // Pusher unconfigured: the board still works, it just is not live.
+      console.error("[board] live updates unavailable", error);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+      client?.unsubscribe(channelName);
+    };
+  }, [load]);
+
+  /*
+   * Come back to the tab and the board re-reads. Events that arrived while
+   * the socket was down, or before it had subscribed, are gone for good, so
+   * something has to close that gap; returning to the tab is the moment a
+   * person is about to trust what they are looking at.
+   */
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
   useEffect(() => {
@@ -228,6 +290,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           notes: project.notes,
           updatedAt: relativeDay(project.updatedAt),
         },
+        updateCount: project.updateCount,
         people: project.assignments.map((a) => ({
           id: a.userId,
           name: a.user?.name ?? null,
@@ -518,6 +581,19 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
 
         <span className="flex-1" />
 
+        <span
+          className="flex items-center gap-1.5 text-[11px] text-friday-fg-subtle"
+          aria-label={liveUpdates ? "Live updates on" : "Live updates unavailable"}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              liveUpdates ? "bg-friday-success-fg" : "bg-friday-fg-subtle",
+            )}
+          />
+          {liveUpdates ? "Live" : "Not live"}
+        </span>
         <span className="text-[11px] text-friday-fg-subtle">
           {filtered.length} of {projects.length} projects
         </span>

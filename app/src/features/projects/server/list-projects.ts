@@ -68,10 +68,22 @@ async function fetchProjectsPage(input: ListProjectsInput) {
       assignments: {
         include: { user: { select: { id: true, name: true, initials: true } } },
       },
+      // How much has been said about this project. The board shows it on the
+      // row so you can see where the conversation is, which is half the
+      // reason to look at a board in the morning. Counted through the
+      // relation rather than per row, and deleted messages do not count.
+      channels: {
+        select: { _count: { select: { messages: { where: { deletedAt: null } } } } },
+      },
     },
   });
 
-  return { projects };
+  return {
+    projects: projects.map(({ channels, ...project }) => ({
+      ...project,
+      updateCount: channels.reduce((sum, channel) => sum + channel._count.messages, 0),
+    })),
+  };
 }
 
 export async function listProjects(input: ListProjectsInput): Promise<ListProjectsOutput> {

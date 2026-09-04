@@ -7,6 +7,7 @@ import {
   requirePermission,
 } from "@/platform/authz";
 import { updateProject } from "@/features/projects/server/update-project";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 import { deleteProject } from "@/features/projects/server/delete-project";
 import { scheduledWorkItemWhere, toLegacyAgendaItem } from "@/features/work-items";
 
@@ -83,6 +84,7 @@ export async function PATCH(
     actorUserId: subjectUserId,
     data: body,
   });
+  await announceProjectChange(id);
   return Response.json(project);
 }
 
@@ -104,5 +106,6 @@ export async function DELETE(
   }
 
   await deleteProject(id);
+  await announceProjectChange(id);
   return Response.json({ success: true });
 }

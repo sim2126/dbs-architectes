@@ -16,6 +16,13 @@ export const PUSHER_EVENTS = {
   REACTION_REMOVE: "reaction-remove",
   TYPING_START: "client-typing-start",
   TYPING_STOP: "client-typing-stop",
+  /*
+   * A project row changed: edited, created, deleted, or its team
+   * altered. Carries the id only. Like the chat events, this is an
+   * invalidation and not a data channel — the receiver re-reads through
+   * the API, which checks what that particular caller may see.
+   */
+  PROJECT_CHANGED: "project-changed",
   CALL_STARTED: "call-started",
   CALL_ENDED: "call-ended",
 } as const;

@@ -9,6 +9,7 @@ import {
 import { projectCapabilities } from "@/features/projects/domain/project-capabilities";
 import { listProjects } from "@/features/projects/server/list-projects";
 import { createProject } from "@/features/projects/server/create-project";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 
 function boundedLimit(value: string | null, fallback = 100, max = 500) {
   const parsed = Number(value);
@@ -67,5 +68,6 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const project = await createProject({ actorUserId: subjectUserId, data: body });
+  await announceProjectChange(project.id);
   return Response.json(project, { status: 201 });
 }
