@@ -1,31 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { test, expect } from "@playwright/test";
+import { expectAccessible } from "./a11y";
 import { stateFor } from "./roles";
 
 /**
- * Primary user journeys from DBS_Features.docx, each with a WCAG 2.1 AA scan.
- *
- * Two assertions per page: it rendered what a user came for, and axe reports
- * no serious or critical violations against the wcag2a/wcag2aa/wcag21aa tag
- * set. Moderate and minor findings are reported but do not fail the run yet;
- * they are tracked in the accessibility backlog and the bar tightens once
- * the current count is zero.
+ * Primary user journeys from DBS_Features.docx, each ending in a WCAG 2.1 AA
+ * scan. See ./a11y.ts for what the scan asserts and what it only records.
  */
-async function expectAccessible(page: Page, label: string) {
-  // Let entrance transitions finish. The sidebar animates labels in from
-  // opacity 0 and axe evaluated a mid-transition frame as invisible text.
-  await page.evaluate(() =>
-    Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))),
-  );
-  await page.waitForTimeout(150);
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-    .analyze();
-  const blocking = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  const summary = results.violations.map((v) => `${v.impact}: ${v.id} ×${v.nodes.length}`).join("\n  ");
-  test.info().annotations.push({ type: "a11y", description: `${label}: ${results.violations.length} violations\n  ${summary}` });
-  expect(blocking, `${label} has serious/critical WCAG violations:\n  ${summary}`).toEqual([]);
-}
 
 test.describe("unauthenticated", () => {
   test("sign-in page renders the demo door and is accessible", async ({ page }) => {

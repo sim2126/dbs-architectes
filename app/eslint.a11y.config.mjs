@@ -6,7 +6,7 @@
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import tsParser from "@typescript-eslint/parser";
 
-export default [
+const config = [
   {
     files: ["**/*.tsx"],
     ignores: ["**/.next/**", "**/node_modules/**"],
@@ -18,3 +18,5 @@ export default [
     rules: jsxA11y.flatConfigs.recommended.rules,
   },
 ];
+
+export default config;

@@ -16,6 +16,7 @@ import {
   permissionResponse,
   requirePermission,
 } from "@/platform/authz";
+import { notifyStatusPosted } from "@/features/notifications/server/producers";
 
 const VALID_HEALTH = ["on_track", "at_risk", "off_track"] as const;
 type Health = (typeof VALID_HEALTH)[number];
@@ -189,6 +190,20 @@ export async function POST(
       userId: actorUserId,
     },
   });
+
+  // Tell the project team. The update and its activity entry are saved; a
+  // notification problem must not turn that into a 500 the client retries.
+  try {
+    await notifyStatusPosted({
+      projectId: id,
+      statusUpdateId: created.id,
+      actorId: actorUserId,
+      health: body.health,
+      summary,
+    });
+  } catch (error) {
+    console.warn("[status-updates] notifications failed", error);
+  }
 
   type CreatedRow = {
     id: string;

@@ -3,6 +3,7 @@ import { prisma } from "@/platform/db";
 import { authorize, loadSubject } from "@/platform/authz";
 import { resolveChannelAccess } from "@/features/chat/server/channel-access";
 import { pusherServer } from "@/platform/integrations/pusher";
+import { USER_CHANNEL_PREFIX, userChannelName } from "@/platform/integrations/pusher-channels";
 
 // Channels open to all authenticated users:
 const OPEN_PRIVATE_CHANNELS = new Set(["private-global-notifications"]);
@@ -48,6 +49,16 @@ export async function POST(request: NextRequest) {
   // ── Open private channels (browser notifications, etc.) ──────────────────
   if (OPEN_PRIVATE_CHANNELS.has(channel)) {
     if (subject.isExternal) return new Response("Forbidden", { status: 403 });
+    return Response.json(pusherServer.authorizeChannel(socketId, channel));
+  }
+
+  // ── Personal channel: notifications addressed to this user alone ─────────
+  // External users may be mentioned like anyone else, so no isExternal gate;
+  // the only rule is that the id in the name is the caller's own.
+  if (channel.startsWith(USER_CHANNEL_PREFIX)) {
+    if (channel !== userChannelName(subject.userId)) {
+      return new Response("Forbidden", { status: 403 });
+    }
     return Response.json(pusherServer.authorizeChannel(socketId, channel));
   }
 

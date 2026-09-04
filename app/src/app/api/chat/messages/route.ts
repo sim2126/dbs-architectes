@@ -7,6 +7,7 @@ import {
   resolveChannelAccess,
 } from "@/features/chat/server/channel-access";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
+import { notifyMessagePosted } from "@/features/notifications/server/producers";
 import {
   fridayFileUrl,
   UploadReceiptError,
@@ -329,10 +330,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let parentAuthorId: string | null = null;
   if (parentId) {
     const parent = await prisma.message.findUnique({
       where: { id: parentId },
-      select: { channelId: true, parentId: true, deletedAt: true },
+      select: { channelId: true, parentId: true, deletedAt: true, userId: true },
     });
     if (
       !parent ||
@@ -342,6 +344,7 @@ export async function POST(request: NextRequest) {
     ) {
       return Response.json({ error: "Thread not found in this channel" }, { status: 400 });
     }
+    parentAuthorId = parent.userId;
   }
 
   // Derive `type` server-side from the attachment shape so the client
@@ -383,6 +386,21 @@ export async function POST(request: NextRequest) {
     // The database write is authoritative. Returning 500 here invites the
     // client to retry a message that was already saved, creating duplicates.
     console.warn("[chat] real-time new-message delivery failed", error);
+  }
+
+  // Tell the people this message addresses: anyone mentioned, the author of
+  // the thread replied to, and in a direct conversation the other members.
+  // The saved message is the record; this must never fail the post.
+  try {
+    await notifyMessagePosted({
+      messageId: message.id,
+      channelId,
+      content: trimmedContent,
+      actorId: subject.userId,
+      parentAuthorId,
+    });
+  } catch (error) {
+    console.warn("[chat] notifications failed", error);
   }
 
   return Response.json({ ...message, replyCount: 0 });

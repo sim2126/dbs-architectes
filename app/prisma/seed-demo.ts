@@ -225,6 +225,25 @@ async function seedDatabase(prisma: Prisma.TransactionClient) {
   const byRole = (role: string) => allUsers.filter((u) => u.role === role);
   const assignable = allUsers.filter((u) => u.role !== "viewer");
 
+  // Region access: one whole-country row per person, for their own country.
+  // The region rule denies any country-scoped project to a non-director with
+  // no row, and every seeded project is country-scoped, so without these a
+  // project manager could list projects but open none of them. Managers and
+  // above are recorded as "manage"; policy does not yet consult the level.
+  console.log("Seeding region access…");
+  await prisma.userRegionAccess.createMany({
+    data: allUsers
+      .filter((u) => u.defaultCountry)
+      .map((u) => ({
+        userId: u.id,
+        country: u.defaultCountry as string,
+        operatingRegion: null,
+        accessLevel: ["super_admin", "admin", "director", "manager", "project_manager"].includes(u.role)
+          ? "manage"
+          : "view",
+      })),
+  });
+
   console.log("Seeding projects…");
   const yearCounters = new Map<number, number>();
   const projects = [];
