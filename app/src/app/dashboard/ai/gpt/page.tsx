@@ -705,6 +705,9 @@ function ChatHistorySidebar({
                     <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity relative">
                       <button
                         onClick={(e) => { e.stopPropagation(); setMenuId(menuId === s.id ? null : s.id); }}
+                        aria-label="Conversation options"
+                        aria-haspopup="menu"
+                        aria-expanded={menuId === s.id}
                         className="p-1 rounded-sm hover:bg-friday-surface-2 transition-colors"
                       >
                         <MoreHorizontal className="h-3 w-3 text-friday-fg-subtle" />
@@ -1590,6 +1593,7 @@ export default function DBSGPTPage() {
               className="flex-1 min-h-[52px] max-h-[140px] resize-none rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-foreground/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <Button
+              aria-label="Send message"
               onClick={() => sendMessage(input)}
               disabled={!input.trim() || loading || !aiStatus.enabled}
               size="icon"

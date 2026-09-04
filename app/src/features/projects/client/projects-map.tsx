@@ -10,7 +10,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/ui/utils";
-import { FRIDAY_TOKENS, getPhaseColor, resolveFridayColor } from "@/ui/tokens";
+import { FRIDAY_TOKENS, getPhaseColor, getPhaseOnColor, resolveFridayColor } from "@/ui/tokens";
 import { Project3DModal } from "@/features/projects/client/project-3d-modal";
 import { showToast } from "@/ui/components/toast";
 
@@ -334,7 +334,7 @@ export function ProjectsMapView({
             <RefreshCw className="w-3.5 h-3.5" />
             Try again
           </button>
-          <p className="mt-5 text-[10px] tracking-[0.2em] uppercase text-muted-foreground/60">
+          <p className="mt-5 text-[10px] tracking-[0.2em] uppercase text-friday-fg-subtle">
             DBS Architectes · Sion · Milano · Srinagar
           </p>
         </motion.div>
@@ -397,7 +397,7 @@ export function ProjectsMapView({
             </span>
           </div>
 
-          <p className="mt-6 text-[10px] tracking-[0.2em] uppercase text-muted-foreground/60">
+          <p className="mt-6 text-[10px] tracking-[0.2em] uppercase text-friday-fg-subtle">
             DBS Architectes · since 2014
           </p>
         </motion.div>
@@ -454,8 +454,8 @@ export function ProjectsMapView({
               </button>
               <div className="absolute bottom-2 left-3">
                 <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                  style={{ background: getPhaseColor(selected.phase) }}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: getPhaseColor(selected.phase), color: getPhaseOnColor(selected.phase) }}
                 >
                   {selected.phase}
                 </span>
@@ -475,13 +475,13 @@ export function ProjectsMapView({
                   <div className="min-w-0">
                     {selected.commune && <p className="text-xs text-muted-foreground">{selected.commune}</p>}
                     {selected.address && (
-                      <p className="text-[10px] text-muted-foreground/60 line-clamp-1">{selected.address}</p>
+                      <p className="text-[10px] text-friday-fg-subtle line-clamp-1">{selected.address}</p>
                     )}
                   </div>
                 </div>
               )}
               {selected.latitude != null && selected.longitude != null && (
-                <p className="text-[10px] font-mono text-muted-foreground/50 mt-1">
+                <p className="text-[10px] font-mono text-friday-fg-subtle mt-1">
                   {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
                 </p>
               )}
@@ -601,7 +601,7 @@ export function ProjectsMapView({
                   <span className="text-[11px] font-medium max-w-[110px] truncate">
                     {p.title.replace(p.code + " ", "")}
                   </span>
-                  {canEdit && <Navigation className="w-3 h-3 text-muted-foreground/40 shrink-0" />}
+                  {canEdit && <Navigation className="w-3 h-3 text-friday-fg-subtle shrink-0" />}
                 </button>
               );
             })}

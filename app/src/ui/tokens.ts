@@ -145,11 +145,28 @@ export const FRIDAY_TOKENS = {
   } as const,
 
   // Work status
+  /** Text colour that meets AA on each phase pill. Mirrors . */
+  phaseFg: {
+    "ETUDE/AP": "var(--phase-etude-ap-fg)",
+    "MAE": "var(--phase-mae-fg)",
+    "CHANTIER": "var(--phase-chantier-fg)",
+    "EXE/DG/DV/3D": "var(--phase-exe-fg)",
+    "TERMINATO": "var(--phase-terminato-fg)",
+    "STUCK": "var(--phase-stuck-fg)",
+    "CONCORSO": "var(--phase-concorso-fg)",
+  },
   status: {
     todo: "var(--status-todo)",
     doing: "var(--status-doing)",
     stuck: "var(--status-stuck)",
     completed: "var(--status-completed)",
+  } as const,
+  /** Text colour that meets AA on each status pill. Mirrors `status`. */
+  statusFg: {
+    todo: "var(--status-todo-fg)",
+    doing: "var(--status-doing-fg)",
+    stuck: "var(--status-stuck-fg)",
+    completed: "var(--status-completed-fg)",
   } as const,
 } as const;
 
@@ -199,6 +216,24 @@ export function getPhaseColor(phase: string | null | undefined): string {
 }
 
 /** Look up a work-status color by its DB name. */
+/**
+ * Text colour to paint on a phase pill. Always pair with getPhaseColor(); a
+ * fixed white would fail WCAG AA on the pale and warm phases.
+ */
+export function getPhaseOnColor(phase: string | null | undefined): string {
+  if (!phase) return "var(--friday-bg)";
+  const norm = phase.toUpperCase().split("/").map((p) => p.trim()).join("/");
+  const map = FRIDAY_TOKENS.phaseFg as Record<string, string>;
+  return map[norm] ?? "var(--friday-bg)";
+}
+
+/** Text colour to paint on a status pill. Always pair with getStatusColor(). */
+export function getStatusOnColor(status: string | null | undefined): string {
+  if (!status) return "var(--friday-bg)";
+  const map = FRIDAY_TOKENS.statusFg as Record<string, string>;
+  return map[status.toLowerCase()] ?? "var(--friday-bg)";
+}
+
 export function getStatusColor(status: string | null | undefined): string {
   if (!status) return "var(--friday-fg-subtle)";
   const map = FRIDAY_TOKENS.status as Record<string, string>;

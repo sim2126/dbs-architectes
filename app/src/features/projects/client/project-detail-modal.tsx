@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MessageSquare } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/components/dialog";
 import { Avatar, AvatarFallback } from "@/ui/components/avatar";
-import { getPhaseColor, getStatusColor } from "@/ui/tokens";
+import { getPhaseColor, getPhaseOnColor, getStatusColor, getStatusOnColor } from "@/ui/tokens";
 import { ProjectCellEditor } from "./project-cell-editor";
 import { PROJECT_COLUMNS } from "../domain/editable-columns";
 
@@ -93,14 +93,14 @@ export function ProjectDetailModal({
 
             <div className="flex items-center gap-2 mt-3.5">
               <span
-                className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium text-white"
-                style={{ background: getPhaseColor(project.phase) }}
+                className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+                style={{ background: getPhaseColor(project.phase), color: getPhaseOnColor(project.phase) }}
               >
                 {project.phase}
               </span>
               <span
-                className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium text-white"
-                style={{ background: getStatusColor(project.workStatus) }}
+                className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+                style={{ background: getStatusColor(project.workStatus), color: getStatusOnColor(project.workStatus) }}
               >
                 {project.workStatus}
               </span>

@@ -444,7 +444,7 @@ export default function IntegrationsPage() {
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
-            <Plug className="w-10 h-10 text-muted-foreground/20" />
+            <Plug className="w-10 h-10 text-friday-fg-subtle" />
             <p className="text-sm text-muted-foreground">{t("integrations.none")}</p>
           </div>
         ) : (

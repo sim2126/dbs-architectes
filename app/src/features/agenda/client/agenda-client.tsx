@@ -450,7 +450,7 @@ export function AgendaClient({ initialItems, projects }: AgendaClientProps) {
                             "p-1 rounded-md transition-colors shrink-0",
                             item.googleEventId
                               ? "text-green-500 hover:text-red-400"
-                              : "text-muted-foreground/40 hover:text-blue-500"
+                              : "text-friday-fg-subtle hover:text-blue-500"
                           )}
                         >
                           {isSyncing ? (

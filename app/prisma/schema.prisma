@@ -74,6 +74,9 @@ model User {
   aiAttachments    AiChatAttachment[]
   aiRequestEvents  AiRequestEvent[]
   aiAgentLease     AiAgentLease?
+  notifications          Notification[]           @relation("NotificationRecipient")
+  notificationsActed     Notification[]           @relation("NotificationActor")
+  notificationPreferences NotificationPreference[]
   tasks            Task[]
   invitationsIssued Invitation[]      @relation("InvitationInviter")
   passwordResets    PasswordReset[]
@@ -166,6 +169,7 @@ model Project {
   @@index([phase])
   @@index([country, operatingRegion])
   @@index([commune])
+  notifications   Notification[]
 }
 
 // Structured status check-ins authored by project leads/managers.
@@ -938,4 +942,57 @@ model UserSession {
 
   @@index([userId, revokedAt])
   @@index([userId, lastSeenAt])
+}
+
+/// A per-recipient inbox entry. Annexure A.2 #3 (Smart Triggers & Alerts) and
+/// the bell feed. Distinct from Activity, which is the workspace audit trail
+/// with no recipient: a notification is one person's copy of something that
+/// concerns them, with its own read state and delivery record.
+model Notification {
+  id        String    @id @default(cuid())
+  /// Recipient.
+  userId    String
+  /// Who caused it, when a person did. Null for system-raised alerts.
+  actorId   String?
+  /// status_posted | mentioned | thread_reply | assigned | role_changed |
+  /// due_soon | overdue | health_dropped | digest. A string, not an enum:
+  /// the vocabulary is owned by TypeScript in features/notifications/domain.
+  type      String
+  title     String
+  body      String?
+  /// Where clicking it goes. Always a workspace-relative path.
+  href      String?
+  projectId String?
+  /// Collapses repeats: the same overdue item does not notify twice a day.
+  dedupKey  String?
+  readAt    DateTime?
+  /// Set when the email copy was sent, or folded into a digest.
+  emailedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user    User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor   User?    @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupKey])
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([emailedAt])
+}
+
+/// Per-user, per-category delivery choice. Absent row = defaults (in-app on,
+/// email folded into the daily digest). Categories mirror Notification.type
+/// groups: work | mentions | projects | alerts | digest.
+model NotificationPreference {
+  id       String  @id @default(cuid())
+  userId   String
+  category String
+  inApp    Boolean @default(true)
+  /// instant | daily | off
+  email    String  @default("daily")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
 }

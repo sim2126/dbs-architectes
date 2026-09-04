@@ -24,7 +24,7 @@ import { cn, PHASES } from "@/ui/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProjectThreadPanel } from "@/features/projects/client/project-thread-panel";
 import { buildProjectSyncUpdates } from "@/features/sheets";
-import { getStatusColor } from "@/ui/tokens";
+import { getStatusColor, getStatusOnColor } from "@/ui/tokens";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -104,11 +104,14 @@ function DropdownCell({
   options,
   onChange,
   getColor,
+  getOnColor,
 }: {
   value: string;
   options: string[];
   onChange: (v: string) => void;
   getColor?: (value: string) => string;
+  /** Text colour to pair with getColor so the pill meets AA. */
+  getOnColor?: (value: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -127,9 +130,9 @@ function DropdownCell({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-colors hover:opacity-80",
-          getColor ? "text-white" : "bg-muted text-muted-foreground"
+          !getColor && "bg-muted text-muted-foreground"
         )}
-        style={getColor ? { background: getColor(value) } : undefined}
+        style={getColor ? { background: getColor(value), color: getOnColor?.(value) ?? "var(--friday-bg)" } : undefined}
       >
         {value || "—"}
         <ChevronDown className="h-3 w-3 opacity-60" />
@@ -207,7 +210,7 @@ function EditableCell({
       onClick={() => setEditing(true)}
       className={cn("cursor-text hover:bg-accent/40 rounded px-1 py-0.5 transition-colors text-xs block truncate", className)}
     >
-      {value || <span className="text-muted-foreground/40">—</span>}
+      {value || <span className="text-friday-fg-subtle">—</span>}
     </span>
   );
 }
@@ -852,7 +855,7 @@ function ProjectsTable({
               <EditableCell value={row.commune} onChange={(v) => onUpdate(row.id, "commune", v)} />
             </td>
             <td className="px-3 py-2">
-              <DropdownCell value={row.workStatus} options={WORK_STATUS_OPTIONS} onChange={(v) => onUpdate(row.id, "workStatus", v)} getColor={getStatusColor} />
+              <DropdownCell value={row.workStatus} options={WORK_STATUS_OPTIONS} onChange={(v) => onUpdate(row.id, "workStatus", v)} getColor={getStatusColor} getOnColor={getStatusOnColor} />
             </td>
             <td className="px-3 py-2">
               <DropdownCell value={row.billing} options={BILLING_OPTIONS} onChange={(v) => onUpdate(row.id, "billing", v)} />
@@ -946,7 +949,7 @@ function CustomSheetTable({
               </th>
             ))}
             <th className="border-b border-border w-8">
-              <button onClick={onAddColumn} className="p-1 hover:text-foreground text-muted-foreground/40 transition-colors" title="Add column">
+              <button onClick={onAddColumn} className="p-1 hover:text-foreground text-friday-fg-subtle transition-colors" title="Add column">
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </th>

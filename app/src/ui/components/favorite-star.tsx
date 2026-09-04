@@ -102,7 +102,7 @@ export function FavoriteStar({
         "inline-flex items-center justify-center rounded-md p-1 transition-all",
         starred
           ? "text-amber-500 hover:text-amber-600"
-          : "text-muted-foreground/60 hover:text-amber-500 hover:bg-muted",
+          : "text-friday-fg-subtle hover:text-amber-500 hover:bg-muted",
         busy && "opacity-50",
         className,
       )}

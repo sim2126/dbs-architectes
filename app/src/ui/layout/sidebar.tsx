@@ -177,7 +177,7 @@ export function Sidebar({ user }: SidebarProps) {
                     </span>
                     <span
                       aria-hidden
-                      className="text-muted-foreground/60 leading-none"
+                      className="text-friday-fg-subtle leading-none"
                       style={{ fontSize: "11px" }}
                     >
                       ·
@@ -186,7 +186,7 @@ export function Sidebar({ user }: SidebarProps) {
                       Friday
                     </span>
                     <span
-                      className="font-display italic text-muted-foreground/70 leading-none tracking-tight"
+                      className="font-display italic text-friday-fg-muted leading-none tracking-tight"
                       style={{ fontSize: "10px", letterSpacing: "0.01em" }}
                     >
                       .com
@@ -248,7 +248,7 @@ export function Sidebar({ user }: SidebarProps) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="px-2.5 mb-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest"
+                    className="px-2.5 mb-1 text-[10px] font-semibold text-friday-fg-subtle uppercase tracking-widest"
                   >
                     {t("nav.collaboration")}
                   </motion.p>
@@ -301,7 +301,7 @@ export function Sidebar({ user }: SidebarProps) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="px-2.5 mb-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest"
+                    className="px-2.5 mb-1 text-[10px] font-semibold text-friday-fg-subtle uppercase tracking-widest"
                   >
                     {t("nav.ai_workflow")}
                   </motion.p>

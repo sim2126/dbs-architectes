@@ -60,3 +60,7 @@ next-env.d.ts
 # k6 summary output — machine-specific numbers, not source
 /load/k6/results/*
 !/load/k6/results/.gitkeep
+test-results/
+playwright-report/
+e2e/.auth/
+coverage/

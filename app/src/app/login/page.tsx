@@ -360,7 +360,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-friday-fg-subtle mt-6">
+        <p className="text-center text-xs text-friday-fg-muted mt-6">
           DBS Architectes — Sustainable architectural, urban and landscape design
         </p>
       </div>
@@ -530,42 +530,53 @@ function ErrorNote({ children }: { children: React.ReactNode }) {
  * select-none because it carries no information — it is texture.
  */
 function WordmarkField() {
+  // The tiled wordmark is a texture, not text. It used to be 63 <span>
+  // elements, which axe evaluated as content and failed for contrast on
+  // every scan (1.16:1 on the cream ground — correctly, for text). WCAG
+  // exempts purely decorative text, but a tool cannot know intent, so the
+  // honest fix is to make it what it is: a graphic. The glyph pattern is an
+  // SVG used as a CSS mask over a token background, so it carries no text
+  // nodes, follows dark mode through the token, and costs one element.
   const rows = 9;
   const perRow = 7;
+  const width = 1400;
+  const height = 900;
+  const cellW = width / perRow;
+  const cellH = height / rows;
+  const glyphs: string[] = [];
+  for (let r = 0; r < rows; r++) {
+    // Offset alternate rows so the grid does not read as a table.
+    const dx = (r % 2 === 0 ? -0.04 : 0.04) * width;
+    for (let c = 0; c < perRow; c++) {
+      const italic = (r + c) % 3 === 0;
+      const serif = (r + c) % 2 === 0;
+      const size = 34 + ((r * 7 + c * 5) % 26);
+      const x = dx + cellW * c + cellW / 2;
+      const y = cellH * r + cellH / 2 + size / 3;
+      glyphs.push(
+        `<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" text-anchor="middle" font-size="${size}"` +
+          ` font-family="${serif ? "Cormorant Garamond, Georgia, serif" : "Inter, system-ui, sans-serif"}"` +
+          ` font-weight="${serif ? 500 : 700}"${italic ? ' font-style="italic"' : ""}>DBS</text>`,
+      );
+    }
+  }
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid slice">` +
+    glyphs.join("") +
+    `</svg>`;
+  const mask = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 select-none overflow-hidden"
-    >
-      {Array.from({ length: rows }).map((_, r) => (
-        <div
-          key={r}
-          className="flex items-center justify-around whitespace-nowrap"
-          style={{
-            height: `${100 / rows}%`,
-            // Offset alternate rows so the grid does not read as a table.
-            transform: `translateX(${r % 2 === 0 ? "-4%" : "4%"})`,
-          }}
-        >
-          {Array.from({ length: perRow }).map((_, c) => {
-            const italic = (r + c) % 3 === 0;
-            const serif = (r + c) % 2 === 0;
-            return (
-              <span
-                key={c}
-                className={cn(
-                  "text-friday-surface-3",
-                  italic && "italic",
-                  serif ? "font-display" : "font-sans font-bold",
-                )}
-                style={{ fontSize: `${34 + ((r * 7 + c * 5) % 26)}px` }}
-              >
-                DBS
-              </span>
-            );
-          })}
-        </div>
-      ))}
-    </div>
+      className="pointer-events-none absolute inset-0 select-none overflow-hidden bg-friday-surface-3"
+      style={{
+        maskImage: mask,
+        WebkitMaskImage: mask,
+        maskSize: "100% 100%",
+        WebkitMaskSize: "100% 100%",
+        maskRepeat: "no-repeat",
+        WebkitMaskRepeat: "no-repeat",
+      }}
+    />
   );
 }

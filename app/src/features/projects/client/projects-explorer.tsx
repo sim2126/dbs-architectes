@@ -22,7 +22,7 @@ import { FavoriteStar } from "@/ui/components/favorite-star";
 import { showToast } from "@/ui/components/toast";
 import { CATEGORIES, PHASES, COUNTRIES, OPERATING_REGIONS } from "@/ui/utils";
 import { cn } from "@/ui/utils";
-import { getPhaseColor, getStatusColor } from "@/ui/tokens";
+import { getPhaseColor, getPhaseOnColor, getStatusColor, getStatusOnColor } from "@/ui/tokens";
 import { useT, translatePhase } from "@/i18n/translations";
 import { useUserPrefs } from "@/ui/stores/user-prefs-store";
 import { ProjectDetailModal } from "@/features/projects/client/project-detail-modal";
@@ -399,7 +399,7 @@ function TableView({
 
       {grouped.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center">
-          <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
+          <Building2 className="w-10 h-10 text-friday-fg-subtle mb-3" />
           <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
         </div>
       ) : (
@@ -510,7 +510,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
             <img src={project.image} alt="" className="w-6 h-6 rounded object-cover shrink-0" />
           ) : (
             <div className="w-6 h-6 rounded bg-muted flex items-center justify-center shrink-0">
-              <Building2 className="w-3 h-3 text-muted-foreground/50" />
+              <Building2 className="w-3 h-3 text-friday-fg-subtle" />
             </div>
           )}
           <div className="min-w-0">
@@ -538,7 +538,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
             )}
           </div>
         ) : (
-          <span className="text-[11px] text-muted-foreground/50">—</span>
+          <span className="text-[11px] text-friday-fg-subtle">—</span>
         )}
       </div>
 
@@ -557,11 +557,11 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
             setShowStatusMenu((v) => !v);
           }}
           className={cn(
-            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold text-white transition-all",
+            "flex items-center justify-center w-full px-2 py-1 rounded text-[11px] font-bold transition-all",
             canUpdateStatus && "hover:opacity-90 cursor-pointer",
             !canUpdateStatus && "cursor-default"
           )}
-          style={{ background: wsColor }}
+          style={{ background: wsColor, color: getStatusOnColor(wsKey) }}
           disabled={updatingStatus}
         >
           {updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : t(ws.tKey)}
@@ -582,10 +582,10 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
                   key={key}
                   onClick={() => updateStatus(key)}
                   className={cn(
-                    "flex items-center justify-between w-full px-3 py-2.5 text-white text-sm font-bold transition-opacity",
+                    "flex items-center justify-between w-full px-3 py-2.5 text-sm font-bold transition-opacity",
                     wsKey === key ? "opacity-100" : "opacity-90 hover:opacity-100"
                   )}
-                  style={{ background: getStatusColor(key) }}
+                  style={{ background: getStatusColor(key), color: getStatusOnColor(key) }}
                 >
                   {t(s.tKey)}
                   {wsKey === key && <Check className="w-4 h-4 opacity-80" />}
@@ -598,7 +598,7 @@ function TableRow({ project, phaseColor, isSelected, onSelect, onUpdate, onDelet
 
       {/* Phase */}
       <div className="py-2.5 pr-3">
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full text-white truncate block text-center" style={{ background: phaseColor }}>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full truncate block text-center" style={{ background: phaseColor, color: getPhaseOnColor(project.phase) }}>
           {translatePhase(project.phase, t)}
         </span>
       </div>
@@ -747,7 +747,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
               <img src={project.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 mt-0.5" />
             ) : (
               <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                <Building2 className="w-5 h-5 text-muted-foreground/40" />
+                <Building2 className="w-5 h-5 text-friday-fg-subtle" />
               </div>
             )}
             <div className="min-w-0">
@@ -764,10 +764,10 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
 
         {/* Phase + Status badges */}
         <div className="flex items-center gap-2 mt-3 flex-wrap">
-          <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: phaseColor }}>
+          <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{ background: phaseColor, color: getPhaseOnColor(project.phase) }}>
             {translatePhase(project.phase, t)}
           </span>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded text-white" style={{ background: wsColor }}>
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded" style={{ background: wsColor, color: getStatusOnColor(project.workStatus) }}>
             {t(ws.tKey)}
           </span>
         </div>
@@ -786,10 +786,10 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                     onClick={() => updateStatus(key)}
                     disabled={updatingStatus}
                     className={cn(
-                      "flex items-center justify-center gap-1.5 px-2 py-2 rounded text-xs font-bold text-white transition-all",
+                      "flex items-center justify-center gap-1.5 px-2 py-2 rounded text-xs font-bold transition-all",
                       isActive ? "ring-2 ring-offset-1 ring-offset-background" : "opacity-70 hover:opacity-100"
                     )}
-                    style={{ background: getStatusColor(key), ...(isActive ? { ringColor: getStatusColor(key) } : {}) }}
+                    style={{ background: getStatusColor(key), color: getStatusOnColor(key), ...(isActive ? { ringColor: getStatusColor(key) } : {}) }}
                   >
                     {isActive && updatingStatus ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                     {isActive && !updatingStatus ? <Check className="w-3 h-3" /> : null}
@@ -889,7 +889,7 @@ function ProjectDrawer({ project, onClose, onUpdate, canEdit, currentUserId }: {
                   <p className="text-xs text-muted-foreground leading-snug">{project.address}</p>
                 </div>
               )}
-              <p className="text-[10px] font-mono text-muted-foreground/60">
+              <p className="text-[10px] font-mono text-friday-fg-subtle">
                 {project.latitude.toFixed(5)}, {project.longitude.toFixed(5)}
               </p>
               <div className="flex gap-2 mt-2">
@@ -1002,7 +1002,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
   const t = useT();
   return (
     <div className="col-span-full flex flex-col items-center justify-center h-64 text-center">
-      <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
+      <Building2 className="w-10 h-10 text-friday-fg-subtle mb-3" />
       <p className="text-sm text-muted-foreground">{t("projects.no_results")}</p>
       {hasFilters && <button onClick={onClear} className="text-xs text-foreground underline mt-2">{t("projects.clear_filters")}</button>}
     </div>
@@ -1043,7 +1043,7 @@ function ProjectCard({
           <img src={project.image} alt={project.title} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-            <Building2 className="w-8 h-8 text-muted-foreground/30" />
+            <Building2 className="w-8 h-8 text-friday-fg-subtle" />
           </div>
         )}
         {/* Favourite star — always visible if starred, hover-revealed otherwise */}
@@ -1053,10 +1053,10 @@ function ProjectCard({
         )}>
           <FavoriteStar entityType="project" entityId={project.id} initiallyStarred={starred} size={14} />
         </div>
-        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-white text-[10px] font-semibold" style={{ background: phaseColor }}>
+        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ background: phaseColor, color: getPhaseOnColor(project.phase) }}>
           {translatePhase(project.phase, t)}
         </div>
-        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: wsColor }}>
+        <div className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: wsColor, color: getStatusOnColor(project.workStatus) }}>
           {t(ws.tKey)}
         </div>
         {project.assignments.length > 0 && (
@@ -1074,7 +1074,7 @@ function ProjectCard({
         <h3 className="text-xs font-semibold mt-0.5 line-clamp-2 leading-tight">{project.title.replace(project.code + " ", "")}</h3>
         <div className="flex items-center gap-1 mt-1.5">
           <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{project.category}</span>
-          {project.commune && <><span className="text-muted-foreground/30">·</span><span className="text-[10px] text-muted-foreground truncate">{project.commune}</span></>}
+          {project.commune && <><span className="text-friday-fg-subtle">·</span><span className="text-[10px] text-muted-foreground truncate">{project.commune}</span></>}
         </div>
       </div>
     </motion.div>

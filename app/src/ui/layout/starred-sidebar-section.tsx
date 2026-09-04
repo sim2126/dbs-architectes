@@ -113,7 +113,7 @@ export function StarredSidebarSection({ collapsed }: { collapsed: boolean }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="px-2.5 mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60"
+            className="px-2.5 mb-1 text-[10px] font-semibold uppercase tracking-widest text-friday-fg-subtle"
           >
             Starred
           </motion.p>

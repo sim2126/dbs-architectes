@@ -231,7 +231,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="font-display italic text-7xl text-friday-fg-subtle/30">
+                <span className="font-display italic text-7xl text-friday-fg-subtle">
                   {project.code.slice(0, 3)}
                 </span>
               </div>
@@ -493,7 +493,7 @@ export function ProjectDetail({ data }: { data: ProjectDetailData }) {
             >
               {data.files.length === 0 ? (
                 <div className="border border-dashed border-friday-border rounded px-6 py-10 text-center">
-                  <FileText className="w-5 h-5 text-friday-fg-subtle/40 mx-auto mb-2" />
+                  <FileText className="w-5 h-5 text-friday-fg-subtle mx-auto mb-2" />
                   <p className="font-display italic text-friday-fg-muted">
                     No files uploaded yet.
                   </p>
@@ -1735,7 +1735,7 @@ function FileCard({ file }: { file: ProjectDetailData["files"][number] }) {
             {file.kind === "plan" ? (
               <PlanPlaceholder />
             ) : (
-              <ImageIcon className="w-7 h-7 text-friday-fg-subtle/40" />
+              <ImageIcon className="w-7 h-7 text-friday-fg-subtle" />
             )}
           </div>
         )}
@@ -1752,7 +1752,7 @@ function FileCard({ file }: { file: ProjectDetailData["files"][number] }) {
 
 function PlanPlaceholder() {
   return (
-    <svg viewBox="0 0 60 48" className="w-2/3 h-2/3 text-friday-fg-subtle/50">
+    <svg viewBox="0 0 60 48" className="w-2/3 h-2/3 text-friday-fg-subtle">
       <rect x="6" y="6" width="22" height="14" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <rect x="32" y="6" width="22" height="14" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <rect x="6" y="24" width="22" height="14" fill="none" stroke="currentColor" strokeWidth="1.2" />

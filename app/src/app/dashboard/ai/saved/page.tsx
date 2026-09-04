@@ -122,7 +122,7 @@ export default function SavedInsightsPage() {
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-                <Bookmark className="h-8 w-8 text-muted-foreground/30" />
+                <Bookmark className="h-8 w-8 text-friday-fg-subtle" />
               </div>
               <p className="text-sm font-semibold">Nothing saved yet</p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">

@@ -499,7 +499,7 @@ export function ProjectThreadPanel({
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
-              <MessageSquare className="w-8 h-8 text-muted-foreground/30" />
+              <MessageSquare className="w-8 h-8 text-friday-fg-subtle" />
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">No updates yet</p>

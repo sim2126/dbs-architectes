@@ -20,7 +20,10 @@
   /* Friday foreground */
   --friday-fg:        #1a1a18;
   --friday-fg-muted:  #6b6862;
-  --friday-fg-subtle: #a8a59d;
+  /* Was #a8a59d, 2.35:1 on the cream ground — failed WCAG 1.4.3 on every
+     page (Annexure F.1 requires AA). #75726b is 4.59:1 on bg, 4.80:1 on
+     surface: the quietest warm grey that still passes. */
+  --friday-fg-subtle: #75726b;
 
   /* Friday accent — architect's blue */
   --friday-accent:        #1e3a8a;
@@ -35,10 +38,10 @@
   /* Phase palette (locked — preserved from product spec, NOT replaced
      by Claude Design's SIA palette because the database stores phase
      names not numbers) */
-  --phase-etude-ap:   #ef4444;
+  --phase-etude-ap:   #dc2626; /* was #ef4444; white text 4.83:1 */
   --phase-mae:        #22c55e;
-  --phase-chantier:   #3b82f6;
-  --phase-exe:        #8b5cf6;
+  --phase-chantier:   #2563eb; /* was #3b82f6; white text 5.17:1 */
+  --phase-exe:        #7c3aed; /* was #8b5cf6; white text 5.70:1 */
   --phase-terminato:  #6b7280;
   --phase-stuck:      #f59e0b;
   --phase-concorso:   #14b8a6;
@@ -46,8 +49,24 @@
   /* Work-status palette (locked Monday-style) */
   --status-todo:      #c4c4cf;
   --status-doing:     #fdab3d;
-  --status-stuck:     #e2445c;
+  --status-stuck:     #d23f56; /* was #e2445c; white text 4.58:1 */
   --status-completed: #00c875;
+  /* On-colour text for the pills above. Measured, not guessed: white fails AA on
+     every pale or warm pill (amber 1.9:1, green 2.3:1), dark text fails on the
+     saturated ones, so each pill declares its own. Monday paints white on all of
+     them and does not meet AA; the contract (Annexure F.1) requires that we do. */
+  --phase-etude-ap-fg: #ffffff;
+  --phase-mae-fg: #1a1a18;
+  --phase-chantier-fg: #ffffff;
+  --phase-exe-fg: #ffffff;
+  --phase-terminato-fg: #ffffff;
+  --phase-stuck-fg: #1a1a18;
+  --phase-concorso-fg: #1a1a18;
+  --status-todo-fg: #1a1a18;
+  --status-doing-fg: #1a1a18;
+  --status-stuck-fg: #ffffff;
+  --status-completed-fg: #1a1a18;
+
 
   /* Landing register — the public surface, inverse of the product ground.
      Theme-independent by design: the landing page is dark in both light and
@@ -197,7 +216,8 @@
   /* Foreground (>= WCAG AA on --friday-bg) */
   --friday-fg:          #f0eee8;
   --friday-fg-muted:    #b3afa5;
-  --friday-fg-subtle:   #7c7972;
+  /* Was #7c7972, 4.31:1 — just under AA. */
+  --friday-fg-subtle:   #86837c;
 
   /* Accent — brand-locked, only the alphas are bumped for dark surfaces */
   --friday-accent:        #1e3a8a;

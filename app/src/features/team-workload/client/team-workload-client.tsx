@@ -313,7 +313,7 @@ function MemberCard({ m }: { m: TeamMemberWorkload }) {
                 style={{ background: HEALTH_DOT[m.latestStatus.health] ?? FRIDAY_TOKENS.fgSubtle }}
               />
               {m.latestStatus.projectCode}
-              <span className="text-friday-fg-subtle/70">
+              <span className="text-friday-fg-subtle">
                 · {relative(m.latestStatus.createdAt)}
               </span>
             </span>

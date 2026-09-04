@@ -232,6 +232,7 @@ export function Header({ title }: { title?: string }) {
         {/* Notification bell */}
         <div className="relative" ref={notifRef}>
           <Button
+            aria-label="Notifications"
             variant="ghost"
             size="icon"
             className="h-8 w-8 relative"
@@ -392,7 +393,7 @@ export function Header({ title }: { title?: string }) {
                   >
                     {t("notif.view_all")}
                   </a>
-                  <span className="text-muted-foreground/30">·</span>
+                  <span className="text-friday-fg-subtle">·</span>
                   <a
                     href="/dashboard/chat"
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"

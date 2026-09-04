@@ -27,9 +27,13 @@
     "load:spike": "k6 run -e SCENARIO=spike load/k6/friday.js",
     "load:soak": "k6 run -e SCENARIO=soak load/k6/friday.js",
     "test:concurrency": "tsx load/concurrency.ts",
+    "test:coverage": "node -e \"require('fs').mkdirSync('coverage',{recursive:true})\" && node --import tsx --test --enable-source-maps --experimental-test-coverage --test-coverage-include=\"src/platform/**/*.ts\" --test-coverage-include=\"src/features/**/domain/**/*.ts\" --test-coverage-include=\"src/features/**/server/**/*.ts\" --test-coverage-exclude=\"**/*.test.ts\" --test-coverage-lines=70 --test-coverage-branches=70 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info src/platform/ai/*.test.ts src/features/ai/server/agent/*.test.ts src/features/work-items/domain/*.test.ts src/features/dashboard/domain/widgets.test.ts src/features/projects/domain/*.test.ts src/features/users/domain/guests.test.ts src/features/chat/domain/*.test.ts src/features/ai/domain/attachments.test.ts prisma/seed-safety.test.ts prisma/deterministic-archive.test.ts prisma/migration-contract.test.ts && node scripts/check-coverage-files.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "db:seed:legacy": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "tsx prisma/check-seed-target.ts && prisma db push && tsx prisma/seed-demo.ts"
+    "setup": "tsx prisma/check-seed-target.ts && prisma db push && tsx prisma/seed-demo.ts",
+    "lint:a11y": "eslint --no-config-lookup -c eslint.a11y.config.mjs \"src/**/*.tsx\""
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -98,6 +102,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -1,0 +1,63 @@
+# Static analysis (SAST) — Annexure F.1 "Security: OWASP ASVS Level 2; SAST + DAST".
+#
+# CodeQL's security-extended suite for JavaScript/TypeScript. Runs on every
+# push to main, every pull request, and weekly so newly published queries get
+# applied to unchanged code.
+#
+# CodeQL is free on public repositories and needs GitHub Advanced Security on
+# private ones. If this repository is made private without GHAS, this workflow
+# will fail at upload; swap the analysis step for Semgrep (semgrep/semgrep-action)
+# in that case rather than dropping SAST.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          # Load-test scripts and generated output are not shipped code.
+          config: |
+            paths-ignore:
+              - app/load
+              - app/.next
+              - app/public
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  dependency-review:
+    name: Dependency review (PRs)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure

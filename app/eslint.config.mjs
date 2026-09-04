@@ -3,6 +3,10 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import boundaries from "eslint-plugin-boundaries";
 
+const noOpacityTextMessage =
+  "Opacity-quietened text (text-muted-foreground/NN) cannot meet WCAG AA. " +
+  "Use text-friday-fg-subtle or text-friday-fg-muted (both measured to pass).";
+
 const noRawHexMessage =
   "No raw hex in components. Use a Friday token " +
   "(src/ui/tokens.ts) or a Tailwind utility. If no token " +
@@ -106,6 +110,17 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-syntax": [
         "error",
+        {
+          // text-muted-foreground/60 reads as quieter, but at 60 % opacity the
+          // blended colour is far below 4.5:1 on any Friday ground. Fifty of these
+          // were swept out on 24 Aug 2026; use text-friday-fg-subtle or -muted.
+          selector: "Literal[value=/text-(muted-foreground|friday-fg-(subtle|muted))\\/\\d+/]",
+          message: noOpacityTextMessage,
+        },
+        {
+          selector: "TemplateElement[value.raw=/text-(muted-foreground|friday-fg-(subtle|muted))\\/\\d+/]",
+          message: noOpacityTextMessage,
+        },
         {
           selector: "Literal[value=/#[0-9a-fA-F]{3,8}/]",
           message: noRawHexMessage,

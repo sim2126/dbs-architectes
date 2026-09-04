@@ -295,9 +295,9 @@ export default function ContactPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Users className="w-12 h-12 text-muted-foreground/30 mb-4" />
+            <Users className="w-12 h-12 text-friday-fg-subtle mb-4" />
             <p className="text-muted-foreground font-medium">No team members found</p>
-            <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your search or filters</p>
+            <p className="text-sm text-friday-fg-muted mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
           <div className="space-y-8">

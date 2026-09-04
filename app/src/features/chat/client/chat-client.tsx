@@ -1718,7 +1718,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.18em]">
               {t("chat.channels")}
-              <span className="ml-1.5 font-mono text-muted-foreground/70">
+              <span className="ml-1.5 font-mono text-friday-fg-muted">
                 {filteredChannels.length}
               </span>
             </span>
@@ -1780,7 +1780,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
           <div className="flex items-center justify-between px-2 py-1.5 mt-3">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.18em]">
               {t("chat.direct")}
-              <span className="ml-1.5 font-mono text-muted-foreground/70">
+              <span className="ml-1.5 font-mono text-friday-fg-muted">
                 {filteredUsers.length}
               </span>
             </span>
@@ -1909,7 +1909,7 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
                 )}
                 {activeChannel.description && (
                   <>
-                    <span className="text-muted-foreground/40 text-xs shrink-0">·</span>
+                    <span className="text-friday-fg-subtle text-xs shrink-0">·</span>
                     <p className="text-[12px] text-muted-foreground truncate">
                       {activeChannel.description}
                     </p>

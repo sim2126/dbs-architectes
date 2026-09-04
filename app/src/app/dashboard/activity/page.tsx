@@ -183,9 +183,9 @@ export default function ActivityPage() {
           </div>
         ) : activities.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Activity className="w-12 h-12 text-muted-foreground/30 mb-4" />
+            <Activity className="w-12 h-12 text-friday-fg-subtle mb-4" />
             <p className="text-muted-foreground font-medium">No activity found</p>
-            <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your filters</p>
+            <p className="text-sm text-friday-fg-muted mt-1">Try adjusting your filters</p>
           </div>
         ) : (
           <div className="space-y-6">

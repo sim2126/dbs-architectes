@@ -166,7 +166,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   {kpi.label}
                 </p>
-                <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                <ArrowUpRight className="w-3.5 h-3.5 text-friday-fg-subtle group-hover:text-foreground transition-colors" />
               </div>
               <p
                 className={`font-display italic mt-3 leading-none tabular-nums ${
@@ -205,7 +205,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
             <div className="px-2 py-1">
               {data.todayFocus.length === 0 ? (
                 <div className="px-5 py-10 text-center">
-                  <CalendarClock className="w-6 h-6 text-muted-foreground/30 mx-auto mb-2" />
+                  <CalendarClock className="w-6 h-6 text-friday-fg-subtle mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground italic font-display">
                     Nothing on the calendar today.
                   </p>
@@ -219,10 +219,10 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-foreground leading-snug truncate">{item.title}</p>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <Clock3 className="w-3 h-3 text-muted-foreground/70" />
+                            <Clock3 className="w-3 h-3 text-friday-fg-muted" />
                             <span className="text-[11px] text-muted-foreground">{timeShort(item.date)}</span>
                             {item.project && (
-                              <span className="text-[11px] text-muted-foreground/70 font-mono">
+                              <span className="text-[11px] text-friday-fg-muted font-mono">
                                 · {item.project.code}
                               </span>
                             )}
@@ -257,7 +257,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
             <div className="px-2 py-1">
               {data.whatChanged.length === 0 ? (
                 <div className="px-5 py-10 text-center">
-                  <Sparkles className="w-6 h-6 text-muted-foreground/30 mx-auto mb-2" />
+                  <Sparkles className="w-6 h-6 text-friday-fg-subtle mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground italic font-display">
                     Nothing new — a quiet stretch.
                   </p>
@@ -276,7 +276,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                           <p className="text-sm text-foreground leading-snug">{act.description}</p>
                           <div className="flex items-center gap-2 mt-1">
                             {act.project && (
-                              <span className="text-[11px] font-mono text-muted-foreground/70">
+                              <span className="text-[11px] font-mono text-friday-fg-muted">
                                 {act.project.code}
                               </span>
                             )}
@@ -346,7 +346,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                         />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="font-display italic text-3xl text-muted-foreground/40">
+                          <span className="font-display italic text-3xl text-friday-fg-subtle">
                             {p.code.slice(0, 2)}
                           </span>
                         </div>
@@ -359,7 +359,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
                       </span>
                     </div>
                     <div className="px-3.5 py-3">
-                      <p className="text-[10px] font-mono text-muted-foreground/80">{p.code}</p>
+                      <p className="text-[10px] font-mono text-friday-fg-muted">{p.code}</p>
                       <p className="text-sm text-foreground leading-snug truncate mt-0.5">{p.title}</p>
                       {(p.commune || p.country) && (
                         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
@@ -376,7 +376,7 @@ export function DashboardClient({ user, tier, data }: DashboardClientProps) {
 
         {data.starred.length === 0 && (
           <motion.section {...fade(0.18)} className="rounded-2xl border border-dashed border-border/80 bg-muted/20 px-6 py-8 text-center">
-            <Star className="w-5 h-5 text-muted-foreground/40 mx-auto mb-2" />
+            <Star className="w-5 h-5 text-friday-fg-subtle mx-auto mb-2" />
             <p className="font-display italic text-foreground text-lg">
               Nothing starred yet.
             </p>
@@ -476,7 +476,7 @@ function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
                     >
                       {meta.label}
                     </span>
-                    <span className="text-[10px] font-mono text-muted-foreground/70">
+                    <span className="text-[10px] font-mono text-friday-fg-muted">
                       {item.code}
                     </span>
                     <span className="text-sm text-foreground truncate group-hover:underline underline-offset-2 min-w-0">
@@ -492,7 +492,7 @@ function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
                       No status update yet — chase the project lead for a pulse.
                     </p>
                   )}
-                  <div className="flex items-center gap-2 mt-1.5 text-[10.5px] text-muted-foreground/80">
+                  <div className="flex items-center gap-2 mt-1.5 text-[10.5px] text-friday-fg-muted">
                     {item.daysSinceStatus === null ? (
                       <span>Silent — never posted</span>
                     ) : item.daysSinceStatus === 0 ? (
@@ -503,7 +503,7 @@ function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
                       </span>
                     )}
                     {item.lastAuthor?.name && (
-                      <span className="text-muted-foreground/70">
+                      <span className="text-friday-fg-muted">
                         · by {item.lastAuthor.name}
                       </span>
                     )}
