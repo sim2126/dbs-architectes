@@ -60,6 +60,17 @@ Latency thresholds are evaluated on `status:200` responses only: an
 authorization denial is answered in milliseconds and would flatter the
 percentile of the requests that actually did work.
 
+### Run with nothing else on the machine
+
+k6, the server and the database all share one box here, so anything else that
+runs during a scenario is measured as product latency. The first honest load
+run came out twice as slow as its predecessor at the same 30 users — p50
+572 ms against 105 ms — because a full test sweep, `tsc` and eslint were
+running alongside it for the commit. Nothing was wrong with the build; the
+laptop was busy. Treat a run as void if anything heavier than `cat` ran during
+it, and warm the process with a smoke run first so JIT and connection-pool
+warm-up are not attributed to the first scenario.
+
 ### Authorization is modelled, not counted as failure
 
 `authorize()` limits team workload and every AI surface to managers and above,
@@ -116,6 +127,42 @@ platform must survive — the contract they assert is instead: every request
 Run it when nothing else is hitting the server: T1/T2 assume a clean lease and
 quota table (the script clears them for its two users), and the login limiter
 is shared with k6's `setup()`.
+
+## Baseline observed
+
+One production `next start` process, one laptop (16 logical cores), local
+Postgres 16 in Docker, k6 on the same machine. Not Vercel: there, instances
+scale horizontally, so the ceiling below is per instance, not for the product.
+
+| Scenario | Users | req/s | p50 | p95 (200s) | Failures |
+|---|---|---|---|---|---|
+| load, clean | 30 | 55.6 | 23 ms | **115 ms** | 0 |
+| soak, 4 min | 25 | 46.6 | 77 ms | 390 ms | 0 |
+| stress | 150 | 40.1 | 1.24 s | 4.5 s | 0 |
+| spike, 0→150 in 10 s | 150 | 62.9 | 1.38 s | 4.0 s | 0 |
+
+- **At studio-scale concurrency the 200 ms p95 target is met** — 115 ms at
+  30 users on one process, with memory flat at ~245 MB.
+- **One process saturates at ~40–45 req/s.** CPU cost measured from process
+  samples is 22–25 ms per request under load. Beyond that point latency grows
+  as queueing, throughput stays flat, and nothing fails: across every scenario
+  there were zero 5xx, zero refused connections and zero error lines in the
+  server log. The spike recovered fully; the soak plateaued at ~560 MB with no
+  climb.
+- **The fixed authorization tax is ~8 ms per request** (`/api/ai-status`, which
+  does almost nothing else, at p50 on an idle server) against 12–24 ms for real
+  endpoints. It is JWT decode plus four DB round-trips in
+  `requirePermission()` — user, session revocation, region access, grants.
+  Those four could be one query with the same semantics; on Neon's network
+  latency that is the first lever to pull.
+- **The soak figure is not a soak.** Four minutes shows warm-up growth and a
+  plateau; a leak that takes hours to matter would not appear.
+
+Two earlier 30-user runs reported p95 of 535 ms and 1.9 s. Both were
+contaminated by test suites and `tsc` running on the same machine — see
+"Run with nothing else on the machine" above. They are kept in
+`load/k6/results/load.json` and `load-v2.json` as a record of why that rule
+exists.
 
 ## What the first run found
 
