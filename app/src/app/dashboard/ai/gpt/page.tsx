@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronRight,
@@ -467,6 +468,7 @@ function MessageBubble({
   message,
   hideThinking,
   onRetry,
+  onSave,
   onExportArtifact,
   onOpenSheet,
 }: {
@@ -475,6 +477,9 @@ function MessageBubble({
    *  so the same lookups are not rendered twice on one screen. */
   hideThinking?: boolean;
   onRetry?: () => void;
+  /** Keep this reply under Saved (Annexure A.2 item 7). Absent while streaming
+   *  or when there is no conversation to link it to. */
+  onSave?: () => void;
   onExportArtifact?: (artifactId: string) => void;
   onOpenSheet?: (sheetId: string) => void;
 }) {
@@ -578,6 +583,15 @@ function MessageBubble({
               >
                 <RotateCcw className="h-3 w-3" />
                 Retry
+              </button>
+            )}
+            {onSave && (
+              <button
+                onClick={onSave}
+                className="inline-flex items-center gap-1 text-[11px] text-friday-fg-subtle hover:text-friday-fg transition-colors"
+              >
+                <Bookmark className="h-3 w-3" />
+                Save
               </button>
             )}
           </div>
@@ -1117,6 +1131,28 @@ export default function DBSGPTPage() {
     setActiveSessionId(id);
   }, [activeSessionId]);
 
+  // Snapshot a reply into Saved. The text and blocks are copied, so the
+  // saved item outlives the conversation; the session id is kept only for
+  // the "open in chat" link.
+  const saveResponse = useCallback(async (message: ChatMessage) => {
+    const res = await fetch("/api/ai-saved", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: activeSessionId ?? undefined,
+        text: message.content,
+        blocks: message.blocks ?? [],
+      }),
+    });
+    if (!res.ok) {
+      showToast("This reply could not be saved.", "warning");
+      return;
+    }
+    const item = (await res.json()) as AiSaved;
+    setSavedInsights((prev) => [item, ...prev]);
+    showToast("Saved. It is listed under Saved in the sidebar.", "success");
+  }, [activeSessionId]);
+
   const handleSelectSaved = useCallback((item: AiSaved) => {
     if (!item.sessionId) {
       showToast("This saved insight is no longer linked to a conversation.", "warning");
@@ -1471,7 +1507,10 @@ export default function DBSGPTPage() {
             <div className="flex items-center justify-center h-full">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ) : !aiStatus.enabled ? (
+          ) : !aiStatus.enabled && messages.length === 0 ? (
+            /* The offline card replaces only the greeting. A conversation that
+               already exists stays readable, and Save still works: reading is
+               not a model feature, and the composer below is already disabled. */
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1538,6 +1577,11 @@ export default function DBSGPTPage() {
                     }
                     onExportArtifact={(artifactId) => exportArtifactToSheets(message.id, artifactId)}
                     onOpenSheet={openSheet}
+                    onSave={
+                      message.role === "assistant" && !message.isStreaming && !message.error && activeSessionId
+                        ? () => { void saveResponse(message); }
+                        : undefined
+                    }
                     onRetry={
                       message.role === "assistant" && idx === messages.length - 1 && lastUserMsg
                         ? () => { setMessages((prev) => prev.slice(0, -1)); sendMessage(lastUserMsg.content); }

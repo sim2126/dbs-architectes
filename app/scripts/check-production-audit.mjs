@@ -41,6 +41,37 @@ const acceptedAdvisories = new Map([
       reason: "Only trusted Prisma configuration is merged; the offered fix downgrades Prisma.",
     },
   ],
+  [
+    1158513,
+    {
+      package: "nodemailer (via Auth.js)",
+      owner: "sim2126",
+      reviewBy: "2026-10-30",
+      reason:
+        "The bypass needs a message-level `raw` option. Friday builds every mail server-side from " +
+        "fixed templates and never passes `raw` (checked by grep on 4 Sep 2026); no fixed release exists.",
+    },
+  ],
+  [
+    1153173,
+    {
+      package: "mysql2 (via Prisma CLI)",
+      owner: "sim2126",
+      reviewBy: "2026-10-30",
+      reason:
+        "Prisma CLI ships mysql2 for MySQL targets. Friday's only datasource is PostgreSQL and the app " +
+        "never opens a MySQL connection; the offered fix downgrades Prisma to 6.x.",
+    },
+  ],
+  [
+    1158532,
+    {
+      package: "mysql2 (via Prisma CLI)",
+      owner: "sim2126",
+      reviewBy: "2026-10-30",
+      reason: "Same as 1153173: PostgreSQL-only deployment, mysql2 is never loaded at runtime.",
+    },
+  ],
 ]);
 
 const npmCommand = process.platform === "win32" ? process.env.ComSpec : "npm";
