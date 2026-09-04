@@ -382,6 +382,15 @@
    * alternative was rewriting every call site to a different token.
    */
   --color-friday-error-fg: var(--friday-error-fg);
+  /*
+   * Same story, found on 4 Sep 2026 while building the board: the error
+   * surface and its border were defined in both :root blocks but never
+   * registered, so bg-friday-error-bg (5 call sites) and
+   * border-friday-error-border (4) painted nothing at all — an error
+   * panel with no background is an error the reader cannot see.
+   */
+  --color-friday-error-bg: var(--friday-error-bg);
+  --color-friday-error-border: var(--friday-error-border);
   --color-friday-success-fg: var(--friday-success-fg);
   --color-friday-accent-ring: var(--friday-accent-ring);
   --color-friday-success-soft-fg: var(--friday-success-soft-fg);

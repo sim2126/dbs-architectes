@@ -8,11 +8,13 @@
 
 import { prisma } from "@/platform/db";
 import { DEFAULT_PROJECT_PHASE, normaliseProjectPhase } from "../domain/phase-helpers";
+import { nextProjectCode } from "../domain/next-project-code";
 
 export type CreateProjectInput = {
   actorUserId: string;
   data: {
-    code: string;
+    /** Omitted by the board's add-item, which asks only for a name. */
+    code?: string;
     title: string;
     category?: string;
     phase?: string;
@@ -34,12 +36,63 @@ export type CreateProjectInput = {
   };
 };
 
+/**
+ * Allocate the next code for this year.
+ *
+ * Two people adding a project at the same moment can compute the same
+ * number, so the unique index on `code` is the real arbiter and a collision
+ * is retried rather than surfaced. Three attempts is generous: each retry
+ * re-reads the year's codes, so it only loses if it keeps tying.
+ */
+async function allocateCode(): Promise<string> {
+  const year = new Date().getFullYear();
+  const taken = await prisma.project.findMany({
+    where: { code: { startsWith: `DBS-${year}-` } },
+    select: { code: true },
+  });
+  return nextProjectCode(year, taken.map((p) => p.code));
+}
+
+function isCodeCollision(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === "P2002"
+  );
+}
+
 export async function createProject(input: CreateProjectInput) {
   const { actorUserId, data } = input;
 
-  const project = await prisma.project.create({
+  const project = await createRow(data, data.code?.trim() || (await allocateCode()));
+
+  await prisma.activity.create({
     data: {
-      code:            data.code,
+      type: "created",
+      description: `Progetto "${project.title}" creato`,
+      projectId: project.id,
+      userId: actorUserId,
+    },
+  });
+
+  return project;
+}
+
+async function createRow(data: CreateProjectInput["data"], code: string) {
+  const attempts = data.code?.trim() ? 1 : 3;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await insert(data, attempt === 1 ? code : await allocateCode());
+    } catch (error) {
+      if (attempt >= attempts || !isCodeCollision(error)) throw error;
+    }
+  }
+}
+
+function insert(data: CreateProjectInput["data"], code: string) {
+  return prisma.project.create({
+    data: {
+      code,
       title:           data.title,
       category:        data.category        || "Residenziale",
       phase:           data.phase?.trim() ? normaliseProjectPhase(data.phase) : DEFAULT_PROJECT_PHASE,
@@ -65,15 +118,4 @@ export async function createProject(input: CreateProjectInput) {
       },
     },
   });
-
-  await prisma.activity.create({
-    data: {
-      type: "created",
-      description: `Progetto "${project.title}" creato`,
-      projectId: project.id,
-      userId: actorUserId,
-    },
-  });
-
-  return project;
 }

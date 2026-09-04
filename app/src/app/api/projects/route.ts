@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/platform/auth";
-import { PermissionError, permissionResponse, requirePermission } from "@/platform/authz";
+import {
+  loadSubject,
+  PermissionError,
+  permissionResponse,
+  requirePermission,
+} from "@/platform/authz";
+import { projectCapabilities } from "@/features/projects/domain/project-capabilities";
 import { listProjects } from "@/features/projects/server/list-projects";
 import { createProject } from "@/features/projects/server/create-project";
 
@@ -29,10 +35,22 @@ export async function GET(request: NextRequest) {
     limit:           boundedLimit(searchParams.get("limit")),
   });
 
+  // Each row says what this caller may do to it, so a board can grey the
+  // cells it must not offer without keeping its own copy of the rules.
+  // authorize() is pure and the assignment is already loaded, so this is
+  // one subject lookup for the whole page rather than a query per row.
+  const subject = await loadSubject();
+  const projects = subject
+    ? result.projects.map((project) => ({
+        ...project,
+        capabilities: projectCapabilities(subject, project),
+      }))
+    : result.projects;
+
   if (searchParams.get("paging") === "1") {
-    return Response.json(result);
+    return Response.json({ ...result, projects });
   }
-  return Response.json(result.projects);
+  return Response.json(projects);
 }
 
 export async function POST(request: NextRequest) {

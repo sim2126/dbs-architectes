@@ -1,0 +1,223 @@
+import { test, expect, type Page } from "@playwright/test";
+import { expectAccessible } from "./a11y";
+import { stateFor } from "./roles";
+
+/**
+ * WorkBook — the projects board.
+ *
+ * The board is where the studio is meant to spend its day, so these journeys
+ * check the behaviours that make it usable rather than only that it renders:
+ * groups, editing a cell in place, the change surviving a reload, bulk
+ * actions, adding a project, and the conversation panel.
+ *
+ * Every edit is made against real rows on the staging database and put back
+ * afterwards, so the suite can run repeatedly.
+ */
+
+type Project = {
+  id: string;
+  code: string;
+  title: string;
+  phase: string;
+  workStatus: string;
+  client: string | null;
+  /** What this caller may do to the row, as the server computed it. */
+  capabilities?: { read: boolean; update: boolean; updateStatus: boolean; assign: boolean };
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  todo: "Not Started",
+  doing: "Working on it",
+  stuck: "Stuck",
+  completed: "Done",
+};
+
+async function projects(page: Page): Promise<Project[]> {
+  const res = await page.request.get("/api/projects?limit=500");
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return res.json();
+}
+
+async function board(page: Page) {
+  await page.goto("/dashboard/sheets");
+  // The board owns its toolbar, so its search box is the signal it mounted.
+  await expect(page.getByLabel("Search the board")).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Item" })).toBeVisible();
+}
+
+test.describe("workbook board", () => {
+  test.use({ storageState: stateFor("admin") });
+
+  test("projects are grouped by phase, with counts and a status distribution", async ({ page }) => {
+    const rows = await projects(page);
+    await board(page);
+
+    // Every phase is a group header, including one with no projects: Monday
+    // shows the empty group so work can be moved into it.
+    // Exact, because the phase cells carry the same words in their labels.
+    const header = page.getByRole("button", { name: "Study / Prelim.", exact: true });
+    await expect(header).toBeVisible();
+    await expect(header).toHaveAttribute("aria-expanded", "true");
+
+    const inStudy = rows.filter((r) => r.phase === "ETUDE/AP").length;
+    await expect(page.getByText(`${inStudy} projects`, { exact: true }).first()).toBeVisible();
+
+    // The group footer's distribution is announced for readers who cannot
+    // see the bar.
+    await expect(page.getByText(/Status: (Not Started|Working on it|Stuck|Done) \d+/).first()).toBeVisible();
+
+    await expectAccessible(page, "workbook-board");
+  });
+
+  test("a status cell picks from the palette and the change is saved at once", async ({ page }) => {
+    const before = (await projects(page)).find((p) => p.workStatus !== "stuck");
+    expect(before, "a project not already stuck").toBeTruthy();
+    const target = before!;
+
+    await board(page);
+    const cell = page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}:`) });
+    await cell.scrollIntoViewIfNeeded();
+    await cell.click();
+
+    const palette = page.getByRole("menu", { name: "Set Status" });
+    await expect(palette).toBeVisible();
+    await palette.getByRole("menuitem", { name: STATUS_LABEL.stuck }).click();
+
+    // No Save button anywhere: the write has already happened.
+    await expect(page.getByRole("button", { name: /^Sync to DB/ })).toHaveCount(0);
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.workStatus)
+      .toBe("stuck");
+
+    // And it is still there after a reload, not only in the tab that made it.
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}: ${STATUS_LABEL.stuck}`) }),
+    ).toBeVisible();
+
+    await page.request.patch(`/api/projects/${target.id}`, {
+      data: { workStatus: target.workStatus },
+    });
+  });
+
+  test("a text cell edits in place, commits on Enter and reverts on Escape", async ({ page }) => {
+    const target = (await projects(page))[0];
+    await board(page);
+
+    const cellName = new RegExp(`^Client of ${escapeRe(target.title)}:`);
+    const marker = `E2E client ${Date.now()}`;
+
+    await page.getByRole("button", { name: cellName }).first().click();
+    const editor = page.getByLabel(`Client of ${target.title}`);
+    await expect(editor).toBeFocused();
+    await editor.fill(marker);
+    await editor.press("Enter");
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.client)
+      .toBe(marker);
+
+    // Escape abandons the edit rather than saving it.
+    await page.getByRole("button", { name: cellName }).first().click();
+    const second = page.getByLabel(`Client of ${target.title}`);
+    await second.fill("discarded");
+    await second.press("Escape");
+    await expect(page.getByRole("button", { name: new RegExp(`Client of ${escapeRe(target.title)}: ${marker}`) })).toBeVisible();
+    expect((await projects(page)).find((p) => p.id === target.id)?.client).toBe(marker);
+
+    await page.request.patch(`/api/projects/${target.id}`, {
+      data: { client: target.client },
+    });
+  });
+
+  test("selecting rows raises one bulk bar that moves them together", async ({ page }) => {
+    const rows = await projects(page);
+    const targets = rows.filter((r) => r.phase !== "STUCK").slice(0, 2);
+    expect(targets.length).toBe(2);
+
+    await board(page);
+    for (const target of targets) {
+      await page.getByLabel(`Select ${target.title}`).first().check({ force: true });
+    }
+
+    const bar = page.getByRole("region", { name: /2 projects selected/ });
+    await expect(bar).toBeVisible();
+
+    await bar.getByRole("button", { name: "Set status" }).click();
+    await bar.getByRole("menuitem", { name: STATUS_LABEL.completed }).click();
+
+    await expect
+      .poll(async () => {
+        const now = await projects(page);
+        return targets.every((t) => now.find((p) => p.id === t.id)?.workStatus === "completed");
+      })
+      .toBe(true);
+
+    for (const target of targets) {
+      await page.request.patch(`/api/projects/${target.id}`, {
+        data: { workStatus: target.workStatus },
+      });
+    }
+  });
+
+  test("adding a project needs only a name; the code is allocated", async ({ page }) => {
+    await board(page);
+    const title = `E2E board item ${Date.now()}`;
+
+    const add = page.getByLabel(/^Add project to Construction$/);
+    await add.scrollIntoViewIfNeeded();
+    await add.fill(title);
+    await add.press("Enter");
+
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.title === title)?.code)
+      .toMatch(/^DBS-\d{4}-\d{3,}$/);
+
+    const created = (await projects(page)).find((p) => p.title === title)!;
+    expect(created.phase, "it lands in the group it was typed into").toBe("CHANTIER");
+
+    await page.request.delete(`/api/projects/${created.id}`);
+  });
+
+  test("a row opens the panel where its conversation lives", async ({ page }) => {
+    const target = (await projects(page))[0];
+    await board(page);
+
+    await page.getByRole("button", { name: new RegExp(`^Updates on ${escapeRe(target.title)}`) }).first().click();
+
+    const panel = page.getByRole("dialog", { name: `${target.title} updates` });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText(target.code)).toBeVisible();
+    await expect(panel.getByRole("link", { name: new RegExp(`Open the full page for`) })).toBeVisible();
+    await expectAccessible(page, "workbook-item-panel");
+  });
+});
+
+test.describe("workbook board, restricted role", () => {
+  test.use({ storageState: stateFor("employee") });
+
+  test("an employee cannot type into a project they do not run", async ({ page }) => {
+    const rows = await projects(page);
+    // The row the server says is read-only for this caller. Every listed row
+    // carries that answer, which is the point of computing it server-side.
+    const readOnly = rows.find((p) => p.capabilities?.update === false);
+    expect(readOnly, "the demo seed leaves an employee some project they do not edit").toBeTruthy();
+
+    await board(page);
+    const client = page
+      .getByRole("button", { name: new RegExp(`^Client of ${escapeRe(readOnly!.title)}:`) })
+      .first();
+    await client.scrollIntoViewIfNeeded();
+    await expect(client).toBeDisabled();
+
+    // Status follows its own rule: offered only where policy allows it.
+    const status = page
+      .getByRole("button", { name: new RegExp(`^Status of ${escapeRe(readOnly!.title)}:`) })
+      .first();
+    if (readOnly!.capabilities?.updateStatus) await expect(status).toBeEnabled();
+    else await expect(status).toBeDisabled();
+  });
+});
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
