@@ -5,6 +5,22 @@
  * the feature that owns the data (see features/projects/client/projects-board).
  */
 export { Board, type BoardProps, type BulkAction } from "./board";
+export { BoardControls } from "./controls";
+export {
+  activeFilterCount,
+  applyView,
+  clearFilters,
+  cycleSort,
+  EMPTY_VIEW,
+  isFiltered,
+  isHidden,
+  selectedValues,
+  toggleFilterValue,
+  toggleHidden,
+  togglePerson,
+  type BoardSort,
+  type BoardView,
+} from "./view-state";
 export {
   displayValue,
   isEditable,

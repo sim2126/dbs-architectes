@@ -51,6 +51,7 @@ import {
   type BoardRow,
 } from "./columns";
 import { columnSummary, groupRows, statusDistribution } from "./grouping";
+import { useDismiss } from "./use-dismiss";
 import {
   groupCheckState,
   pruneSelection,
@@ -1114,22 +1115,3 @@ function Checkbox({
   );
 }
 
-/** Close on outside click or Escape — every popover on the board needs both. */
-function useDismiss<T extends HTMLElement>(close: () => void) {
-  const ref = useRef<T>(null);
-  useEffect(() => {
-    const onPointer = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [close]);
-  return ref;
-}

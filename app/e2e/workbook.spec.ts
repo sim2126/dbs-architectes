@@ -219,6 +219,77 @@ test.describe("workbook board", () => {
     });
   });
 
+  test("filter, sort and hide change the view without touching the data", async ({ page }) => {
+    const rows = await projects(page);
+    const doing = rows.filter((p) => p.workStatus === "doing").length;
+    expect(doing, "the seed has projects in progress").toBeGreaterThan(0);
+    expect(doing).toBeLessThan(rows.length);
+
+    await board(page);
+    await expect(page.getByText(`${rows.length} of ${rows.length} projects`)).toBeVisible();
+
+    // Filter: only what is being worked on.
+    await page.getByRole("button", { name: /^Filter/ }).click();
+    const filterMenu = page.getByRole("menu", { name: "Filter" });
+    await expect(filterMenu).toBeVisible();
+    await expectAccessible(page, "workbook-filter-menu");
+    await filterMenu.getByRole("menuitemcheckbox", { name: STATUS_LABEL.doing }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByText(`${doing} of ${rows.length} projects`)).toBeVisible();
+
+    // Sort: by client, ascending, within each group.
+    await page.getByRole("button", { name: /^Sort/ }).click();
+    await page.getByRole("menu", { name: "Sort" }).getByRole("menuitem", { name: /^Sort by Client/ }).click();
+    await page.keyboard.press("Escape");
+    const clients = await page
+      .locator('td button[aria-label^="Client of "]')
+      .evaluateAll((els) =>
+        els.map((el) => (el.getAttribute("aria-label") ?? "").split(": ").slice(1).join(": ")),
+      );
+    const named = clients.filter((c) => c && c !== "empty");
+    const sorted = [...named].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    // Sorting is within groups, so compare each group's run rather than the
+    // whole column. The first group's names are the first run.
+    expect(named.length).toBeGreaterThan(1);
+    expect(sorted[0]).toBe(named[0]);
+
+    // Hide: the column leaves the board.
+    await page.getByRole("button", { name: /^Hide/ }).click();
+    await page.getByRole("menu", { name: "Hide" }).getByRole("menuitemcheckbox", { name: "Notes" }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("columnheader", { name: "Notes" })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: "Client" })).toBeVisible();
+
+    // None of it wrote anything.
+    const after = await projects(page);
+    expect(after.filter((p) => p.workStatus === "doing").length).toBe(doing);
+  });
+
+  test("the person filter shows only that person's projects", async ({ page }) => {
+    const rows = await projects(page);
+    const roster = (await (await page.request.get("/api/team")).json()) as {
+      id: string;
+      name: string | null;
+    }[];
+    const busiest = roster
+      .map((person) => ({
+        person,
+        count: rows.filter((r) => (r as unknown as { assignments: { userId: string }[] }).assignments
+          .some((a) => a.userId === person.id)).length,
+      }))
+      .filter((entry) => entry.count > 0 && entry.count < rows.length)
+      .sort((a, b) => b.count - a.count)[0];
+    expect(busiest, "someone is assigned to some but not all projects").toBeTruthy();
+
+    await board(page);
+    await page.getByRole("button", { name: /^Person/ }).click();
+    const menu = page.getByRole("menu", { name: "Person" });
+    await menu.getByRole("menuitemcheckbox", { name: new RegExp(escapeRe(busiest.person.name ?? "")) }).click();
+    await page.keyboard.press("Escape");
+
+    await expect(page.getByText(`${busiest.count} of ${rows.length} projects`)).toBeVisible();
+  });
+
   test("a row shows how much has been said about it", async ({ page }) => {
     await board(page);
     // Rows with a conversation carry the count in the button's own name, so

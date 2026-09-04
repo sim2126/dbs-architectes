@@ -27,11 +27,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Download, ExternalLink, Loader2, RefreshCw, Search, X } from "lucide-react";
 import Link from "next/link";
 import {
+  applyView,
   Board,
+  BoardControls,
+  EMPTY_VIEW,
+  isFiltered,
   type BoardCellValue,
   type BoardColumn,
   type BoardPerson,
   type BoardRow,
+  type BoardView,
   type BulkAction,
 } from "@/ui/board";
 import { showToast } from "@/ui/components/toast";
@@ -109,6 +114,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [canAdd, setCanAdd] = useState(false);
   const [liveUpdates, setLiveUpdates] = useState(false);
+  // Person, Filter, Sort and Hide, held for this session only. Nothing
+  // here is persisted: a saved view is a board setting, not a preference,
+  // and inventing one now would be guessing at the shape.
+  const [view, setView] = useState<BoardView>(EMPTY_VIEW);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -273,7 +282,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     );
   }, [projects, search]);
 
-  const rows = useMemo<BoardRow[]>(
+  const allRows = useMemo<BoardRow[]>(
     () =>
       filtered.map((project) => ({
         id: project.id,
@@ -299,6 +308,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         })),
       })),
     [filtered],
+  );
+
+  const { rows, columns: visibleColumns } = useMemo(
+    () => applyView(allRows, columns, view),
+    [allRows, columns, view],
   );
 
   // ── Writes ─────────────────────────────────────────────────────────────────
@@ -451,11 +465,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
    * opening the file treats it as text, not a formula.
    */
   const exportCsv = useCallback(() => {
-    const header = ["Code", "Project", ...columns.map((c) => c.label)];
+    const header = ["Code", "Project", ...visibleColumns.map((c) => c.label)];
     const body = rows.map((row) => [
       row.subtitle ?? "",
       row.title,
-      ...columns.map((column) => {
+      ...visibleColumns.map((column) => {
         if (column.kind === "people") return row.people.map((p) => p.name ?? "").join(", ");
         const value = row.cells[column.key];
         if (value === null || value === undefined || value === "") return "";
@@ -476,7 +490,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     link.download = `DBS_Projects_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [columns, rows]);
+  }, [visibleColumns, rows]);
 
   const bulkActions = useMemo<BulkAction[]>(
     () => [
@@ -579,6 +593,13 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         </div>
         <span className="text-[11px] text-friday-fg-subtle">Group by</span>
 
+        <BoardControls
+          columns={columns}
+          roster={roster as BoardPerson[]}
+          view={view}
+          onChange={setView}
+        />
+
         <span className="flex-1" />
 
         <span
@@ -595,7 +616,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           {liveUpdates ? "Live" : "Not live"}
         </span>
         <span className="text-[11px] text-friday-fg-subtle">
-          {filtered.length} of {projects.length} projects
+          {rows.length} of {projects.length} projects
         </span>
         <button
           type="button"
@@ -622,7 +643,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         </div>
       ) : (
         <Board
-          columns={columns}
+          columns={visibleColumns}
           rows={rows}
           groupBy={groupBy}
           label="Projects"
@@ -637,7 +658,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           onOpenConversation={setOpenItemId}
           bulkActions={bulkActions}
           itemNoun="project"
-          emptyNote="No projects in this group"
+          emptyNote={
+            isFiltered(view) || search.trim()
+              ? "Nothing here matches"
+              : "No projects in this group"
+          }
         />
       )}
 
