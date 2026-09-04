@@ -20,6 +20,17 @@ const REQUEST_WINDOW_MS = 10 * 60 * 1000;
  */
 const LEASE_TTL_MS = 150 * 1000;
 
+/*
+ * Transaction options for the guard's two locks.
+ *
+ * Prisma waits 2 s by default to begin an interactive transaction. Neon
+ * scales to zero when idle and took 1.58 s to answer SELECT 1 on wake, after
+ * which the lock transaction itself needed ~0.8 s — so the very first AI
+ * request after a quiet spell failed to start its transaction and the guard's
+ * catch turned that into a spurious 503. Ten seconds is generous for a lock
+ * that does almost nothing, and it is only ever paid on a cold start.
+ */
+
 export type AiQuotaResult =
   | { allowed: true }
   | { allowed: false; retryAfterMs: number };
@@ -30,12 +41,23 @@ export type AiQuotaConsumption =
   | { allowed: true; eventId: string }
   | { allowed: false; retryAfterMs: number };
 
+/*
+ * Advisory locks go through $executeRaw, not $queryRaw.
+ *
+ * pg_advisory_xact_lock() returns void. Neon's driver adapter tolerates
+ * decoding a void column; @prisma/adapter-pg refuses it with
+ * UnsupportedNativeDataType, which surfaced as a 503 on every AI request the
+ * moment the app ran against a plain PostgreSQL — and Aurora, the production
+ * target, is a plain PostgreSQL. The lock's result is never read, so
+ * $executeRaw is also the honest call. Same change in chat/channels and
+ * invitations, which take the same lock the same way.
+ */
 export async function consumeAiRequestQuota(
   userId: string,
   now = new Date(),
 ): Promise<AiQuotaConsumption> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw(
+    await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-quota:${userId}`}, 0))`,
     );
     const windowStart = new Date(now.getTime() - REQUEST_WINDOW_MS);
@@ -62,7 +84,7 @@ export async function consumeAiRequestQuota(
       select: { id: true },
     });
     return { allowed: true, eventId: event.id };
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 }
 
 export async function acquireAiAgentLease(
@@ -71,7 +93,7 @@ export async function acquireAiAgentLease(
   now = new Date(),
 ): Promise<AiQuotaResult> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw(
+    await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ai-lease:${userId}`}, 0))`,
     );
     const current = await tx.aiAgentLease.findUnique({ where: { userId } });
@@ -95,7 +117,7 @@ export async function acquireAiAgentLease(
       },
     });
     return { allowed: true };
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 }
 
 /**

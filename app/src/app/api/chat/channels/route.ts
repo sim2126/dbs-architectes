@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
   if (parsed.value.type === "direct") {
     const channel = await prisma.$transaction(async (tx) => {
       const directKey = `direct:${participantIds.slice().sort().join(":")}`;
-      await tx.$queryRaw(
+      await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${directKey}, 0))`,
       );
 
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
         },
         include: memberInclude,
       });
-    });
+    }, { maxWait: 10_000, timeout: 15_000 });
     return Response.json(channel, { status: 201 });
   }
 

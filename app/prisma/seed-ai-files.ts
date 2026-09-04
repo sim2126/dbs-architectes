@@ -25,10 +25,8 @@
 import "dotenv/config";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Prisma, PrismaClient } from "@prisma/client";
-import { neonConfig } from "@neondatabase/serverless";
-import { PrismaNeon } from "@prisma/adapter-neon";
-import ws from "ws";
+import { Prisma } from "@prisma/client";
+import { createSeedPrisma } from "./seed-db";
 import {
   extractText,
   ExtractError,
@@ -40,9 +38,7 @@ import {
 import { assertSafeDemoSeedTarget } from "./seed-safety";
 
 const seedTarget = assertSafeDemoSeedTarget();
-neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: seedTarget.connectionString });
-const prisma = new PrismaClient({ adapter });
+const prisma = createSeedPrisma(seedTarget.connectionString);
 
 /** Where the local-disk upload adapter serves from, so seeded rows carry the
  *  same shape of URL a real upload would produce. */

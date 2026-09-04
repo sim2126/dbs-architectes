@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { prisma } from "@/platform/db";
 import { authorize, loadSubject } from "@/platform/authz";
@@ -49,10 +50,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await prisma.messageReaction.delete({ where: { id: existing.id } });
     event = PUSHER_EVENTS.REACTION_REMOVE;
   } else {
-    await prisma.messageReaction.create({
-      data: { messageId: id, userId: subject.userId, emoji },
-      include: { user: { select: { id: true, name: true, initials: true } } },
-    });
+    try {
+      await prisma.messageReaction.create({
+        data: { messageId: id, userId: subject.userId, emoji },
+        include: { user: { select: { id: true, name: true, initials: true } } },
+      });
+    } catch (error) {
+      // Two identical toggles arriving together both read "no reaction yet"
+      // and both try to create; the unique index on (message, user, emoji)
+      // lets exactly one through and the other lands here. The loser wanted
+      // the reaction on, and it is on — so this is success, not a 500.
+      // Ten simultaneous clicks produced nine 500s before this branch.
+      const duplicate =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+      if (!duplicate) throw error;
+    }
     event = PUSHER_EVENTS.REACTION_ADD;
   }
 

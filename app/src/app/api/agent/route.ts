@@ -45,6 +45,7 @@ import {
 } from "@/platform/ai/provider";
 import { validateGrounding } from "@/platform/ai/validation";
 import { requireAiAccess } from "@/platform/ai/access";
+import { aiProviderConfigured, aiUnavailableResponse } from "@/platform/ai/availability";
 import {
   acquireAiAgentLease,
   consumeAiRequestQuota,
@@ -83,6 +84,13 @@ export async function POST(req: NextRequest) {
   // Cost-control window: short-circuit before constructing the OpenAI
   // client so a missing/removed key never produces a cryptic 401.
   if (isAiDisabled()) return aiDisabledResponse();
+  // The comment above stated this intent; the check below is what actually
+  // delivers it. Without it a missing key threw inside `new OpenAI(...)`
+  // AFTER the quota slot was consumed: a 500 per request, each one charged.
+  // Twenty-five simultaneous requests on a keyless staging box produced
+  // twenty 500s and twenty spent slots. Decided here, before quota, so an
+  // unavailable provider costs the caller nothing.
+  if (!aiProviderConfigured()) return aiUnavailableResponse();
 
   let body: {
     sessionId?: string;
@@ -140,6 +148,8 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!chat) {
+    // Quota was consumed above and this request will not reach the provider.
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
     return Response.json({ error: "Conversation not found." }, { status: 404 });
   }
   const latestUserPrompt = body.message.trim();
@@ -157,6 +167,8 @@ export async function POST(req: NextRequest) {
       input: latestUserPrompt,
     }));
   } catch {
+    // Quota was consumed above and this request will not reach the provider.
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
     return Response.json(
       { error: "AI Assistant could not verify the workspace context. Please try again." },
       { status: 503 },
@@ -183,6 +195,8 @@ export async function POST(req: NextRequest) {
       sessionId: chatSessionId,
     });
   } catch {
+    // Quota was consumed above; this request never reaches the provider.
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
     return Response.json(
       { error: "AI Assistant could not verify the attached files. Please try again." },
       { status: 503 },
@@ -201,6 +215,7 @@ export async function POST(req: NextRequest) {
         ? `Could not read: ${failed.map((file) => file.filename).join(", ")}. Remove or retry the file before asking about it.`
         : "",
     ].filter(Boolean).join(" ");
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
     return Response.json(
       { error: `AI Assistant cannot answer with incomplete attachment context. ${details}` },
       { status: 409 },
@@ -232,6 +247,7 @@ export async function POST(req: NextRequest) {
   try {
     lease = await acquireAiAgentLease(access.subject.userId, agentRequestId);
   } catch {
+    await refundAiRequestQuota(requestLimit.eventId).catch(() => undefined);
     return Response.json(
       { error: "AI Assistant request controls are unavailable. Please try again shortly." },
       { status: 503 },

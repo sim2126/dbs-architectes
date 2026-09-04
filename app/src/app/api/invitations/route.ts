@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // requests can both revoke zero rows and leave two live bearer tokens.
     // Serialise replacement for this normalised address inside the database,
     // then perform both writes in the same transaction.
-    await tx.$queryRaw(
+    await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${email}, 0))`,
     );
     await tx.invitation.updateMany({
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
         expiresAt: true, createdAt: true,
       },
     });
-  });
+  }, { maxWait: 10_000, timeout: 15_000 });
 
   const url = inviteUrl(request, raw);
   const inviterLabel = actorName ?? "An admin";

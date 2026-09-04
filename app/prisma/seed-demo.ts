@@ -20,19 +20,15 @@
  */
 
 import "dotenv/config";
-import { Prisma, PrismaClient } from "@prisma/client";
-import { neonConfig } from "@neondatabase/serverless";
-import { PrismaNeon } from "@prisma/adapter-neon";
+import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import ws from "ws";
+import { createSeedPrisma } from "./seed-db";
 import { assertSafeDemoSeedTarget } from "./seed-safety";
 
 // Prisma 7 requires a driver adapter; matching prisma/seed.ts exactly so
 // there is one way this project connects from a script.
 const seedTarget = assertSafeDemoSeedTarget();
-neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: seedTarget.connectionString });
-const prisma = new PrismaClient({ adapter });
+const prisma = createSeedPrisma(seedTarget.connectionString);
 
 const PASSWORD = "dbs2025";
 

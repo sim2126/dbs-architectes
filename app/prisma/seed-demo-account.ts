@@ -32,15 +32,10 @@
  */
 
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
-import { neonConfig } from "@neondatabase/serverless";
-import { PrismaNeon } from "@prisma/adapter-neon";
 import bcrypt from "bcryptjs";
-import ws from "ws";
+import { createSeedPrisma } from "./seed-db";
 
-neonConfig.webSocketConstructor = ws;
-const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
-const prisma = new PrismaClient({ adapter });
+const prisma = createSeedPrisma(process.env.DATABASE_URL!);
 
 /** Kept in step with DEMO_EMAIL / DEMO_PASSWORD in src/app/login/page.tsx.
  *  If these drift, the button on the sign-in page stops working. */
