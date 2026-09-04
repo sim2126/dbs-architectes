@@ -73,7 +73,13 @@ export default function CallsPage() {
   }, [fetchCalls]);
 
   useEffect(() => {
-    const pusher = getPusherClient();
+    let pusher: ReturnType<typeof getPusherClient>;
+    try {
+      pusher = getPusherClient();
+    } catch (error) {
+      console.error("[calls] real-time unavailable: Pusher is not configured", error);
+      return;
+    }
     const ch = pusher.subscribe("presence-workspace");
 
     ch.bind(PUSHER_EVENTS.CALL_STARTED, ({ id }: { id: string }) => {

@@ -1304,7 +1304,16 @@ export function ChatClient({ initialChannels, users, currentUser }: ChatClientPr
   useEffect(() => {
     if (!activeChannelId) return;
 
-    const pusher = getPusherClient();
+    // pusher-js throws when NEXT_PUBLIC_PUSHER_KEY is unset. That is a
+    // deployment fault worth a loud log, not a reason to take the whole chat
+    // page down: messages still load and post over the API without it.
+    let pusher: ReturnType<typeof getPusherClient>;
+    try {
+      pusher = getPusherClient();
+    } catch (error) {
+      console.error("[chat] real-time unavailable: Pusher is not configured", error);
+      return;
+    }
     const channelSub = pusher.subscribe(`private-channel-${activeChannelId}`);
 
     // Real-time events are invalidations, not data transport. The API checks

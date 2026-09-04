@@ -206,7 +206,7 @@ jobs:
         env:
           FRIDAY_DEMO_SEED_ALLOW: I_UNDERSTAND_THIS_REPLACES_DEMO_DATA
           FRIDAY_DEMO_SEED_TARGET: localhost:5432/friday_e2e?schema=public
-        run: npx tsx prisma/seed-demo.ts && npx tsx prisma/seed-demo-account.ts
+        run: npx tsx prisma/seed-demo.ts && npx tsx prisma/seed-demo-account.ts && npx tsx prisma/seed-ai-files.ts
       - name: Build
         working-directory: app
         run: npm run build
