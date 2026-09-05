@@ -28,6 +28,8 @@ export type UpdateProjectInput = {
     billing?: string | null;
     image?: string | null;
     workStatus?: string;
+    startDate?: string | Date | null;
+    endDate?: string | Date | null;
     address?: string | null;
     latitude?: number | string | null;
     longitude?: number | string | null;
@@ -55,6 +57,14 @@ export async function updateProject(input: UpdateProjectInput) {
       ...(data.billing     !== undefined && { billing: data.billing }),
       ...(data.image       !== undefined && { image: data.image }),
       ...(data.workStatus  !== undefined && { workStatus: data.workStatus }),
+      // An empty cell clears the date; a value arrives as an ISO day string
+      // from the board's date input.
+      ...(data.startDate   !== undefined && {
+        startDate: data.startDate ? new Date(data.startDate) : null,
+      }),
+      ...(data.endDate     !== undefined && {
+        endDate: data.endDate ? new Date(data.endDate) : null,
+      }),
       ...(data.address     !== undefined && { address: data.address }),
       ...(data.latitude    !== undefined && {
         latitude: data.latitude != null ? parseFloat(String(data.latitude)) : null,

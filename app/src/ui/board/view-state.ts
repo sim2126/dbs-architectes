@@ -11,6 +11,7 @@
  */
 
 import type { BoardColumn, BoardRow } from "./columns";
+import { parseDayValue } from "./calendar-layout";
 
 export type BoardSort = { key: string; direction: "asc" | "desc" } | null;
 
@@ -218,6 +219,16 @@ function compare(a: BoardRow, b: BoardRow, column: BoardColumn): number {
     const ln = Number(left);
     const rn = Number(right);
     if (Number.isFinite(ln) && Number.isFinite(rn)) return ln - rn;
+  }
+
+  if (column.kind === "date") {
+    const ld = parseDayValue(left);
+    const rd = parseDayValue(right);
+    // An unreadable date sorts with the blanks rather than at the epoch.
+    if (ld && rd) return ld.getTime() - rd.getTime();
+    if (ld) return -1;
+    if (rd) return 1;
+    return 0;
   }
 
   return left.localeCompare(right, undefined, { sensitivity: "base" });

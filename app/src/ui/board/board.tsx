@@ -51,6 +51,7 @@ import {
   type BoardRow,
 } from "./columns";
 import { columnSummary, groupRows, statusDistribution } from "./grouping";
+import { formatDay, parseDayValue, toDayValue } from "./calendar-layout";
 import { useDismiss } from "./use-dismiss";
 import {
   cycleSort,
@@ -724,6 +725,10 @@ function Cell({
     );
   }
 
+  if (column.kind === "date") {
+    return <DateCell row={row} column={column} canEdit={canEdit} onCommit={commit} />;
+  }
+
   if (column.kind === "status") {
     return <StatusCell row={row} column={column} canEdit={canEdit} onCommit={commit} />;
   }
@@ -1004,6 +1009,77 @@ function CellEditor({
       className="w-full border border-friday-accent bg-friday-bg px-3 text-[12.5px] text-friday-fg outline-none"
       style={{ height: ROW_H }}
     />
+  );
+}
+
+/**
+ * A calendar day. The browser's own date input is used rather than a
+ * hand-built picker: it is keyboard-operable, localised, and understands
+ * what a month is — three things a bespoke one gets wrong for years.
+ */
+function DateCell({
+  row,
+  column,
+  canEdit,
+  onCommit,
+}: {
+  row: BoardRow;
+  column: BoardColumn;
+  canEdit: boolean;
+  onCommit: (value: BoardCellValue) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const day = parseDayValue(row.cells[column.key]);
+  const text = day ? formatDay(day) : "";
+
+  // Focus by ref rather than the autoFocus attribute: the input has just
+  // replaced the button the user activated, so their focus has to follow it.
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  if (editing) {
+    return (
+      <td className="border-b border-l border-friday-border-soft p-0">
+        <input
+          type="date"
+          ref={inputRef}
+          defaultValue={day ? toDayValue(day) : ""}
+          aria-label={`${column.label} of ${row.title}`}
+          onChange={(e) => {
+            onCommit(e.target.value ? e.target.value : null);
+            setEditing(false);
+          }}
+          onBlur={() => setEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setEditing(false);
+            if (e.key === "Enter") setEditing(false);
+          }}
+          className="w-full border border-friday-accent bg-friday-bg px-2 text-[12.5px] text-friday-fg outline-none"
+          style={{ height: ROW_H }}
+        />
+      </td>
+    );
+  }
+
+  return (
+    <td className="border-b border-l border-friday-border-soft p-0">
+      <button
+        type="button"
+        disabled={!canEdit}
+        onClick={() => setEditing(true)}
+        aria-label={`${column.label} of ${row.title}: ${text || "not set"}`}
+        className={cn(
+          "flex w-full items-center px-3 text-left text-[12.5px]",
+          text ? "text-friday-fg" : "text-friday-fg-subtle",
+          canEdit && "hover:bg-friday-surface-2",
+        )}
+        style={{ height: ROW_H }}
+      >
+        <span className="truncate">{text || (canEdit ? "" : "—")}</span>
+      </button>
+    </td>
   );
 }
 

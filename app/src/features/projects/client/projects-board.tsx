@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  CalendarDays,
   ChevronDown,
   Download,
   ExternalLink,
@@ -42,8 +43,10 @@ import {
   Board,
   BoardControls,
   EMPTY_VIEW,
+  Calendar,
   isFiltered,
   Kanban,
+  toDayValue,
   useDismiss,
   ViewsMenu,
   type BoardCellValue,
@@ -87,6 +90,8 @@ export type BoardProject = {
   year: number | null;
   billing: string | null;
   notes: string | null;
+  startDate: string | null;
+  endDate: string | null;
   updatedAt: string;
   /** Messages in this project's conversation, for the row badge. */
   updateCount?: number;
@@ -135,7 +140,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const [view, setView] = useState<BoardView>(EMPTY_VIEW);
   // Table or Kanban. The same rows, groups and rules either way — only the
   // shape changes, so this is a layout choice rather than a second board.
-  const [layout, setLayout] = useState<"table" | "kanban">("table");
+  const [layout, setLayout] = useState<"table" | "kanban" | "calendar">("table");
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
@@ -355,6 +360,8 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         width: 132,
         options: CATEGORIES,
       },
+      { key: "startDate", label: "Start", kind: "date", width: 118 },
+      { key: "endDate", label: "End", kind: "date", width: 118 },
       { key: "client", label: "Client", kind: "text", width: 160 },
       { key: "commune", label: "Commune", kind: "text", width: 140 },
       { key: "year", label: "Year", kind: "number", width: 78 },
@@ -396,6 +403,9 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           year: project.year,
           billing: project.billing,
           notes: project.notes,
+          // The board works in whole days; the record keeps a timestamp.
+          startDate: project.startDate ? toDayValue(new Date(project.startDate)) : null,
+          endDate: project.endDate ? toDayValue(new Date(project.endDate)) : null,
           updatedAt: relativeDay(project.updatedAt),
         },
         updateCount: project.updateCount,
@@ -752,6 +762,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
             [
               { key: "table" as const, label: "Table", icon: Table2 },
               { key: "kanban" as const, label: "Kanban", icon: LayoutGrid },
+              { key: "calendar" as const, label: "Calendar", icon: CalendarDays },
             ]
           ).map(({ key, label, icon: Icon }) => (
             <button
@@ -771,7 +782,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
               )}
             >
               <Icon className="h-3 w-3" />
-              {label}
+              {/* Only the current view is named. Three labelled buttons pushed
+                  the toolbar past its width; each button keeps its full name
+                  for a screen reader either way. */}
+              {layout === key && label}
             </button>
           ))}
         </div>
@@ -850,6 +864,15 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading the board
         </div>
+      ) : layout === "calendar" ? (
+        <Calendar
+          rows={rows}
+          colourBy={groupBy}
+          startKey="startDate"
+          endKey="endDate"
+          onOpenRow={setOpenItemId}
+          itemNoun="project"
+        />
       ) : layout === "kanban" ? (
         <Kanban
           columns={visibleColumns}

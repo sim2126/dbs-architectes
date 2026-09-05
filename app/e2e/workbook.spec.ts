@@ -21,6 +21,8 @@ type Project = {
   phase: string;
   workStatus: string;
   client: string | null;
+  startDate: string | null;
+  endDate: string | null;
   /** What this caller may do to the row, as the server computed it. */
   capabilities?: { read: boolean; update: boolean; updateStatus: boolean; assign: boolean };
 };
@@ -274,15 +276,20 @@ test.describe("workbook board", () => {
     const widthOf = async (label: string) =>
       (await page.getByRole("columnheader", { name: new RegExp(`^${label} column options`) }).boundingBox())!.width;
 
+    // Relative to whatever is next to it, so adding a column to the board
+    // does not make this test wrong.
     const before = await headings();
-    expect(before.indexOf("CLIENT")).toBeGreaterThan(before.indexOf("CATEGORY"));
+    const wasAt = before.indexOf("CLIENT");
+    expect(wasAt).toBeGreaterThan(0);
+    const wasLeftOfIt = before[wasAt - 1];
     const widthBefore = await widthOf("Client");
 
     // Dragging does this too, but the menu is the path a keyboard can take.
     await page.getByRole("button", { name: /^Client column options/ }).click();
     await page.getByRole("menu", { name: "Client column" }).getByRole("menuitem", { name: "Move left" }).click();
     const moved = await headings();
-    expect(moved.indexOf("CLIENT")).toBeLessThan(moved.indexOf("CATEGORY"));
+    expect(moved.indexOf("CLIENT")).toBe(wasAt - 1);
+    expect(moved[wasAt], "the two swapped places").toBe(wasLeftOfIt);
 
     await page.getByRole("button", { name: /^Client column options/ }).click();
     await page.getByRole("menu", { name: "Client column" }).getByRole("menuitem", { name: "Wider" }).click();
@@ -412,6 +419,56 @@ test.describe("workbook board", () => {
 
     await menu.getByRole("button", { name: `Delete the view ${name}` }).click();
     await expect(page.getByRole("menuitem", { name: new RegExp(escapeRe(name)) })).toHaveCount(0);
+  });
+
+  test("the calendar draws dated projects across the days they run", async ({ page }) => {
+    const rows = await projects(page);
+    const dated = rows.filter((p) => p.startDate);
+    expect(dated.length, "the demo projects carry dates").toBeGreaterThan(0);
+
+    await board(page);
+    await page.getByRole("button", { name: "Calendar view" }).click();
+
+    // A month, Monday first, with today marked.
+    await expect(page.getByRole("heading", { level: 2, name: /^\w+ \d{4}$/ })).toBeVisible();
+    await expect(page.getByText("Mon", { exact: true })).toBeVisible();
+
+    // Bars name the project and the days it covers, so the calendar is
+    // readable without seeing the colours.
+    const bars = page.getByRole("button", { name: /, \d+ \w+ \d{4}( to \d+ \w+ \d{4})?,/ });
+    await expect(bars.first()).toBeVisible();
+    await expectAccessible(page, "workbook-calendar");
+
+    // Stepping months keeps working and does not lose the view.
+    await page.getByRole("button", { name: "Previous month" }).click();
+    await expect(page.getByRole("heading", { level: 2, name: /^\w+ \d{4}$/ })).toBeVisible();
+    await page.getByRole("button", { name: "Today" }).click();
+
+    // A bar opens the project it belongs to.
+    await bars.first().click();
+    await expect(page.getByRole("dialog", { name: /updates$/ })).toBeVisible();
+  });
+
+  test("a date cell picks a day and saves it", async ({ page }) => {
+    const target = (await projects(page))[0];
+    await board(page);
+
+    const cell = page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}:`) });
+    await cell.scrollIntoViewIfNeeded();
+    await cell.click();
+
+    const input = page.getByLabel(`Start of ${target.title}`);
+    await expect(input).toBeFocused();
+    await input.fill("2027-03-09");
+
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.startDate?.slice(0, 10))
+      .toBe("2027-03-09");
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}: 9 Mar 2027`) }),
+    ).toBeVisible();
+
+    await page.request.patch(`/api/projects/${target.id}`, { data: { startDate: target.startDate } });
   });
 
   test("a row shows how much has been said about it", async ({ page }) => {

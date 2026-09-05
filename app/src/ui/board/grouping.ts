@@ -8,6 +8,7 @@
  */
 
 import type { BoardCellValue, BoardColumn, BoardRow } from "./columns";
+import { formatDay, parseDayValue } from "./calendar-layout";
 
 export type BoardGroup = {
   /** The grouping column's value. `null` for rows with none. */
@@ -149,6 +150,17 @@ export function columnSummary(
       return min === max ? String(min) : `${min}–${max}`;
     }
     return String(sum);
+  }
+
+  if (column.kind === "date") {
+    const days = filled
+      .map((value) => parseDayValue(value))
+      .filter((day): day is Date => day !== null)
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (days.length === 0) return "";
+    const first = formatDay(days[0]);
+    const last = formatDay(days[days.length - 1]);
+    return first === last ? first : `${first} – ${last}`;
   }
 
   if (column.kind === "people") {

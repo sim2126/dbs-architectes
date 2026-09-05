@@ -21,6 +21,8 @@ export type BoardColumnKind =
   | "status"
   /** One of a fixed list, painted as plain text. Monday's dropdown. */
   | "select"
+  /** A calendar day. Stored as `yyyy-mm-dd`, edited with a date picker. */
+  | "date"
   /** People assigned to the row, as an avatar stack. */
   | "people"
   /** Derived or system-owned. Shown, never edited. */

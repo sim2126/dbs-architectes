@@ -120,11 +120,11 @@ model VerificationToken {
 }
 
 model Project {
-  id              String   @id @default(cuid())
-  code            String   @unique
+  id              String    @id @default(cuid())
+  code            String    @unique
   title           String
-  category        String   @default("Residenziale")
-  phase           String   @default("ETUDE/AP")
+  category        String    @default("Residenziale")
+  phase           String    @default("ETUDE/AP")
   client          String?
   year            Int?
   commune         String?
@@ -136,8 +136,14 @@ model Project {
   image           String?
   floors          Int?
   area            Float?
-  status          String   @default("active")
-  workStatus      String   @default("todo")
+  status          String    @default("active")
+  workStatus      String    @default("todo")
+  /// When the project runs. Both nullable: a project under discussion has
+  /// neither, and one with a start but no agreed completion has only the
+  /// first. Everything that plans against time — the calendar, deadline
+  /// triage, later sprint planning — reads these.
+  startDate       DateTime?
+  endDate         DateTime?
   billing         String?
   notes           String?
   // Regional fields
@@ -150,8 +156,8 @@ model Project {
   address         String? // human-readable address
   latitude        Float?
   longitude       Float?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   assignments    ProjectAssignment[]
   agendaItems    AgendaItem[]
@@ -171,6 +177,7 @@ model Project {
   @@index([phase])
   @@index([country, operatingRegion])
   @@index([commune])
+  @@index([startDate, endDate])
 }
 
 // Structured status check-ins authored by project leads/managers.

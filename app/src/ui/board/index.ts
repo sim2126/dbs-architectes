@@ -8,6 +8,13 @@ export { Board, type BoardProps, type BulkAction } from "./board";
 export { BoardControls } from "./controls";
 export { useDismiss } from "./use-dismiss";
 export { Kanban, type KanbanProps } from "./kanban";
+export { Calendar, type CalendarProps } from "./calendar";
+export {
+  formatDay,
+  itemSpan,
+  parseDayValue,
+  toDayValue,
+} from "./calendar-layout";
 export { ViewsMenu } from "./views-menu";
 export {
   describeView,

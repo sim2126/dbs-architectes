@@ -87,8 +87,12 @@ test("stored widths are clamped, so a saved view cannot hide a column by width",
 });
 
 test("an unknown layout falls back to the table", () => {
-  assert.equal(parseSavedViewState({ view: {}, layout: "calendar" }, "phase")!.layout, "table");
-  assert.equal(parseSavedViewState({ view: {}, layout: "kanban" }, "phase")!.layout, "kanban");
+  for (const layout of ["kanban", "calendar"]) {
+    assert.equal(parseSavedViewState({ view: {}, layout }, "phase")!.layout, layout);
+  }
+  for (const layout of ["gantt", "", 3, null]) {
+    assert.equal(parseSavedViewState({ view: {}, layout }, "phase")!.layout, "table", String(layout));
+  }
 });
 
 test("names are trimmed, collapsed and bounded", () => {

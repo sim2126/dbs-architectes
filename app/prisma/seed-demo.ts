@@ -19,6 +19,7 @@
  *   npx tsx prisma/seed-demo.ts
  */
 
+import { demoProjectDates } from "./demo-project-dates";
 import "dotenv/config";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -250,10 +251,12 @@ async function seedDatabase(prisma: Prisma.TransactionClient) {
   for (const p of PROJECTS) {
     const seq = (yearCounters.get(p.year) ?? 0) + 1;
     yearCounters.set(p.year, seq);
+    const code = `DBS-${p.year}-${String(seq).padStart(3, "0")}`;
+    const { startDate, endDate } = demoProjectDates(code, p.year, p.phase);
     projects.push(
       await prisma.project.create({
         data: {
-          code: `DBS-${p.year}-${String(seq).padStart(3, "0")}`,
+          code,
           title: p.title,
           category: p.category,
           phase: p.phase,
@@ -264,6 +267,8 @@ async function seedDatabase(prisma: Prisma.TransactionClient) {
           country: p.country,
           operatingRegion: p.region,
           year: p.year,
+          startDate,
+          endDate,
           billing: p.phase === "TERMINATO" ? "Settled" : "In progress",
           notes: null,
         },

@@ -20,7 +20,7 @@ import {
   type BoardView,
 } from "./view-state";
 
-export type BoardLayout = "table" | "kanban";
+export type BoardLayout = "table" | "kanban" | "calendar";
 
 export type SavedViewState = {
   view: BoardView;
@@ -91,7 +91,8 @@ export function parseSavedViewState(input: unknown, fallbackGroupBy: string): Sa
 
   return {
     view,
-    layout: input.layout === "kanban" ? "kanban" : "table",
+    layout:
+      input.layout === "kanban" || input.layout === "calendar" ? input.layout : "table",
     groupBy: typeof input.groupBy === "string" && input.groupBy ? input.groupBy : fallbackGroupBy,
   };
 }
@@ -107,7 +108,9 @@ export function normaliseViewName(raw: string): string {
  */
 export function describeView(state: SavedViewState, columns: readonly BoardColumn[]): string {
   const label = (key: string) => columns.find((c) => c.key === key)?.label ?? key;
-  const parts: string[] = [state.layout === "kanban" ? "Kanban" : "Table"];
+  const parts: string[] = [
+    state.layout === "kanban" ? "Kanban" : state.layout === "calendar" ? "Calendar" : "Table",
+  ];
 
   const filters = Object.keys(state.view.values).length + (state.view.people.length > 0 ? 1 : 0);
   if (filters > 0) parts.push(`${filters} filter${filters === 1 ? "" : "s"}`);
