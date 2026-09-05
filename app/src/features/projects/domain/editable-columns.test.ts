@@ -45,6 +45,7 @@ test("select rejects a value outside its options", () => {
 test("number rejects non-numeric and implausible years", () => {
   const year = columnFor("year")!;
   assert.equal(validateCell(year, "abc").ok, false);
+  assert.equal(validateCell(year, "2026.5").ok, false, "Prisma years must be integers");
   assert.equal(validateCell(year, "202").ok, false, "three digits is a typo");
   assert.equal(validateCell(year, "20255").ok, false, "five digits is a typo");
   assert.deepEqual(validateCell(year, "2026"), { ok: true, value: 2026 });

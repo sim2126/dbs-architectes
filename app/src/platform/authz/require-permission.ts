@@ -66,32 +66,10 @@ export async function loadSubject(): Promise<Subject | null> {
   const session = await auth({ allowExternal: true });
   if (!session?.user?.id) return null;
 
-  // Confirm the account is still active on every gated request. The
-  // JWT cookie can live for hours after an admin flips isActive →
-  // false; without this check the deactivated user keeps working
-  // until the cookie expires. Cost: one indexed PK lookup per
-  // gated request — measured under 2ms locally, acceptable for the
-  // security guarantee. Reads the lifecycle fields only.
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { isActive: true, employmentStatus: true, role: true, isExternal: true },
-  });
-  if (
-    !user ||
-    !user.isActive ||
-    user.employmentStatus === "suspended" ||
-    user.employmentStatus === "terminated"
-  ) {
-    return null;
-  }
+  const subject = await loadSubjectForUser(session.user.id);
+  if (!subject) return null;
 
-  // Per-session revoke. The JWT carries a UserSession row id; if the
-  // row has been revoked (admin or self via Active Sessions UI), we
-  // refuse the request and the next page navigation lands on /login.
-  //
-  // Throttled lastSeenAt update: only write when the previous touch
-  // is older than 5 minutes. Keeps "last seen" useful for the UI
-  // without writing on every page load.
+  // Per-session revoke. The JWT carries a UserSession row id.
   const sessionId = session.user.sessionId;
   if (sessionId) {
     const row = await prisma.userSession.findUnique({
@@ -101,62 +79,57 @@ export async function loadSubject(): Promise<Subject | null> {
     if (!row || row.revokedAt) return null;
     const fiveMinAgo = Date.now() - 5 * 60 * 1000;
     if (row.lastSeenAt.getTime() < fiveMinAgo) {
-      // Fire-and-forget; do not block the request on this write.
       prisma.userSession
         .update({ where: { id: row.id }, data: { lastSeenAt: new Date() } })
         .catch((err: unknown) => console.warn("[authz] lastSeenAt update failed", err));
     }
   }
+  return subject;
+}
 
-  type RegionRow = {
-    country: string;
-    operatingRegion: string | null;
-    accessLevel: string;
-  };
+/** Live identity and grants for a notification recipient or session owner. */
+export async function loadSubjectForUser(userId: string): Promise<Subject | null> {
+  return (await loadSubjectsForUsers([userId]))[0] ?? null;
+}
 
-  type GrantRow = { action: string; effect: string };
-
-  const now = new Date();
-  const [regions, grantRows] = await Promise.all([
-    prisma.userRegionAccess.findMany({
-      where: { userId: session.user.id },
-      select: { country: true, operatingRegion: true, accessLevel: true },
-    }) as Promise<RegionRow[]>,
-    // Expired grants are filtered in the query, not in memory — an expired
-    // grant must never reach authorize().
-    prisma.permissionGrant.findMany({
-      where: {
-        userId: session.user.id,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+/** Batch recipient checks share exactly the live session policy projection. */
+export async function loadSubjectsForUsers(userIds: readonly string[]): Promise<Subject[]> {
+  if (userIds.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: {
+      id: { in: [...new Set(userIds)] },
+      isActive: true,
+      employmentStatus: { notIn: ["suspended", "terminated"] },
+    },
+    select: {
+      id: true,
+      role: true,
+      isExternal: true,
+      regionAccess: { select: { country: true, operatingRegion: true, accessLevel: true } },
+      permissionGrants: {
+        where: { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        select: { action: true, effect: true },
       },
-      select: { action: true, effect: true },
-    }) as Promise<GrantRow[]>,
-  ]);
-
-  // Rows are validated, not trusted. A row naming an action that no longer
-  // exists in the vocabulary — or carrying an effect outside allow/deny —
-  // is dropped rather than passed through. Closed-world default: an
-  // unrecognised grant grants nothing.
-  const grants: PermissionGrant[] = [];
-  for (const row of grantRows) {
-    if (!isAction(row.action)) continue;
-    if (row.effect !== "allow" && row.effect !== "deny") continue;
-    grants.push({ action: row.action, effect: row.effect });
-  }
-
-  return {
-    userId: session.user.id,
-    // Source role from DB, not the JWT — the JWT can be stale after a
-    // role change, and authorize() must always see the truth.
-    role: user.role ?? session.user.role ?? "viewer",
-    isExternal: user.isExternal,
-    regions: regions.map((r) => ({
-      country: r.country,
-      operatingRegion: r.operatingRegion,
-      accessLevel: r.accessLevel as "view" | "manage",
-    })),
-    grants,
-  };
+    },
+  });
+  return users.map((user) => {
+    const grants: PermissionGrant[] = [];
+    for (const row of user.permissionGrants) {
+      if (!isAction(row.action) || (row.effect !== "allow" && row.effect !== "deny")) continue;
+      grants.push({ action: row.action, effect: row.effect });
+    }
+    return {
+      userId: user.id,
+      role: user.role,
+      isExternal: user.isExternal,
+      regions: user.regionAccess.flatMap((region) => {
+        const accessLevel = region.accessLevel;
+        if (accessLevel !== "view" && accessLevel !== "manage") return [];
+        return [{ country: region.country, operatingRegion: region.operatingRegion, accessLevel }];
+      }),
+      grants,
+    };
+  });
 }
 
 export type RequireOptions = {
@@ -231,6 +204,7 @@ export async function loadProjectForAuth(
     select: {
       id: true,
       country: true,
+      operatingRegion: true,
       assignments: {
         where: { userId: subjectUserId },
         select: { role: true },
@@ -243,6 +217,7 @@ export async function loadProjectForAuth(
     kind: "project",
     id: project.id,
     country: project.country,
+    operatingRegion: project.operatingRegion,
     assignmentRole: project.assignments[0]?.role ?? null,
   };
 }

@@ -16,7 +16,8 @@ export {
 
 export {
   authorize,
-  readableProjectCountries,
+  readableProjectRegions,
+  canRegionAccess,
   type AuthContext,
   type Decision,
   type RegionAccess,
@@ -43,6 +44,9 @@ export {
   permissionResponse,
   loadProjectForAuth,
   loadSubject,
+  loadSubjectForUser,
+  loadSubjectsForUsers,
   PermissionError,
   type RequireOptions,
 } from "./require-permission";
+export { projectReadWhere } from "./project-read-where";

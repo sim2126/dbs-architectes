@@ -1,6 +1,7 @@
-import { auth } from "@/platform/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/platform/db";
+import { authorize, loadSubject, projectReadWhere } from "@/platform/authz";
+import { projectCapabilities } from "@/features/projects/domain/project-capabilities";
 import { parseProjectPageQuery, ProjectsExplorer } from "@/features/projects";
 
 export default async function ProjectsPage({
@@ -9,12 +10,13 @@ export default async function ProjectsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const initialQuery = parseProjectPageQuery(await searchParams);
-  const session = await auth({ allowExternal: true });
-  if (!session) redirect("/login");
-  if (session.user.isExternal) redirect("/dashboard/chat");
+  const subject = await loadSubject();
+  if (!subject) redirect("/login");
+  if (subject.isExternal) redirect("/dashboard/chat");
 
   const [projects, users] = await Promise.all([
     prisma.project.findMany({
+      where: projectReadWhere(subject),
       orderBy: { updatedAt: "desc" },
       include: {
         assignments: {
@@ -28,18 +30,9 @@ export default async function ProjectsPage({
     }),
   ]);
 
-  const canCreate =
-    session?.user.role === "super_admin" ||
-    session?.user.role === "admin" ||
-    session?.user.role === "project_manager";
-
-  const canEdit =
-    session?.user.role === "super_admin" ||
-    session?.user.role === "admin" ||
-    session?.user.role === "project_manager";
-
-  const canDelete =
-    session?.user.role === "super_admin" || session?.user.role === "admin";
+  const canCreate = authorize(subject, "project:create", null).allow;
+  const canEdit = projects.some((project) => projectCapabilities(subject, project).update);
+  const canDelete = authorize(subject, "project:delete", null).allow;
 
   return (
     <ProjectsExplorer
@@ -67,7 +60,7 @@ export default async function ProjectsPage({
         role: u.role,
       }))}
       permissions={{ canCreate, canEdit, canDelete }}
-      currentUserId={session.user.id}
+      currentUserId={subject.userId}
       initialQuery={initialQuery}
     />
   );

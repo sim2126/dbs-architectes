@@ -1,6 +1,6 @@
 import { auth } from "@/platform/auth";
 import { redirect } from "next/navigation";
-import { loadSubject } from "@/platform/authz";
+import { loadSubject, type Subject } from "@/platform/authz";
 import { prisma } from "@/platform/db";
 import { DashboardClient, type DashboardData, type RoleTier } from "@/features/dashboard";
 import {
@@ -59,6 +59,7 @@ export default async function DashboardPage() {
     : { kpi: [], primary: [], secondary: [] };
 
   const data = await buildDashboardData({
+    subject,
     tier,
     widgets,
     userId,
@@ -72,6 +73,7 @@ export default async function DashboardPage() {
 }
 
 async function buildDashboardData(args: {
+  subject: Subject | null;
   tier: RoleTier;
   widgets: Record<DashboardSlot, WidgetId[]>;
   userId: string;
@@ -268,11 +270,11 @@ async function buildDashboardData(args: {
   // Gated independently of needs-attention: the two are separate actions
   // (project:health.read vs team:workload.read), so a grant for one must
   // not silently enable the other.
-  if (canSee("team-load")) {
+  if (canSee("team-load") && args.subject) {
     // Compact team-load: top 5 by score from the full snapshot.
     // We call the same server function the /team-workload page does so
     // there's only one definition of "score" in the codebase.
-    const workload = await loadTeamWorkload();
+    const workload = await loadTeamWorkload(args.subject);
     teamLoad = workload.members.slice(0, 5).map((m) => ({
       userId: m.user.id,
       name: m.user.name,

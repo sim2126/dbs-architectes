@@ -59,6 +59,7 @@ export type ProjectResource = {
   kind: "project";
   id: string;
   country?: string | null;
+  operatingRegion?: string | null;
   /**
    * The caller's ProjectAssignment.role on THIS project, or null if the
    * caller has no assignment. Loaders in requirePermission() resolve this.
@@ -174,14 +175,23 @@ function canEditProjectByAssignment(tier: AssignmentTier): boolean {
   return tier === "lead" || tier === "editor";
 }
 
-function canRegionAccess(subject: Subject, country: string | null | undefined): boolean {
+export function canRegionAccess(
+  subject: Subject,
+  project: Pick<ProjectResource, "country" | "operatingRegion">,
+  access: "view" | "manage" = "view",
+): boolean {
+  const { country, operatingRegion } = project;
   if (!country) return true; // un-scoped projects are visible firm-wide
   if (isDirector(subject.role)) return true;
-  return subject.regions.some((r) => r.country === country);
+  return subject.regions.some((r) =>
+    r.country === country &&
+    (!r.operatingRegion || r.operatingRegion === operatingRegion) &&
+    (r.accessLevel === "manage" || (access === "view" && r.accessLevel === "view")),
+  );
 }
 
 /**
- * Which countries this subject may see projects in. `null` means no
+ * Which regions this subject may see projects in. `null` means no
  * restriction at all.
  *
  * canRegionAccess() answers the question one project at a time, which is the
@@ -193,9 +203,9 @@ function canRegionAccess(subject: Subject, country: string | null | undefined): 
  *
  * Projects with no country are visible to everyone, matching canRegionAccess.
  */
-export function readableProjectCountries(subject: Subject): string[] | null {
+export function readableProjectRegions(subject: Subject): readonly RegionAccess[] | null {
   if (isDirector(subject.role)) return null;
-  return [...new Set(subject.regions.map((r) => r.country))];
+  return subject.regions.filter((r) => r.accessLevel === "view" || r.accessLevel === "manage");
 }
 
 function deny(reason: string): Decision { return { allow: false, reason }; }
@@ -255,8 +265,8 @@ export function authorize(
 
   // ── Per-user overrides, consulted before role defaults ──────────
   // Deny always wins — over an allow-override and over any role.
-  const override = subject.grants?.find((g) => g.action === action);
-  if (override?.effect === "deny") {
+  const overrides = subject.grants?.filter((g) => g.action === action);
+  if (overrides?.some((g) => g.effect === "deny")) {
     return deny("Access to this action has been revoked for your account.");
   }
 
@@ -277,7 +287,18 @@ export function authorize(
     return deny("Guest access is limited to conversations they have been invited to.");
   }
 
-  if (override?.effect === "allow" && OVERRIDABLE_ACTIONS.has(action)) {
+  // A write must never restore access to a project whose read permission
+  // was revoked. The same boundary applies to its threads and status rows.
+  if (resource?.kind === "project" && action !== "project:read") {
+    if (subject.grants?.some((g) => g.action === "project:read" && g.effect === "deny")) {
+      return deny("Access to projects has been revoked for your account.");
+    }
+    if (!canRegionAccess(subject, resource)) {
+      return deny("You don't have access to this project's region.");
+    }
+  }
+
+  if (overrides?.some((g) => g.effect === "allow") && OVERRIDABLE_ACTIONS.has(action)) {
     return ALLOW;
   }
 
@@ -294,16 +315,16 @@ export function authorize(
 
     case "project:read": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
-      if (!canRegionAccess(subject, resource.country))
-        return deny("You don't have access to projects in this country.");
+      if (!canRegionAccess(subject, resource))
+        return deny("You don't have access to this project's region.");
       return ALLOW;
     }
 
     case "project:update": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
       if (isDirector(subject.role)) return ALLOW;
-      if (!canRegionAccess(subject, resource.country))
-        return deny("You don't have access to projects in this country.");
+      if (!canRegionAccess(subject, resource, "manage"))
+        return deny("You don't have permission to manage this project's region.");
       const tier = assignmentTier(resource.assignmentRole);
       if (canEditProjectByAssignment(tier)) return ALLOW;
       if (isManager(subject.role)) return ALLOW;
@@ -312,6 +333,8 @@ export function authorize(
 
     case "project:update.status": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
+      if (!canRegionAccess(subject, resource, "manage"))
+        return deny("You don't have permission to manage this project's region.");
       if (isManager(subject.role)) return ALLOW;
       if (isAssigned(assignmentTier(resource.assignmentRole))) return ALLOW;
       return deny("Only assignees or managers can change project status.");
@@ -325,6 +348,8 @@ export function authorize(
     case "project:assign": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
       if (isDirector(subject.role)) return ALLOW;
+      if (!canRegionAccess(subject, resource, "manage"))
+        return deny("You don't have permission to manage this project's region.");
       if (assignmentTier(resource.assignmentRole) === "lead") return ALLOW;
       return deny("Only directors or project leads can assign team members.");
     }
@@ -335,8 +360,8 @@ export function authorize(
       // Region access is also required — a Swiss-only manager cannot
       // post on an Indian project they have no visibility into.
       if (resource?.kind !== "project") return deny("Resource must be a project.");
-      if (!canRegionAccess(subject, resource.country))
-        return deny("You don't have access to projects in this country.");
+      if (!canRegionAccess(subject, resource, "manage"))
+        return deny("You don't have permission to manage this project's region.");
       if (isManager(subject.role)) return ALLOW;
       if (isAssigned(assignmentTier(resource.assignmentRole))) return ALLOW;
       return deny("Only assignees or managers can post status updates.");
@@ -349,6 +374,8 @@ export function authorize(
       // status row's authorId in Resource here. The route compares
       // subject.userId to the row's authorId before allowing.
       if (resource?.kind !== "project") return deny("Resource must be a project.");
+      if (!canRegionAccess(subject, resource, "manage"))
+        return deny("You don't have permission to manage this project's region.");
       if (isManager(subject.role)) return ALLOW;
       if (assignmentTier(resource.assignmentRole) === "lead") return ALLOW;
       return deny("Only project leads or managers can delete status updates.");
@@ -357,7 +384,7 @@ export function authorize(
     // ── Threads (per-project) ─────────────────────────────────
     case "thread:read": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
-      if (!canRegionAccess(subject, resource.country))
+      if (!canRegionAccess(subject, resource))
         return deny("You don't have access to this project's thread.");
       if (!isAssigned(assignmentTier(resource.assignmentRole)))
         return deny("Only assigned project members can read this project's thread.");
@@ -367,7 +394,7 @@ export function authorize(
     case "thread:post": {
       if (resource?.kind !== "project") return deny("Resource must be a project.");
       if (!isWriter(subject.role)) return deny("Read-only roles cannot post.");
-      if (!canRegionAccess(subject, resource.country))
+      if (!canRegionAccess(subject, resource))
         return deny("You don't have access to this project's thread.");
       if (!isAssigned(assignmentTier(resource.assignmentRole)))
         return deny("Only assigned project members can post to this project's thread.");

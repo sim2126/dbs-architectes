@@ -85,8 +85,8 @@ export function validateCell(
 
   if (column.kind === "number") {
     const n = Number(trimmed);
-    if (!Number.isFinite(n)) {
-      return { ok: false, reason: `${column.label} must be a number.` };
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      return { ok: false, reason: `${column.label} must be a whole number.` };
     }
     // Years are the only numeric column today. A four-digit bound catches
     // the common typo (202 or 20255) without inventing a business rule.

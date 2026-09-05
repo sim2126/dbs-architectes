@@ -1,74 +1,74 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { authorize, readableProjectCountries, type Subject } from "./authorize";
+import type { Prisma } from "@prisma/client";
+import { authorize, readableProjectRegions, type ProjectResource, type Subject } from "./authorize";
+import { projectReadWhere } from "./project-read-where";
 
 function subject(role: string, countries: string[]): Subject {
-  return {
-    userId: "u1",
-    role,
-    isExternal: false,
-    regions: countries.map((country) => ({ country, accessLevel: "view" as const })),
-  };
+  return { userId: "u1", role, isExternal: false, regions: countries.map((country) => ({ country, accessLevel: "manage" })) };
 }
 
-test("directors are unrestricted", () => {
-  for (const role of ["admin", "super_admin", "director"]) {
-    assert.equal(readableProjectCountries(subject(role, [])), null, role);
-  }
-});
+// Evaluate the small SQL-predicate vocabulary emitted by projectReadWhere.
+function matches(where: Prisma.ProjectWhereInput, project: ProjectResource): boolean {
+  if (where.id && typeof where.id === "object" && "in" in where.id) return (where.id.in as string[]).includes(project.id);
+  if (where.OR) return where.OR.some((clause) => matches(clause, project));
+  if (where.country !== undefined && where.country !== project.country) return false;
+  if (where.operatingRegion !== undefined && where.operatingRegion !== project.operatingRegion) return false;
+  return true;
+}
 
-test("everyone else is limited to the countries they hold access to", () => {
-  assert.deepEqual(readableProjectCountries(subject("manager", ["CH"])), ["CH"]);
-  assert.deepEqual(readableProjectCountries(subject("employee", ["CH", "IT"])), ["CH", "IT"]);
-});
-
-test("a user with no region access sees nothing country-scoped", () => {
-  assert.deepEqual(readableProjectCountries(subject("employee", [])), []);
-});
-
-test("duplicate region rows collapse to one country", () => {
-  const withDuplicates: Subject = {
-    userId: "u1",
-    role: "manager",
-    isExternal: false,
-    regions: [
+test("query visibility and project:read agree across sub-regions, denials and guests", () => {
+  const subjects: Subject[] = [
+    subject("director", []), subject("manager", ["CH"]), subject("employee", ["IT"]), subject("viewer", []),
+    { ...subject("manager", []), regions: [
       { country: "CH", operatingRegion: "Valais", accessLevel: "manage" },
       { country: "CH", operatingRegion: "Ticino", accessLevel: "view" },
-    ],
-  };
-  assert.deepEqual(readableProjectCountries(withDuplicates), ["CH"]);
-});
-
-/**
- * The rule this file states as a set and the rule authorize() applies one
- * project at a time have to agree. If they drift, the list shows rows the
- * detail view refuses to open, which is how the leak happened in the first
- * place.
- */
-test("the set agrees with the per-project decision, country by country", () => {
-  const countries = ["CH", "IT", "IN", null];
-  const subjects: Subject[] = [
-    subject("director", []),
-    subject("manager", ["CH"]),
-    subject("employee", ["IT"]),
-    subject("viewer", []),
+    ] },
+    { ...subject("admin", []), grants: [{ action: "project:read", effect: "deny" }] },
+    { ...subject("admin", []), isExternal: true },
   ];
-
-  for (const s of subjects) {
-    const allowed = readableProjectCountries(s);
-    for (const country of countries) {
-      const decision = authorize(s, "project:read", {
-        kind: "project",
-        id: "p1",
-        country,
-        assignmentRole: null,
-      });
-      const setSays = country === null || allowed === null || allowed.includes(country);
-      assert.equal(
-        decision.allow,
-        setSays,
-        `${s.role} on ${country ?? "no country"}: authorize=${decision.allow} set=${setSays}`,
-      );
+  for (const caller of subjects) {
+    const where = projectReadWhere(caller);
+    for (const country of ["CH", "IT", "IN", null, ""]) {
+      for (const operatingRegion of ["Valais", "Ticino", "Vaud", null]) {
+        const project: ProjectResource = { kind: "project", id: "p1", country, operatingRegion };
+        assert.equal(matches(where, project), authorize(caller, "project:read", project).allow,
+          `${caller.role}: ${country}/${operatingRegion}`);
+      }
     }
   }
+});
+
+test("specific grants never widen to the whole country", () => {
+  const caller = { ...subject("manager", []), regions: [{ country: "CH", operatingRegion: "Valais", accessLevel: "view" as const }] };
+  assert.deepEqual(readableProjectRegions(caller), caller.regions);
+  assert.equal(authorize(caller, "project:read", { kind: "project", id: "p1", country: "CH", operatingRegion: "Ticino" }).allow, false);
+  assert.equal(authorize(caller, "project:read", { kind: "project", id: "p1", country: "CH", operatingRegion: null }).allow, false);
+});
+
+test("all project mutation paths require manage access in the target region", () => {
+  const caller = { ...subject("manager", []), regions: [{ country: "CH", operatingRegion: "Valais", accessLevel: "view" as const }] };
+  const project: ProjectResource = { kind: "project", id: "p1", country: "CH", operatingRegion: "Valais", assignmentRole: "lead" };
+  for (const action of ["project:update", "project:update.status", "project:assign", "project:status.post", "project:status.delete"] as const) {
+    assert.equal(authorize(caller, action, project).allow, false, action);
+    assert.equal(authorize({ ...caller, regions: [{ ...caller.regions[0], accessLevel: "manage" }] }, action, project).allow, true, action);
+    assert.equal(authorize(subject("manager", ["IT"]), action, project).allow, false, `${action} cross-region`);
+  }
+});
+
+test("deny beats allow regardless of grant order and blocks writes", () => {
+  const caller: Subject = { ...subject("admin", []), grants: [
+    { action: "project:read", effect: "allow" }, { action: "project:read", effect: "deny" },
+  ] };
+  const project: ProjectResource = { kind: "project", id: "p1", country: null };
+  for (const action of ["project:read", "project:update", "project:update.status", "project:assign", "thread:read"] as const) {
+    assert.equal(authorize(caller, action, project).allow, false, action);
+  }
+  assert.deepEqual(projectReadWhere(caller), { id: { in: [] } });
+});
+
+test("workload uses live grants independently of role", () => {
+  assert.equal(authorize({ ...subject("manager", ["CH"]), grants: [{ action: "team:workload.read", effect: "deny" }] }, "team:workload.read", null).allow, false);
+  assert.equal(authorize({ ...subject("employee", ["CH"]), grants: [{ action: "team:workload.read", effect: "allow" }] }, "team:workload.read", null).allow, true);
+  assert.equal(authorize(subject("employee", ["CH"]), "team:workload.read", null).allow, false);
 });

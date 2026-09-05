@@ -8,11 +8,12 @@
  * they authored. The result is a single payload sized for a roster
  * of ~50–200 people — well within a single request.
  *
- * Authorization is the caller's concern. This function trusts that
- * the page server component already enforced manager-or-above access.
+ * The caller supplies its live Subject. Both the workload permission and
+ * project visibility are enforced before collecting the snapshot.
  */
 
 import { prisma } from "@/platform/db";
+import { authorize, PermissionError, projectReadWhere, type Subject } from "@/platform/authz";
 import {
   getLegacyAgendaDate,
   personalTaskWorkItemWhere,
@@ -44,7 +45,10 @@ function scoreToLoad(score: number): WorkloadLoadLevel {
   return "light";
 }
 
-export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
+export async function loadTeamWorkload(subject: Subject): Promise<TeamWorkloadData> {
+  const permission = authorize(subject, "team:workload.read", null);
+  if (!permission.allow) throw new PermissionError(403, permission.reason);
+  const visibleProjects = projectReadWhere(subject);
   const now = new Date();
   const today = startOfDayUtc(now);
   const in7 = new Date(today);
@@ -118,7 +122,7 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
 
   const [assignments, tasks, agendaWorkItems, statusRows] = await Promise.all([
     prisma.projectAssignment.findMany({
-      where: { userId: { in: userIds } },
+      where: { userId: { in: userIds }, project: visibleProjects },
       select: {
         userId: true,
         role: true,
@@ -138,6 +142,7 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
         userId: { in: userIds },
         ...personalTaskWorkItemWhere,
         status: { not: "done" },
+        OR: [{ projectId: null }, { project: visibleProjects }],
       },
       select: {
         id: true,
@@ -150,7 +155,7 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
       where: {
         userId: { in: userIds },
         status: { not: "done" },
-        AND: [scheduledWorkItemWhere],
+        AND: [scheduledWorkItemWhere, { OR: [{ projectId: null }, { project: visibleProjects }] }],
       },
       select: {
         id: true,
@@ -161,7 +166,7 @@ export async function loadTeamWorkload(): Promise<TeamWorkloadData> {
       },
     }) as Promise<AgendaRow[]>,
     prisma.projectStatusUpdate.findMany({
-      where: { authorId: { in: userIds } },
+      where: { authorId: { in: userIds }, project: visibleProjects },
       orderBy: { createdAt: "desc" },
       select: {
         health: true,

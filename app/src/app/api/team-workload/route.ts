@@ -4,26 +4,22 @@
  * /dashboard/team-workload page so external surfaces (the dashboard
  * widget, any future integration) consume one canonical shape.
  *
- * Gated by isManagerOrAbove — same audience as the page. Optional
+ * Gated by team:workload.read — same audience as the page. Optional
  * `?limit=N` returns the top N most-loaded members.
  */
 
 import { NextRequest } from "next/server";
-import { auth } from "@/platform/auth";
-import { isManagerOrAbove } from "@/platform/authz/permissions";
+import { requirePermission, PermissionError, permissionResponse } from "@/platform/authz";
 import { loadTeamWorkload } from "@/features/team-workload/server/load-team-workload";
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!isManagerOrAbove(session.user.role)) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
+  try {
+    const { subject } = await requirePermission(request, "team:workload.read", {
+      context: { route: "GET /api/team-workload" },
+    });
 
   const url = new URL(request.url);
   const limitParam = url.searchParams.get("limit");
@@ -35,9 +31,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const data = await loadTeamWorkload();
+  const data = await loadTeamWorkload(subject);
   return Response.json({
     generatedAt: data.generatedAt,
     members: data.members.slice(0, limit),
   });
+  } catch (error) {
+    if (error instanceof PermissionError) return permissionResponse(error);
+    throw error;
+  }
 }

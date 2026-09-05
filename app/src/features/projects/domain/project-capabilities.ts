@@ -17,7 +17,7 @@
 import { authorize, type Subject } from "@/platform/authz";
 
 export type ProjectCapabilities = {
-  /** May open it at all. False rows are listed but not readable. */
+  /** May open it at all. False rows must not be returned in a list. */
   read: boolean;
   /** May change any field. */
   update: boolean;
@@ -30,6 +30,7 @@ export type ProjectCapabilities = {
 type CapabilityProject = {
   id: string;
   country: string | null;
+  operatingRegion?: string | null;
   assignments: ReadonlyArray<{ userId: string; role?: string | null }>;
 };
 
@@ -41,6 +42,7 @@ export function projectCapabilities(
     kind: "project" as const,
     id: project.id,
     country: project.country,
+    operatingRegion: project.operatingRegion,
     assignmentRole:
       project.assignments.find((a) => a.userId === subject.userId)?.role ?? null,
   };

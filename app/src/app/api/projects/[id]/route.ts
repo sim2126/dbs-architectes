@@ -10,6 +10,7 @@ import { updateProject } from "@/features/projects/server/update-project";
 import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 import { deleteProject } from "@/features/projects/server/delete-project";
 import { scheduledWorkItemWhere, toLegacyAgendaItem } from "@/features/work-items";
+import { ProjectInputError, requireProjectObject } from "@/features/projects/domain/project-input";
 
 // GET stays inline — it returns the raw Prisma shape callers already
 // rely on (different from the page server component's ProjectDetailData).
@@ -35,10 +36,10 @@ export async function GET(
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
-      assignments: { include: { user: true } },
+      assignments: { include: { user: { select: { id: true, name: true, email: true, role: true, initials: true, image: true } } } },
       workItems: { where: scheduledWorkItemWhere },
       activities: {
-        include: { user: true },
+        include: { user: { select: { id: true, name: true, email: true, initials: true, image: true } } },
         orderBy: { createdAt: "desc" },
         take: 10,
       },
@@ -58,7 +59,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  try {
   const body = await request.json();
+  requireProjectObject(body);
 
   // Narrow vs broad: assignees can change workStatus only; anything
   // wider requires "project:update".
@@ -86,6 +89,11 @@ export async function PATCH(
   });
   await announceProjectChange(id);
   return Response.json(project);
+  } catch (error) {
+    if (error instanceof ProjectInputError) return Response.json({ error: error.message }, { status: error.status });
+    if (error instanceof SyntaxError) return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+    throw error;
+  }
 }
 
 export async function DELETE(

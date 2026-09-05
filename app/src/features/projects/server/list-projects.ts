@@ -4,16 +4,12 @@
  * Used by the JSON API at /api/projects (GET). Page server components
  * fetch through their own helpers because they need different joins.
  *
- * Region visibility is enforced here, via `visibleCountries`. It used to
- * say it was — the route carried a comment promising the list was filtered
- * to what the caller may see — while every signed-in user in fact received
- * all 24 projects and discovered the boundary only on clicking one. Titles,
- * clients and communes are not public within the practice, so that was a
- * leak rather than an inconvenience. The caller passes the countries; the
- * rule that produces them is readableProjectCountries() in platform/authz.
+ * A live Subject is required so query-time visibility includes permission
+ * denials, countries and operating regions, just like project:read.
  */
 
 import { prisma } from "@/platform/db";
+import { projectReadWhere, type Subject } from "@/platform/authz";
 import { normaliseProjectPhase } from "../domain/phase-helpers";
 
 export type ListProjectsInput = {
@@ -25,11 +21,7 @@ export type ListProjectsInput = {
   cursor?: string;
   /** Page size. Defaulted + clamped by the caller. */
   limit: number;
-  /**
-   * Countries the caller may see projects in. `null` or omitted means no
-   * restriction — pass it explicitly rather than leaving it out by accident.
-   */
-  visibleCountries?: string[] | null;
+  subject: Subject;
 };
 
 export type ListProjectsOutput = {
@@ -47,7 +39,7 @@ async function fetchProjectsPage(input: ListProjectsInput) {
     operatingRegion = "",
     cursor = "",
     limit,
-    visibleCountries = null,
+    subject,
   } = input;
   const normalisedPhase = phase ? normaliseProjectPhase(phase) : "";
 
@@ -68,14 +60,13 @@ async function fetchProjectsPage(input: ListProjectsInput) {
         category        ? { category }                  : {},
         country         ? { country }                   : {},
         operatingRegion ? { operatingRegion }           : {},
-        // A project with no country belongs to the whole practice.
-        visibleCountries
-          ? { OR: [{ country: null }, { country: { in: visibleCountries } }] }
-          : {},
+        projectReadWhere(subject),
+        // The immutable key remains a valid boundary even if the previous
+        // page's last row is edited or deleted before the next request.
+        cursor ? { id: { gt: cursor } } : {},
       ],
     },
-    orderBy: { updatedAt: "desc" },
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    orderBy: { id: "asc" },
     take: limit + 1,
     include: {
       assignments: {

@@ -1,14 +1,21 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/platform/auth";
-import { isManagerOrAbove } from "@/platform/authz/permissions";
+import { requirePermission, PermissionError, type Subject } from "@/platform/authz";
 import { TeamWorkloadClient } from "@/features/team-workload";
 import { loadTeamWorkload } from "@/features/team-workload/server/load-team-workload";
 
 export default async function TeamWorkloadPage() {
-  const session = await auth();
-  if (!session) redirect("/login");
-  if (!isManagerOrAbove(session.user.role)) redirect("/dashboard");
+  let subject: Subject;
+  try {
+    ({ subject } = await requirePermission(null, "team:workload.read", {
+      context: { route: "/dashboard/team-workload" },
+    }));
+  } catch (error) {
+    if (error instanceof PermissionError) {
+      redirect(error.status === 401 ? "/login" : "/dashboard");
+    }
+    throw error;
+  }
 
-  const data = await loadTeamWorkload();
+  const data = await loadTeamWorkload(subject);
   return <TeamWorkloadClient data={data} />;
 }

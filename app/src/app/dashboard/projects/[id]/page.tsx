@@ -1,11 +1,9 @@
 import { redirect, notFound } from "next/navigation";
-import { auth } from "@/platform/auth";
-import { prisma } from "@/platform/db";
 import {
   authorize,
   loadProjectForAuth,
   logAuthorizationDecision,
-  type Subject,
+  loadSubject,
 } from "@/platform/authz";
 import { isAdmin } from "@/platform/authz/permissions";
 import { ProjectDetail } from "@/features/projects";
@@ -16,29 +14,13 @@ export default async function ProjectDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await auth({ allowExternal: true });
-  if (!session) redirect("/login");
-  if (session.user.isExternal) redirect("/dashboard/chat");
+  const subject = await loadSubject();
+  if (!subject) redirect("/login");
+  if (subject.isExternal) redirect("/dashboard/chat");
   const { id } = await params;
 
-  // Build the AuthZ subject + region access.
-  const regions = await prisma.userRegionAccess.findMany({
-    where: { userId: session.user.id },
-    select: { country: true, operatingRegion: true, accessLevel: true },
-  });
-  const subject: Subject = {
-    userId: session.user.id,
-    role: session.user.role,
-    isExternal: session.user.isExternal,
-    regions: regions.map((r) => ({
-      country: r.country,
-      operatingRegion: r.operatingRegion,
-      accessLevel: r.accessLevel as "view" | "manage",
-    })),
-  };
-
   // Resolve the project + caller's assignment for the auth decision.
-  const resource = await loadProjectForAuth(id, session.user.id);
+  const resource = await loadProjectForAuth(id, subject.userId);
   if (!resource) notFound();
   const decision = authorize(subject, "project:read", resource);
   await logAuthorizationDecision({
@@ -64,8 +46,9 @@ export default async function ProjectDetailPage({
   // Load the full detail payload via the feature's server function.
   const data = await loadProjectDetail({
     projectId: id,
-    currentUserId: session.user.id,
-    isAdmin: isAdmin(session.user.role),
+    currentUserId: subject.userId,
+    isAdmin: isAdmin(subject.role),
+    canReadThread: authorize(subject, "thread:read", resource).allow,
     canAssignMembers: assignDecision.allow,
     canPostStatus: statusPostDecision.allow,
   });

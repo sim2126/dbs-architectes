@@ -33,6 +33,7 @@ export type LoadProjectDetailInput = {
   isAdmin: boolean;
   canAssignMembers: boolean;
   canPostStatus: boolean;
+  canReadThread: boolean;
 };
 
 export async function loadProjectDetail(
@@ -84,7 +85,7 @@ export async function loadProjectDetail(
         take: 12,
         select: { id: true, title: true, url: true, thumbnail: true, type: true, year: true, createdAt: true },
       }),
-      prisma.channel.findFirst({
+      input.canReadThread ? prisma.channel.findFirst({
         where: { projectId, type: "project" },
         select: {
           id: true,
@@ -105,7 +106,7 @@ export async function loadProjectDetail(
             },
           },
         },
-      }),
+      }) : Promise.resolve(null),
       prisma.favorite.findUnique({
         where: {
           userId_entityType_entityId: {

@@ -66,13 +66,25 @@ test("a project outside the caller's regions is not readable or editable", () =>
   const caps = projectCapabilities(subject("manager"), ITALIAN);
   assert.equal(caps.read, false);
   assert.equal(caps.update, false);
-  // Status is deliberately region-free in policy: a manager may unstick a
-  // project anywhere. Recorded here so a change to that rule is deliberate.
-  assert.equal(caps.updateStatus, true);
+  assert.equal(caps.updateStatus, false);
 });
 
 test("a project with no country is firm-wide", () => {
   const caps = projectCapabilities(subject("manager"), { ...SWISS, country: null });
   assert.equal(caps.read, true);
   assert.equal(caps.update, true);
+});
+
+test("a sub-region view grant returns read-only capabilities even for a lead", () => {
+  const viewer = subject("manager", [{ country: "CH", operatingRegion: "Valais", accessLevel: "view" }]);
+  const project = { ...SWISS, operatingRegion: "Valais", assignments: [{ userId: "u1", role: "lead" }] };
+  assert.deepEqual(projectCapabilities(viewer, project), { read: true, update: false, updateStatus: false, assign: false });
+  assert.deepEqual(projectCapabilities(viewer, { ...project, operatingRegion: "Ticino" }), {
+    read: false, update: false, updateStatus: false, assign: false,
+  });
+});
+
+test("a read denial removes every project capability", () => {
+  const denied = { ...subject("director"), grants: [{ action: "project:read" as const, effect: "deny" as const }] };
+  assert.deepEqual(projectCapabilities(denied, SWISS), { read: false, update: false, updateStatus: false, assign: false });
 });
