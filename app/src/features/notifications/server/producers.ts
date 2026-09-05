@@ -8,6 +8,7 @@
 import { prisma } from "@/platform/db";
 import { excerpt, mentionedUserIds } from "../domain/types";
 import { notify } from "./notify";
+import { replyRecipient } from "../domain/access";
 
 async function actorName(actorId: string): Promise<string> {
   const user = await prisma.user.findUnique({ where: { id: actorId }, select: { name: true } });
@@ -78,6 +79,12 @@ export async function notifyMessagePosted(args: {
   const audience = new Map<string, { id: string; name: string | null }>();
   for (const m of channel.members) audience.set(m.user.id, m.user);
   for (const a of channel.project?.assignments ?? []) audience.set(a.user.id, a.user);
+  if (channel.type === "public" && !channel.projectId) {
+    const staff = await prisma.user.findMany({
+      where: { isActive: true, isExternal: false }, select: { id: true, name: true },
+    });
+    for (const user of staff) audience.set(user.id, user);
+  }
 
   const who = await actorName(args.actorId);
   const isDirect = channel.type === "direct";
@@ -101,9 +108,10 @@ export async function notifyMessagePosted(args: {
     for (const id of mentioned) told.add(id);
   }
 
-  if (args.parentAuthorId && !told.has(args.parentAuthorId)) {
+  const replies = replyRecipient(args.parentAuthorId, new Set(audience.keys()), told);
+  if (replies.length) {
     await notify({
-      recipients: [args.parentAuthorId],
+      recipients: replies,
       actorId: args.actorId,
       type: "thread_reply",
       title: `${who} replied to your thread${where}`,
@@ -112,7 +120,7 @@ export async function notifyMessagePosted(args: {
       projectId: channel.projectId,
       dedupKey: `reply:${args.messageId}`,
     });
-    told.add(args.parentAuthorId);
+    for (const id of replies) told.add(id);
   }
 
   if (isDirect) {

@@ -10,5 +10,5 @@ export function userChannelName(userId: string) {
 
 export const USER_CHANNEL_PREFIX = "private-user-";
 
-/** Event carrying one NotificationDTO to its recipient. */
+/** ID-only notification invalidation; recipients fetch through live access checks. */
 export const NOTIFICATION_EVENT = "notification";

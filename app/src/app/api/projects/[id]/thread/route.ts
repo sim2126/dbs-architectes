@@ -15,6 +15,8 @@ import {
 import { rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
 import { channelInvalidation } from "@/features/chat/domain/realtime";
 import { channelName, PUSHER_EVENTS, pusherServer } from "@/platform/integrations/pusher";
+import { notifyMessagePosted } from "@/features/notifications/server/producers";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 
 function boundedLimit(value: string | null, fallback = 50, max = 100) {
   const parsed = Number(value);
@@ -180,10 +182,11 @@ export async function POST(
   const access = await resolveChannelAccess(channel.id, subject);
   if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
+  let parentAuthorId: string | null = null;
   if (parentId) {
     const parent = await prisma.message.findUnique({
       where: { id: parentId },
-      select: { channelId: true, parentId: true, deletedAt: true },
+      select: { channelId: true, parentId: true, deletedAt: true, userId: true },
     });
     if (
       !parent ||
@@ -193,6 +196,7 @@ export async function POST(
     ) {
       return Response.json({ error: "Thread not found in this project" }, { status: 400 });
     }
+    parentAuthorId = parent.userId;
   }
 
   const message = await prisma.message.create({
@@ -216,6 +220,13 @@ export async function POST(
       channelInvalidation(channel.id),
     );
   } catch { /* Pusher unavailable — non-fatal */ }
+
+  await announceProjectChange(id);
+  try {
+    await notifyMessagePosted({ messageId: message.id, channelId: channel.id, content, actorId: subject.userId, parentAuthorId });
+  } catch (error) {
+    console.warn("[project thread] notifications failed", error);
+  }
 
   return Response.json(message);
 }

@@ -4,6 +4,7 @@ import { authorize, loadSubject } from "@/platform/authz";
 import { resolveChannelAccess } from "@/features/chat/server/channel-access";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { channelInvalidation } from "@/features/chat/domain/realtime";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const subject = await loadSubject();
@@ -112,6 +113,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     );
   } catch (error) {
     console.warn("[chat] real-time delete delivery failed", error);
+  }
+
+  try {
+    const channel = await prisma.channel.findUnique({ where: { id: message.channelId }, select: { projectId: true } });
+    if (channel?.projectId) await announceProjectChange(channel.projectId);
+  } catch (error) {
+    console.warn("[chat] project invalidation failed", error);
   }
 
   return Response.json({ success: true });

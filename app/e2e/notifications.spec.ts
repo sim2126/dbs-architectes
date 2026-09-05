@@ -140,4 +140,109 @@ test.describe("notifications", () => {
     });
     expect(res.status()).toBe(403);
   });
+
+  test("WorkBook replies notify current assignees and disappear after their access is removed", async () => {
+    const employeeUser = await me(employee);
+    const adminUser = await me(admin);
+    const created = await admin.request.post("/api/projects", {
+      data: { title: `Notification access check ${Date.now()}`, country: "CH", phase: "ETUDE / AP" },
+    });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const project = await created.json() as Project;
+    try {
+      for (const userId of [adminUser.id, employeeUser.id]) {
+        const assigned = await admin.request.post(`/api/projects/${project.id}/members`, { data: { userId, role: "editor" } });
+        expect(assigned.ok(), await assigned.text()).toBeTruthy();
+      }
+      const parentResponse = await employee.request.post(`/api/projects/${project.id}/thread`, { data: { content: "Please review this detail" } });
+      expect(parentResponse.ok(), await parentResponse.text()).toBeTruthy();
+      const parent = await parentResponse.json() as { id: string; channelId: string };
+      const marker = `WorkBook reply ${Date.now()}`;
+      const first = await admin.request.post(`/api/projects/${project.id}/thread`, {
+        data: { content: marker, parentId: parent.id },
+      });
+      expect(first.ok(), await first.text()).toBeTruthy();
+      expect((await inbox(employee)).notifications.some((item) => item.body === marker && item.type === "thread_reply")).toBe(true);
+      const removed = await admin.request.delete(`/api/projects/${project.id}/members/${employeeUser.id}`);
+      expect(removed.ok(), await removed.text()).toBeTruthy();
+      expect((await inbox(employee)).notifications.some((item) => item.body === marker)).toBe(false);
+      const later = `${marker} after removal`;
+      const second = await admin.request.post("/api/chat/messages", {
+        data: { channelId: parent.channelId, content: later, parentId: parent.id },
+      });
+      expect(second.ok(), await second.text()).toBeTruthy();
+      expect((await inbox(employee)).notifications.some((item) => item.body === later)).toBe(false);
+    } finally {
+      const deleted = await admin.request.delete(`/api/projects/${project.id}`);
+      expect(deleted.ok(), await deleted.text()).toBeTruthy();
+    }
+  });
+
+  test("the bell pages through older notifications and recovers missed events on open", async () => {
+    const page = await employee.newPage();
+    let extra = false;
+    let loads = 0;
+    await page.route("**/api/notifications?**", async (route) => {
+      loads++;
+      const query = new URL(route.request().url()).searchParams;
+      const start = query.has("cursor") ? 20 : 0;
+      const category = query.get("category");
+      const list = Array.from({ length: 25 }, (_, index) => ({
+        id: `notification-${index}`, type: index < 20 ? "status_posted" : "mentioned",
+        category: index < 20 ? "updates" : "mentions", title: `Notification ${index}`,
+        body: `Notification body ${index}`, href: "/dashboard/projects", projectCode: null,
+        actor: null, createdAt: new Date().toISOString(), readAt: null,
+      }));
+      const current = extra
+        ? [{ ...list[20], id: "missed", title: "Recovered notification" }, ...list]
+        : list;
+      const filtered = category ? current.filter((item) => item.category === category) : current;
+      await route.fulfill({ json: {
+        notifications: filtered.slice(start, start + 20),
+        unreadCount: extra ? 26 : 25, unreadByCategory: { mentions: extra ? 6 : 5, updates: 20 },
+        hasMore: !category && !start, nextCursor: !category && !start ? "1750000000000:n1" : null,
+      } });
+    });
+    await page.goto("/dashboard");
+    await expect(page.getByRole("button", { name: "Notifications, 25 unread" })).toBeVisible();
+    await page.getByRole("button", { name: "Notifications, 25 unread" }).click();
+    const panel = page.getByRole("dialog", { name: "Notifications" });
+    await expect(panel.getByRole("tab", { name: "Mentions 5" })).toBeVisible();
+    await panel.getByRole("button", { name: "Load more notifications" }).click();
+    await expect(panel.getByText("Notification body 24", { exact: true })).toBeVisible();
+    await panel.getByRole("tab", { name: "Mentions 5" }).click();
+    await expect(panel.getByText("Notification body 24", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Notifications, 25 unread" }).click();
+    extra = true;
+    const before = loads;
+    await page.getByRole("button", { name: "Notifications, 25 unread" }).click();
+    await expect(panel.getByText("Recovered notification")).toBeVisible();
+    expect(loads).toBeGreaterThan(before);
+  });
+
+  test("HTTP read failures preserve unread state and display a retryable error", async () => {
+    const page = await employee.newPage();
+    await page.route("**/api/notifications**", async (route) => {
+      if (route.request().method() === "PATCH") {
+        await route.fulfill({ status: 500, json: { error: "Provider unavailable" } });
+        return;
+      }
+      await route.fulfill({ json: {
+        notifications: [{ id: "unread", type: "mentioned", category: "mentions", title: "Read failure check",
+          body: "The unread state must remain", href: "/dashboard/projects", projectCode: null,
+          actor: null, createdAt: new Date().toISOString(), readAt: null }],
+        unreadCount: 1, unreadByCategory: { mentions: 1, updates: 0 }, hasMore: false, nextCursor: null,
+      } });
+    });
+    await page.goto("/dashboard");
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    const panel = page.getByRole("dialog", { name: "Notifications" });
+    await panel.getByRole("link", { name: /Read failure check/ }).click();
+    await expect(panel.getByRole("alert")).toContainText("could not be marked as read");
+    await expect(page.getByRole("button", { name: "Notifications, 1 unread" })).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await panel.getByRole("button", { name: /mark.*read/i }).click();
+    await expect(panel.getByRole("alert")).toContainText("could not be marked as read");
+    await expect(page.getByRole("button", { name: "Notifications, 1 unread" })).toBeVisible();
+  });
 });

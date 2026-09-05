@@ -3,6 +3,7 @@ import { prisma } from "@/platform/db";
 import { authorize, loadProjectForAuth, loadSubject } from "@/platform/authz";
 import { rateLimit, rateLimitedResponse } from "@/platform/auth/rate-limit";
 import { resolveChannelAccess } from "@/features/chat/server/channel-access";
+import { addChannelMember } from "@/features/chat/server/add-channel-member";
 
 export async function POST(
   request: NextRequest,
@@ -89,22 +90,7 @@ export async function POST(
     );
   }
 
-  const member = await prisma.channelMember.upsert({
-    where: { channelId_userId: { channelId, userId: target.id } },
-    update: {},
-    create: { channelId, userId: target.id, role: "member" },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          initials: true,
-          image: true,
-          isExternal: true,
-        },
-      },
-    },
-  });
+  const member = await addChannelMember(channelId, target.id);
 
   return Response.json(member, { status: 201 });
 }

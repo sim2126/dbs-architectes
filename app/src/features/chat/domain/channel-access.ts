@@ -1,15 +1,3 @@
-export type ChannelViewer = {
-  userId: string;
-  isExternal: boolean;
-};
-
-export type ChannelAccessFacts = {
-  type: string;
-  projectId: string | null;
-  isMember: boolean;
-  isProjectAssignee: boolean;
-};
-
 /**
  * The one channel-access rule used by server queries and point lookups.
  *
@@ -19,12 +7,4 @@ export type ChannelAccessFacts = {
  * a ProjectAssignment never expands guest access, and a stale ChannelMember
  * row never preserves staff access after a project assignment is removed.
  */
-export function canReadChannel(
-  viewer: ChannelViewer,
-  channel: ChannelAccessFacts,
-): boolean {
-  if (viewer.isExternal) return channel.isMember;
-  if (channel.projectId !== null) return channel.isProjectAssignee;
-  if (channel.type === "public") return true;
-  return channel.isMember;
-}
+export { canReadChannel, type ChannelViewer, type ChannelAccessFacts } from "@/platform/authz/channel-access";

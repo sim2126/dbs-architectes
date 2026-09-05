@@ -1,10 +1,12 @@
 import { prisma } from "@/platform/db";
 import { pusherServer } from "@/platform/integrations/pusher";
 import { NOTIFICATION_EVENT, userChannelName } from "@/platform/integrations/pusher-channels";
+import { loadSubjectsForUsers } from "@/platform/authz";
+import { resolveNotificationSources } from "./filter-readable-notifications";
 import {
   categoryOf,
   resolveRecipients,
-  toNotificationDTO,
+  notificationInvalidation,
   type NotificationType,
 } from "../domain/types";
 
@@ -46,11 +48,15 @@ export async function notify(input: NotifyInput): Promise<number> {
     where: { userId: { in: candidates }, category, inApp: false },
     select: { userId: true },
   });
-  const recipients = resolveRecipients(
+  const eligible = resolveRecipients(
     candidates,
     input.actorId,
     new Set(muted.map((m) => m.userId)),
   );
+  const [subjects, canRead] = await Promise.all([
+    loadSubjectsForUsers(eligible), resolveNotificationSources([input], eligible),
+  ]);
+  const recipients = subjects.filter((subject) => canRead(subject, input)).map((subject) => subject.userId);
   if (recipients.length === 0) return 0;
 
   const rows = await prisma.notification.createManyAndReturn({
@@ -68,34 +74,15 @@ export async function notify(input: NotifyInput): Promise<number> {
     select: {
       id: true,
       userId: true,
-      type: true,
-      title: true,
-      body: true,
-      href: true,
-      readAt: true,
-      createdAt: true,
     },
   });
   if (rows.length === 0) return 0;
-
-  // The related names are the same for every row, so look them up once.
-  const [project, actor] = await Promise.all([
-    input.projectId
-      ? prisma.project.findUnique({ where: { id: input.projectId }, select: { code: true } })
-      : null,
-    input.actorId
-      ? prisma.user.findUnique({
-          where: { id: input.actorId },
-          select: { name: true, initials: true },
-        })
-      : null,
-  ]);
 
   try {
     const events = rows.map((row) => ({
       channel: userChannelName(row.userId),
       name: NOTIFICATION_EVENT,
-      data: toNotificationDTO(row, { projectCode: project?.code ?? null, actor }),
+      data: notificationInvalidation(row.id),
     }));
     // Pusher accepts at most ten events per batch call.
     for (let i = 0; i < events.length; i += 10) {

@@ -13,6 +13,7 @@ import {
   listNotifications,
   markNotificationsRead,
 } from "@/features/notifications/server/list-notifications";
+import { parseNotificationCursor } from "@/features/notifications/domain/pagination";
 
 function boundedLimit(value: string | null, fallback = 20, max = 50) {
   const parsed = Number(value);
@@ -25,9 +26,15 @@ export async function GET(request: NextRequest) {
   if (!subject) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const page = await listNotifications(subject.userId, {
+  const cursor = searchParams.get("cursor");
+  if (cursor && !parseNotificationCursor(cursor)) {
+    return Response.json({ error: "Invalid notification cursor" }, { status: 400 });
+  }
+  const category = searchParams.get("category");
+  const page = await listNotifications(subject, {
     limit: boundedLimit(searchParams.get("limit")),
-    cursor: searchParams.get("cursor"),
+    cursor,
+    ...(category === "mentions" || category === "updates" ? { category } : {}),
   });
   return Response.json(page);
 }
@@ -42,7 +49,7 @@ export async function PATCH(request: NextRequest) {
   if (!body) return Response.json({ error: "Body required" }, { status: 400 });
 
   if (body.all === true) {
-    return Response.json(await markNotificationsRead(subject.userId, { all: true }));
+    return Response.json(await markNotificationsRead(subject, { all: true }));
   }
   const ids = Array.isArray(body.ids)
     ? body.ids.filter((v): v is string => typeof v === "string").slice(0, 100)
@@ -50,5 +57,5 @@ export async function PATCH(request: NextRequest) {
   if (ids.length === 0) {
     return Response.json({ error: "ids or all is required" }, { status: 400 });
   }
-  return Response.json(await markNotificationsRead(subject.userId, { ids }));
+  return Response.json(await markNotificationsRead(subject, { ids }));
 }

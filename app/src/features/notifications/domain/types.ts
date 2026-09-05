@@ -36,7 +36,7 @@ export function categoryOf(type: NotificationType): NotificationCategory {
   }
 }
 
-/** Wire shape returned by GET /api/notifications and pushed over Pusher. */
+/** Wire shape returned only by the authenticated GET /api/notifications. */
 export interface NotificationDTO {
   id: string;
   type: string;
@@ -99,9 +99,8 @@ export function resolveRecipients(
 }
 
 /**
- * Users addressed with `@Name` in a message. Case-insensitive substring
- * match, the same rule the chat mention search applies, so a person is told
- * about exactly the messages that search would later show them.
+ * Users addressed with `@Name` in a message. Boundaries prevent @Anna from
+ * addressing Ann, and prevent an email address from becoming a mention.
  */
 export function mentionedUserIds(
   content: string,
@@ -109,13 +108,28 @@ export function mentionedUserIds(
 ): string[] {
   if (!content.includes("@")) return [];
   const haystack = content.toLowerCase();
-  const out: string[] = [];
+  const matches = new Map<number, { length: number; id: string | null }>();
   for (const { id, name } of candidates) {
     const needle = name?.trim().toLowerCase();
     if (!needle) continue;
-    if (haystack.includes(`@${needle}`) && !out.includes(id)) out.push(id);
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const mention = new RegExp(`(?<![\\p{L}\\p{N}_@])@${escaped}(?![\\p{L}\\p{N}_'-])`, "gu");
+    for (const match of haystack.matchAll(mention)) {
+      const previous = matches.get(match.index);
+      if (!previous || needle.length > previous.length) {
+        matches.set(match.index, { length: needle.length, id });
+      } else if (needle.length === previous.length && previous.id !== id) {
+        previous.id = null; // An ambiguous display name must not guess a recipient.
+      }
+    }
   }
-  return out;
+  const addressed = new Set([...matches.values()].map((match) => match.id));
+  return [...new Set(candidates.filter(({ id }) => addressed.has(id)).map(({ id }) => id))];
+}
+
+/** Stale sockets receive no titles, names, excerpts or destination links. */
+export function notificationInvalidation(id: string): { id: string } {
+  return { id };
 }
 
 /** First line of a message or summary, cut for the bell. */

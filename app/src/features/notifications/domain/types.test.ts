@@ -6,6 +6,7 @@ import {
   isNotificationType,
   mentionedUserIds,
   NOTIFICATION_TYPES,
+  notificationInvalidation,
   resolveRecipients,
   toNotificationDTO,
 } from "./types";
@@ -53,6 +54,25 @@ test("mentionedUserIds matches @Name case-insensitively and once", () => {
   );
   assert.deepEqual(mentionedUserIds("no handles here", people), []);
   assert.deepEqual(mentionedUserIds("@Annabelle is not Anna", people), []);
+});
+
+test("mentions require name boundaries and do not match email addresses", () => {
+  const people = [
+    { id: "ann", name: "Ann" }, { id: "anna", name: "Anna" },
+    { id: "anne", name: "Anne-Marie" }, { id: "lea", name: "Léa" },
+    { id: "regexp", name: "A. (Team)" },
+  ];
+  assert.deepEqual(mentionedUserIds("@Anna please review", people), ["anna"]);
+  assert.deepEqual(mentionedUserIds("name@Ann.example is an email; @Ann_2 is another handle", people), []);
+  assert.deepEqual(mentionedUserIds("(@Anne-Marie), @LÉA! @A. (Team)", people), ["anne", "lea", "regexp"]);
+  const fullNames = [{ id: "anna", name: "Anna" }, { id: "anna-rossi", name: "Anna Rossi" }];
+  assert.deepEqual(mentionedUserIds("@Anna Rossi please review", fullNames), ["anna-rossi"]);
+  assert.deepEqual(mentionedUserIds("@Anna, @Anna Rossi", fullNames), ["anna", "anna-rossi"]);
+  assert.deepEqual(mentionedUserIds("@Anna", [...fullNames, { id: "other-anna", name: "Anna" }]), []);
+});
+
+test("notification invalidations expose only an opaque identifier", () => {
+  assert.deepEqual(notificationInvalidation("n1"), { id: "n1" });
 });
 
 test("excerpt collapses whitespace and cuts with an ellipsis", () => {

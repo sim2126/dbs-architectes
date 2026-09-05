@@ -12,7 +12,7 @@ import { NOTIFICATION_EVENT, userChannelName } from "@/platform/integrations/pus
 import { useSession } from "next-auth/react";
 import { cn } from "@/ui/utils";
 import { useAssistantStore } from "@/ui/stores/assistant-store";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 // ─── Types ─────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ const PAGE_SIZE = 20;
 
 export function Header({ title }: { title?: string }) {
   const t = useT();
+  const router = useRouter();
   const { data: session } = useSession();
   const isExternal = session?.user?.isExternal === true;
   const userId = session?.user?.id;
@@ -51,8 +52,14 @@ export function Header({ title }: { title?: string }) {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [savingRead, setSavingRead] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [unreadByCategory, setUnreadByCategory] = useState({ mentions: 0, updates: 0 });
   const notifRef = useRef<HTMLDivElement>(null);
-  const seen = useRef(new Set<string>());
+  const loadVersion = useRef(0);
+  const refreshNotifications = useRef<() => Promise<void>>(async () => {});
+  const invalidateLoads = useCallback(() => { loadVersion.current++; }, []);
 
   // ── Dark mode ───────────────────────────────────────────────
 
@@ -88,29 +95,64 @@ export function Header({ title }: { title?: string }) {
   }, []);
 
   // ── Load notifications ──────────────────────────────────────
-  // Fetched once on mount so the badge is honest before the panel is ever
-  // opened, then kept current by the personal channel below.
-
-  const load = useCallback(async () => {
+  // Fetch on mount/open and recover missed events on focus or reconnect.
+  const load = useCallback(async (cursor?: string) => {
     if (!userId) return;
+    const version = ++loadVersion.current;
     setLoading(true);
     try {
-      const res = await fetch(`/api/notifications?limit=${PAGE_SIZE}`);
-      if (!res.ok) return;
+      const query = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (cursor) query.set("cursor", cursor);
+      if (activeTab !== "all") query.set("category", activeTab);
+      const res = await fetch(`/api/notifications?${query}`, { cache: "no-store" });
+      if (!res.ok) {
+        if (version === loadVersion.current && (res.status === 401 || res.status === 403)) {
+          setItems([]);
+          setUnread(0);
+          setUnreadByCategory({ mentions: 0, updates: 0 });
+          setNextCursor(null);
+        }
+        throw new Error("Notifications could not be loaded. Please try again.");
+      }
       const data = (await res.json()) as {
         notifications: NotificationItem[];
         unreadCount: number;
+        unreadByCategory: { mentions: number; updates: number };
+        hasMore: boolean;
+        nextCursor: string | null;
       };
-      for (const n of data.notifications) seen.current.add(n.id);
-      setItems(data.notifications);
+      if (version !== loadVersion.current) return;
+      setItems((previous) => cursor
+        ? [...previous, ...data.notifications.filter((item) => !previous.some((row) => row.id === item.id))]
+        : data.notifications);
       setUnread(data.unreadCount);
+      setUnreadByCategory(data.unreadByCategory);
+      setNextCursor(data.hasMore ? data.nextCursor : null);
+    } catch (cause) {
+      if (version === loadVersion.current) setError(cause instanceof Error ? cause.message : "Notifications could not be loaded.");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }, [userId]);
+  }, [userId, activeTab]);
 
   useEffect(() => {
-    load();
+    refreshNotifications.current = () => load();
+    setItems([]);
+    setNextCursor(null);
+    void load();
+    return invalidateLoads;
+  }, [load, invalidateLoads]);
+
+  useEffect(() => {
+    const recover = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("focus", recover);
+    window.addEventListener("online", recover);
+    document.addEventListener("visibilitychange", recover);
+    return () => {
+      window.removeEventListener("focus", recover);
+      window.removeEventListener("online", recover);
+      document.removeEventListener("visibilitychange", recover);
+    };
   }, [load]);
 
   // ── Real-time ───────────────────────────────────────────────
@@ -121,54 +163,52 @@ export function Header({ title }: { title?: string }) {
     if (!userId) return;
     const channelName = userChannelName(userId);
     let client: ReturnType<typeof getPusherClient> | null = null;
+    const refresh = () => { void load(); };
     try {
       client = getPusherClient();
       const channel = client.subscribe(channelName);
-      channel.bind(NOTIFICATION_EVENT, (item: NotificationItem) => {
-        if (seen.current.has(item.id)) return;
-        seen.current.add(item.id);
-        setItems((prev) => [item, ...prev].slice(0, PAGE_SIZE));
-        setUnread((n) => n + 1);
-      });
+      channel.bind(NOTIFICATION_EVENT, refresh);
+      channel.bind("pusher:subscription_succeeded", refresh);
+      client.connection.bind("connected", refresh);
     } catch {
-      // Pusher not configured. The list still loads on mount; nothing live.
+      // Opening the panel and returning to the tab still recover missed updates.
     }
     return () => {
+      client?.connection.unbind("connected", refresh);
       client?.unsubscribe(channelName);
     };
-  }, [userId]);
+  }, [userId, load]);
 
   // ── Read state ──────────────────────────────────────────────
-  // Optimistic: the row dims and the badge drops at once; the server is
-  // told afterwards. If that fails, reload so the display matches the truth.
-
-  const markRead = (item: NotificationItem) => {
-    if (item.readAt) return;
-    const readAt = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, readAt } : n)));
-    setUnread((n) => Math.max(0, n - 1));
-    fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [item.id] }),
-    }).catch(() => load());
-  };
-
-  const markAllRead = () => {
-    const readAt = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt })));
-    setUnread(0);
-    fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    }).catch(() => load());
+  // Keep unread state until the server confirms the write, including HTTP errors.
+  const markRead = async (item?: NotificationItem): Promise<boolean> => {
+    if (item?.readAt) return true;
+    if (savingRead) return false;
+    setSavingRead(true);
+    setError(null);
+    ++loadVersion.current;
+    setLoading(false);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item ? { ids: [item.id] } : { all: true }),
+      });
+      if (!res.ok) throw new Error("Notifications could not be marked as read. Please try again.");
+      const readAt = new Date().toISOString();
+      setItems((previous) => previous.map((row) => !item || row.id === item.id ? { ...row, readAt } : row));
+      await refreshNotifications.current();
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Notifications could not be marked as read.");
+      return false;
+    } finally {
+      setSavingRead(false);
+    }
   };
 
   // ── Tab content ─────────────────────────────────────────────
 
-  const unreadIn = (category: TabId) =>
-    items.filter((n) => !n.readAt && n.category === category).length;
+  const unreadIn = (category: "mentions" | "updates") => unreadByCategory[category];
   const visible = items.filter((n) => activeTab === "all" || n.category === activeTab);
 
   return (
@@ -223,7 +263,10 @@ export function Header({ title }: { title?: string }) {
             variant="ghost"
             size="icon"
             className="h-8 w-8 relative"
-            onClick={() => setNotifOpen((o) => !o)}
+            onClick={() => {
+              if (!notifOpen) void load();
+              setNotifOpen((o) => !o);
+            }}
           >
             <Bell className="h-4 w-4" />
             {unread > 0 && (
@@ -252,7 +295,8 @@ export function Header({ title }: { title?: string }) {
                   <h3 className="text-sm font-semibold">Notifications</h3>
                   {unread > 0 && (
                     <button
-                      onClick={markAllRead}
+                      onClick={() => { void markRead(); }}
+                      disabled={savingRead}
                       className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                     >
                       <CheckCheck className="w-3 h-3" />
@@ -297,6 +341,11 @@ export function Header({ title }: { title?: string }) {
 
                 {/* Content */}
                 <div className="max-h-[380px] overflow-y-auto">
+                  {error && (
+                    <div role="alert" className="px-4 py-3 text-xs text-friday-error-fg">
+                      {error} <button onClick={() => { setError(null); void load(); }} className="underline">Retry</button>
+                    </div>
+                  )}
                   {loading && items.length === 0 ? (
                     <div className="py-10 text-center text-sm text-muted-foreground">{t("common.loading")}</div>
                   ) : visible.length === 0 ? (
@@ -313,9 +362,13 @@ export function Header({ title }: { title?: string }) {
                         <Link
                           key={item.id}
                           href={item.href ?? "/dashboard/activity"}
-                          onClick={() => {
-                            markRead(item);
-                            setNotifOpen(false);
+                          onClick={async (event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                            event.preventDefault();
+                            if (await markRead(item)) {
+                              setNotifOpen(false);
+                              router.push(item.href?.startsWith("/dashboard/") ? item.href : "/dashboard/activity");
+                            }
                           }}
                           className="flex gap-3 px-4 py-3 hover:bg-accent/50 cursor-pointer transition-colors border-b border-border/40 last:border-0"
                         >
@@ -365,14 +418,15 @@ export function Header({ title }: { title?: string }) {
                 </div>
 
                 <div className="px-4 py-2.5 border-t border-border bg-muted/30 flex gap-3">
-                  <a
-                    href="/dashboard/activity"
+                  {nextCursor && <button
+                    type="button"
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={() => setNotifOpen(false)}
+                    disabled={loading}
+                    onClick={() => { void load(nextCursor); }}
                   >
-                    {t("notif.view_all")}
-                  </a>
-                  <span className="text-friday-fg-subtle">·</span>
+                    {loading ? t("common.loading") : "Load more notifications"}
+                  </button>}
+                  {nextCursor && <span className="text-friday-fg-subtle">·</span>}
                   <a
                     href="/dashboard/chat"
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"

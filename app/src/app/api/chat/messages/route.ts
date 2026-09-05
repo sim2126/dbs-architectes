@@ -8,6 +8,7 @@ import {
 } from "@/features/chat/server/channel-access";
 import { pusherServer, channelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { notifyMessagePosted } from "@/features/notifications/server/producers";
+import { announceProjectChange } from "@/features/projects/server/announce-project-change";
 import {
   fridayFileUrl,
   UploadReceiptError,
@@ -401,6 +402,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.warn("[chat] notifications failed", error);
+  }
+
+  try {
+    const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { projectId: true } });
+    if (channel?.projectId) await announceProjectChange(channel.projectId);
+  } catch (error) {
+    console.warn("[chat] project invalidation failed", error);
   }
 
   return Response.json({ ...message, replyCount: 0 });
