@@ -26,9 +26,29 @@ export type BoardView = {
   sort: BoardSort;
   /** Column keys the viewer has put away. */
   hidden: readonly string[];
+  /** Width overrides in pixels, by column key. */
+  widths: Readonly<Record<string, number>>;
+  /**
+   * Explicit left-to-right order, by column key. Empty means the order the
+   * board declared. A key the board no longer has is ignored, and a column
+   * the order does not mention goes to the end — so adding a column to the
+   * board never breaks someone's arrangement, it just appears last.
+   */
+  order: readonly string[];
 };
 
-export const EMPTY_VIEW: BoardView = { values: {}, people: [], sort: null, hidden: [] };
+export const EMPTY_VIEW: BoardView = {
+  values: {},
+  people: [],
+  sort: null,
+  hidden: [],
+  widths: {},
+  order: [],
+};
+
+/** Narrower than this and a column shows nothing but an ellipsis. */
+export const MIN_COLUMN_WIDTH = 64;
+export const MAX_COLUMN_WIDTH = 640;
 
 // ── Reading the view ─────────────────────────────────────────────────────────
 
@@ -84,6 +104,63 @@ export function cycleSort(view: BoardView, key: string): BoardView {
   if (view.sort?.key !== key) return { ...view, sort: { key, direction: "asc" } };
   if (view.sort.direction === "asc") return { ...view, sort: { key, direction: "desc" } };
   return { ...view, sort: null };
+}
+
+export function setColumnWidth(view: BoardView, key: string, width: number): BoardView {
+  const clamped = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(width)));
+  return { ...view, widths: { ...view.widths, [key]: clamped } };
+}
+
+export function resetColumnWidth(view: BoardView, key: string): BoardView {
+  const widths = { ...view.widths };
+  delete widths[key];
+  return { ...view, widths };
+}
+
+/**
+ * The order as it currently stands, given the board's own column list. The
+ * explicit order wins; anything it does not mention keeps its declared
+ * position at the end.
+ */
+export function orderedKeys(columns: readonly BoardColumn[], view: BoardView): string[] {
+  const known = new Set(columns.map((c) => c.key));
+  const listed = view.order.filter((key) => known.has(key));
+  const rest = columns.map((c) => c.key).filter((key) => !listed.includes(key));
+  return [...listed, ...rest];
+}
+
+/** Move one column one place left or right. */
+export function moveColumn(
+  view: BoardView,
+  columns: readonly BoardColumn[],
+  key: string,
+  direction: "left" | "right",
+): BoardView {
+  const keys = orderedKeys(columns, view);
+  const from = keys.indexOf(key);
+  if (from === -1) return view;
+  const to = direction === "left" ? from - 1 : from + 1;
+  if (to < 0 || to >= keys.length) return view;
+  const next = [...keys];
+  [next[from], next[to]] = [next[to], next[from]];
+  return { ...view, order: next };
+}
+
+/** Drop one column immediately before another. */
+export function reorderColumn(
+  view: BoardView,
+  columns: readonly BoardColumn[],
+  key: string,
+  beforeKey: string,
+): BoardView {
+  if (key === beforeKey) return view;
+  const keys = orderedKeys(columns, view);
+  const from = keys.indexOf(key);
+  const target = keys.indexOf(beforeKey);
+  if (from === -1 || target === -1) return view;
+  const next = keys.filter((k) => k !== key);
+  next.splice(next.indexOf(beforeKey), 0, key);
+  return { ...view, order: next };
 }
 
 export function clearFilters(view: BoardView): BoardView {
@@ -158,7 +235,14 @@ export function applyView(
   columns: readonly BoardColumn[],
   view: BoardView,
 ): { rows: BoardRow[]; columns: BoardColumn[] } {
-  const visibleColumns = columns.filter((column) => !view.hidden.includes(column.key));
+  const byKey = new Map(columns.map((c) => [c.key, c]));
+  const visibleColumns = orderedKeys(columns, view)
+    .map((key) => byKey.get(key))
+    .filter((column): column is BoardColumn => Boolean(column))
+    .filter((column) => !view.hidden.includes(column.key))
+    .map((column) =>
+      view.widths[column.key] ? { ...column, width: view.widths[column.key] } : column,
+    );
   const kept = rows.filter((row) => matches(row, view));
 
   const sort = view.sort;

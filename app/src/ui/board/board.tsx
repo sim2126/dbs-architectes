@@ -53,6 +53,16 @@ import {
 import { columnSummary, groupRows, statusDistribution } from "./grouping";
 import { useDismiss } from "./use-dismiss";
 import {
+  cycleSort,
+  EMPTY_VIEW,
+  moveColumn,
+  reorderColumn,
+  resetColumnWidth,
+  setColumnWidth,
+  toggleHidden,
+  type BoardView,
+} from "./view-state";
+import {
   groupCheckState,
   pruneSelection,
   selectRange,
@@ -114,6 +124,19 @@ export type BoardProps = {
   bulkActions?: readonly BulkAction[];
   itemNoun?: string;
   emptyNote?: string;
+  /**
+   * The viewer's arrangement — sort, order, widths, hidden columns. Supplying
+   * it puts a menu on every column header and a resize grip on its edge;
+   * leaving it out gives a board whose columns are fixed.
+   */
+  view?: BoardView;
+  onViewChange?: (view: BoardView) => void;
+  /**
+   * Every column the board has, including hidden ones. `columns` is what is
+   * on screen; this is what the arrangement is computed against, so that
+   * unhiding a column returns it to its place rather than to the end.
+   */
+  allColumns?: readonly BoardColumn[];
 };
 
 export function Board({
@@ -134,6 +157,9 @@ export function Board({
   bulkActions = [],
   itemNoun = "item",
   emptyNote = "Nothing here yet",
+  view,
+  onViewChange,
+  allColumns,
 }: BoardProps) {
   const groups = useMemo(() => groupRows(rows, groupBy), [rows, groupBy]);
   const orderedIds = useMemo(() => groups.flatMap((g) => g.rows.map((r) => r.id)), [groups]);
@@ -150,6 +176,13 @@ export function Board({
    * no render in which the two disagree.
    */
   const selection = useMemo(() => pruneSelection(rawSelection, orderedIds), [rawSelection, orderedIds]);
+
+  // Handlers below are rebuilt every render, so they close over the current
+  // arrangement. A resize drag holds the one it started with, which is right:
+  // nothing else can change while a pointer is held down.
+  const current = view ?? EMPTY_VIEW;
+  const arrangeable = Boolean(view && onViewChange);
+  const columnUniverse = allColumns ?? columns;
 
   const totalWidth = CHECK_W + ITEM_W + ACTIONS_W + columns.reduce((sum, c) => sum + c.width, 0);
   const columnCount = columns.length + 3;
@@ -197,13 +230,22 @@ export function Board({
                 Item
               </th>
               {columns.map((column) => (
-                <th
+                <ColumnHeader
                   key={column.key}
-                  scope="col"
-                  className="sticky top-0 z-20 border-b border-l border-friday-border-soft bg-friday-bg px-3 font-mono text-[9.5px] font-normal uppercase tracking-[0.18em] text-friday-fg-subtle"
-                >
-                  {column.label}
-                </th>
+                  column={column}
+                  sort={view?.sort ?? null}
+                  arrangeable={arrangeable}
+                  onSort={() => onViewChange?.(cycleSort(current, column.key))}
+                  onMove={(direction) =>
+                    onViewChange?.(moveColumn(current, columnUniverse, column.key, direction))
+                  }
+                  onReorder={(beforeKey) =>
+                    onViewChange?.(reorderColumn(current, columnUniverse, column.key, beforeKey))
+                  }
+                  onResize={(width) => onViewChange?.(setColumnWidth(current, column.key, width))}
+                  onResetWidth={() => onViewChange?.(resetColumnWidth(current, column.key))}
+                  onHide={() => onViewChange?.(toggleHidden(current, column.key))}
+                />
               ))}
               <th scope="col" className="sticky top-0 z-20 border-b border-friday-border bg-friday-bg">
                 <span className="sr-only">Updates</span>
@@ -321,6 +363,141 @@ export function Board({
         />
       )}
     </div>
+  );
+}
+
+// ── Column header ────────────────────────────────────────────────────────────
+
+/**
+ * A column header that can be sorted, moved, resized and put away.
+ *
+ * Dragging the header reorders it and dragging its right edge resizes it —
+ * both mouse gestures — so the menu carries the same four actions in words.
+ * A column arrangement nobody can reach from a keyboard is a column
+ * arrangement half the practice cannot use.
+ */
+function ColumnHeader({
+  column,
+  sort,
+  arrangeable,
+  onSort,
+  onMove,
+  onReorder,
+  onResize,
+  onResetWidth,
+  onHide,
+}: {
+  column: BoardColumn;
+  sort: BoardView["sort"];
+  arrangeable: boolean;
+  onSort: () => void;
+  onMove: (direction: "left" | "right") => void;
+  onReorder: (beforeKey: string) => void;
+  onResize: (width: number) => void;
+  onResetWidth: () => void;
+  onHide: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismiss<HTMLTableCellElement>(useCallback(() => setOpen(false), []));
+  const sorted = sort?.key === column.key ? sort.direction : null;
+
+  const startResize = (e: React.PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = column.width;
+    const onMovePointer = (ev: PointerEvent) => onResize(startWidth + ev.clientX - startX);
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMovePointer);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMovePointer);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  return (
+    <th
+      ref={ref}
+      scope="col"
+      draggable={arrangeable}
+      onDragStart={(e) => {
+        if (!arrangeable) return;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/x-board-column", column.key);
+        e.dataTransfer.setData("text/plain", column.key);
+      }}
+      onDragOver={(e) => {
+        if (arrangeable && e.dataTransfer.types.includes("application/x-board-column")) {
+          e.preventDefault();
+        }
+      }}
+      onDrop={(e) => {
+        const moved = e.dataTransfer.getData("application/x-board-column");
+        if (!moved || moved === column.key) return;
+        e.preventDefault();
+        onReorder(column.key);
+      }}
+      className="sticky top-0 z-20 border-b border-l border-friday-border-soft bg-friday-bg p-0 font-normal"
+    >
+      <span className="relative flex h-9 items-center">
+        <button
+          type="button"
+          disabled={!arrangeable}
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup={arrangeable ? "menu" : undefined}
+          aria-expanded={arrangeable ? open : undefined}
+          aria-label={
+            arrangeable
+              ? `${column.label} column options${sorted ? `, sorted ${sorted === "asc" ? "ascending" : "descending"}` : ""}`
+              : undefined
+          }
+          className="flex min-w-0 flex-1 items-center gap-1 px-3 text-left font-mono text-[9.5px] uppercase tracking-[0.18em] text-friday-fg-subtle transition-colors hover:text-friday-fg disabled:hover:text-friday-fg-subtle"
+        >
+          <span className="truncate">{column.label}</span>
+          {sorted && <span aria-hidden className="text-friday-accent">{sorted === "asc" ? "↑" : "↓"}</span>}
+        </button>
+
+        {arrangeable && (
+          <span
+            aria-hidden
+            onPointerDown={startResize}
+            onDragStart={(e) => e.preventDefault()}
+            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-friday-accent"
+          />
+        )}
+      </span>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label={`${column.label} column`}
+          className="absolute left-0 top-full z-40 w-48 overflow-hidden rounded-md border border-friday-border bg-friday-bg py-1 shadow-lg"
+        >
+          {[
+            { label: sorted === "asc" ? "Sort descending" : "Sort ascending", run: onSort },
+            { label: "Move left", run: () => onMove("left") },
+            { label: "Move right", run: () => onMove("right") },
+            { label: "Wider", run: () => onResize(column.width + 40), keepOpen: true },
+            { label: "Narrower", run: () => onResize(column.width - 40), keepOpen: true },
+            { label: "Reset width", run: onResetWidth },
+            { label: "Hide column", run: onHide },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                item.run();
+                if (!item.keepOpen) setOpen(false);
+              }}
+              className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] normal-case tracking-normal text-friday-fg transition-colors hover:bg-friday-surface-2"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </th>
   );
 }
 

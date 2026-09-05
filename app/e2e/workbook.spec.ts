@@ -265,6 +265,39 @@ test.describe("workbook board", () => {
     expect(after.filter((p) => p.workStatus === "doing").length).toBe(doing);
   });
 
+  test("a column can be reordered, resized and put away from its own menu", async ({ page }) => {
+    await board(page);
+    // Rendered text, not textContent: the headings are uppercased by CSS, so
+    // the DOM says "Client" while the screen says "CLIENT".
+    const headings = async () =>
+      (await page.locator("thead th").allInnerTexts()).map((t) => t.trim()).filter(Boolean);
+    const widthOf = async (label: string) =>
+      (await page.getByRole("columnheader", { name: new RegExp(`^${label} column options`) }).boundingBox())!.width;
+
+    const before = await headings();
+    expect(before.indexOf("CLIENT")).toBeGreaterThan(before.indexOf("CATEGORY"));
+    const widthBefore = await widthOf("Client");
+
+    // Dragging does this too, but the menu is the path a keyboard can take.
+    await page.getByRole("button", { name: /^Client column options/ }).click();
+    await page.getByRole("menu", { name: "Client column" }).getByRole("menuitem", { name: "Move left" }).click();
+    const moved = await headings();
+    expect(moved.indexOf("CLIENT")).toBeLessThan(moved.indexOf("CATEGORY"));
+
+    await page.getByRole("button", { name: /^Client column options/ }).click();
+    await page.getByRole("menu", { name: "Client column" }).getByRole("menuitem", { name: "Wider" }).click();
+    await page.keyboard.press("Escape");
+    await expect.poll(() => widthOf("Client")).toBeGreaterThan(widthBefore);
+
+    await page.getByRole("button", { name: /^Client column options/ }).click();
+    await page.getByRole("menu", { name: "Client column" }).getByRole("menuitem", { name: "Hide column" }).click();
+    await expect(page.getByRole("columnheader", { name: /^Client column options/ })).toHaveCount(0);
+
+    // An arrangement is a view, not an edit: nothing was written.
+    const rows = await projects(page);
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
   test("the person filter shows only that person's projects", async ({ page }) => {
     const rows = await projects(page);
     const roster = (await (await page.request.get("/api/team")).json()) as {

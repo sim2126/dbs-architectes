@@ -772,8 +772,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
       ) : (
         <Board
           columns={visibleColumns}
+          allColumns={columns}
           rows={rows}
           groupBy={groupBy}
+          view={view}
+          onViewChange={setView}
           label="Projects"
           roster={roster as BoardPerson[]}
           canEdit={canEditAnything}
