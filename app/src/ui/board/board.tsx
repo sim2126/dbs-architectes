@@ -52,6 +52,12 @@ import {
 } from "./columns";
 import { columnSummary, groupRows, statusDistribution } from "./grouping";
 import { formatDay, parseDayValue, toDayValue } from "./calendar-layout";
+import {
+  fullWindow,
+  shouldWindow,
+  windowGroups,
+  type WindowMetrics,
+} from "./windowing";
 import { useDismiss } from "./use-dismiss";
 import {
   cycleSort,
@@ -80,6 +86,13 @@ const ROW_H = 36;
 const CHECK_W = 34;
 const ITEM_W = 300;
 const ACTIONS_W = 62;
+/*
+ * Every part of a group is given its height explicitly, because the windowing
+ * below computes where a row sits rather than measuring it. If these and the
+ * rendered heights ever disagree, the scrollbar lies.
+ */
+const GROUP_HEADER_H = 44;
+const SUMMARY_H = 26;
 
 export type BulkAction = {
   label: string;
@@ -188,6 +201,52 @@ export function Board({
   const totalWidth = CHECK_W + ITEM_W + ACTIONS_W + columns.reduce((sum, c) => sum + c.width, 0);
   const columnCount = columns.length + 3;
 
+  /*
+   * Only the rows near the viewport go into the DOM. Measured on staging at
+   * 500 rows before this: 30,632 nodes, 1.9 s to become usable, 664 ms to
+   * sort. DBS already keep 200 projects in Monday and will add hundreds more.
+   */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ scrollTop: 0, height: 0 });
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      setViewport({ scrollTop: element.scrollTop, height: element.clientHeight });
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    element.addEventListener("scroll", schedule, { passive: true });
+    const observer = new ResizeObserver(schedule);
+    observer.observe(element);
+    return () => {
+      element.removeEventListener("scroll", schedule);
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  const windows = useMemo(() => {
+    const metrics: WindowMetrics = {
+      rowHeight: ROW_H,
+      headerHeight: GROUP_HEADER_H,
+      footerHeight: (canAdd && onAddRow ? ROW_H : 0) + SUMMARY_H,
+      emptyHeight: ROW_H,
+    };
+    const extents = groups.map((group) => ({
+      rowCount: group.rows.length,
+      collapsed: collapsed.has(group.value ?? "__ungrouped"),
+    }));
+    return shouldWindow(rows.length)
+      ? windowGroups(extents, viewport.scrollTop, viewport.height || 800, metrics)
+      : fullWindow(extents);
+  }, [groups, collapsed, rows.length, viewport, canAdd, onAddRow]);
+
   const onRowCheck = useCallback(
     (rowId: string, shiftKey: boolean) => {
       setSelection((prev) =>
@@ -202,7 +261,7 @@ export function Board({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         {/* border-separate, not collapse: sticky cells misbehave under a
             collapsed border model, and each cell paints its own edge. */}
         <table
@@ -254,10 +313,16 @@ export function Board({
             </tr>
           </thead>
 
-          {groups.map((group) => {
+          {groups.map((group, groupIndex) => {
             const key = group.value ?? "__ungrouped";
             const isCollapsed = collapsed.has(key);
             const groupIds = group.rows.map((r) => r.id);
+            const slice = windows[groupIndex] ?? {
+              firstIndex: 0,
+              lastIndex: group.rows.length - 1,
+              topSpacer: 0,
+              bottomSpacer: 0,
+            };
             const isOver = overGroup === key && dragging !== null;
             return (
               <tbody
@@ -276,7 +341,12 @@ export function Board({
                 className={cn(isOver && "bg-friday-accent-soft/40")}
               >
                 <tr>
-                  <th scope="colgroup" colSpan={columnCount} className="sticky left-0 pb-1 pt-4 font-normal">
+                  <th
+                    scope="colgroup"
+                    colSpan={columnCount}
+                    className="sticky left-0 font-normal"
+                    style={{ height: GROUP_HEADER_H }}
+                  >
                     <GroupHeader
                       label={group.label}
                       color={group.color}
@@ -299,7 +369,13 @@ export function Board({
 
                 {!isCollapsed && (
                   <>
-                    {group.rows.map((row) => (
+                    {slice.topSpacer > 0 && (
+                      <tr aria-hidden style={{ height: slice.topSpacer }}>
+                        <td colSpan={columnCount} className="p-0" />
+                      </tr>
+                    )}
+
+                    {group.rows.slice(slice.firstIndex, slice.lastIndex + 1).map((row) => (
                       <BoardRowView
                         key={row.id}
                         row={row}
@@ -323,6 +399,12 @@ export function Board({
                         onOpenConversation={onOpenConversation}
                       />
                     ))}
+
+                    {slice.bottomSpacer > 0 && (
+                      <tr aria-hidden style={{ height: slice.bottomSpacer }}>
+                        <td colSpan={columnCount} className="p-0" />
+                      </tr>
+                    )}
 
                     {group.rows.length === 0 && (
                       <tr style={{ height: ROW_H }}>
@@ -1246,7 +1328,7 @@ function SummaryRow({
 }) {
   if (rows.length === 0) return null;
   return (
-    <tr>
+    <tr style={{ height: SUMMARY_H }}>
       <td />
       <td />
       {columns.map((column) => {

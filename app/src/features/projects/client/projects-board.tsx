@@ -152,9 +152,33 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/projects?limit=500");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setProjects((await res.json()) as BoardProject[]);
+      /*
+       * Page through everything rather than asking for one capped page. The
+       * endpoint clamps limit at 500, so a single request quietly returned
+       * 500 of the 800 projects on staging — in year three that is a project
+       * that has simply vanished from the board with no error anywhere.
+       *
+       * The board groups, filters, sorts and summarises across the whole
+       * collection, so it does need all of it. The ceiling is the working
+       * set, which is what archiving is for.
+       */
+      const collected: BoardProject[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 20; page++) {
+        const query = new URLSearchParams({ paging: "1", limit: "500" });
+        if (cursor) query.set("cursor", cursor);
+        const res = await fetch(`/api/projects?${query}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as {
+          projects: BoardProject[];
+          hasMore: boolean;
+          nextCursor: string | null;
+        };
+        collected.push(...body.projects);
+        if (!body.hasMore || !body.nextCursor) break;
+        cursor = body.nextCursor;
+      }
+      setProjects(collected);
     } catch (error) {
       console.error("[board] projects failed to load", error);
       showToast("The board could not be loaded. Try refreshing.", "danger");

@@ -23,6 +23,7 @@
     "uploads:gc": "tsx scripts/cleanup-uploads.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed-demo.ts",
+    "db:seed:scale": "tsx prisma/seed-scale.ts",
     "db:seed:ai": "tsx prisma/seed-ai-files.ts",
     "load:smoke": "k6 run -e SCENARIO=smoke load/k6/friday.js",
     "load:load": "k6 run -e SCENARIO=load load/k6/friday.js",

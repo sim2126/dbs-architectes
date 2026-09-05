@@ -23,6 +23,7 @@ type Project = {
   client: string | null;
   startDate: string | null;
   endDate: string | null;
+  updateCount?: number;
   /** What this caller may do to the row, as the server computed it. */
   capabilities?: { read: boolean; update: boolean; updateStatus: boolean; assign: boolean };
 };
@@ -34,10 +35,43 @@ const STATUS_LABEL: Record<string, string> = {
   completed: "Done",
 };
 
+/**
+ * Every project, paged exactly as the board pages. Asking for one capped
+ * page would test a different board from the one on screen — which is how
+ * these tests first failed at 800 projects.
+ */
 async function projects(page: Page): Promise<Project[]> {
-  const res = await page.request.get("/api/projects?limit=500");
-  expect(res.ok(), await res.text()).toBeTruthy();
-  return res.json();
+  const all: Project[] = [];
+  let cursor: string | null = null;
+  for (let i = 0; i < 20; i++) {
+    const query = new URLSearchParams({ paging: "1", limit: "500" });
+    if (cursor) query.set("cursor", cursor);
+    const res = await page.request.get(`/api/projects?${query}`);
+    expect(res.ok(), await res.text()).toBeTruthy();
+    const body = (await res.json()) as {
+      projects: Project[];
+      hasMore: boolean;
+      nextCursor: string | null;
+    };
+    all.push(...body.projects);
+    if (!body.hasMore || !body.nextCursor) break;
+    cursor = body.nextCursor;
+  }
+  return all;
+}
+
+/**
+ * Bring one project into view.
+ *
+ * The board only renders the rows near the viewport, so at any real size a
+ * given row is simply not in the page until something puts it there. A person
+ * would search for it; so does this.
+ */
+async function showOnBoard(page: Page, title: string) {
+  await page.getByLabel("Search the board").fill(title);
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(title)}:`) }),
+  ).toBeVisible();
 }
 
 async function board(page: Page) {
@@ -63,6 +97,7 @@ test.describe("workbook board", () => {
 
     const inStudy = rows.filter((r) => r.phase === "ETUDE/AP").length;
     await expect(page.getByText(`${inStudy} projects`, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(`${rows.length} of ${rows.length} projects shown`)).toBeVisible();
 
     // The group footer's distribution is announced for readers who cannot
     // see the bar.
@@ -77,8 +112,8 @@ test.describe("workbook board", () => {
     const target = before!;
 
     await board(page);
+    await showOnBoard(page, target.title);
     const cell = page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}:`) });
-    await cell.scrollIntoViewIfNeeded();
     await cell.click();
 
     const palette = page.getByRole("menu", { name: "Set Status" });
@@ -93,6 +128,7 @@ test.describe("workbook board", () => {
 
     // And it is still there after a reload, not only in the tab that made it.
     await page.reload();
+    await showOnBoard(page, target.title);
     await expect(
       page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}: ${STATUS_LABEL.stuck}`) }),
     ).toBeVisible();
@@ -108,6 +144,7 @@ test.describe("workbook board", () => {
 
     const cellName = new RegExp(`^Client of ${escapeRe(target.title)}:`);
     const marker = `E2E client ${Date.now()}`;
+    await showOnBoard(page, target.title);
 
     await page.getByRole("button", { name: cellName }).first().click();
     const editor = page.getByLabel(`Client of ${target.title}`);
@@ -133,12 +170,26 @@ test.describe("workbook board", () => {
 
   test("selecting rows raises one bulk bar that moves them together", async ({ page }) => {
     const rows = await projects(page);
-    const targets = rows.filter((r) => r.phase !== "STUCK").slice(0, 2);
-    expect(targets.length).toBe(2);
-
     await board(page);
-    for (const target of targets) {
-      await page.getByLabel(`Select ${target.title}`).first().check({ force: true });
+
+    /*
+     * Take the first two rows the board has actually rendered rather than two
+     * chosen from the API. Narrowing the search to reach a row elsewhere would
+     * clear the first selection — correctly, since the board refuses to hold a
+     * selection for rows nobody can see.
+     */
+    const boxes = page.locator('input[type="checkbox"][aria-label^="Select "]');
+    const labels: string[] = [];
+    for (let i = 0; labels.length < 2 && i < 8; i++) {
+      const label = await boxes.nth(i).getAttribute("aria-label");
+      if (label && !label.startsWith("Select all in ")) labels.push(label.replace("Select ", ""));
+    }
+    expect(labels.length).toBe(2);
+    const targets = labels.map((title) => rows.find((r) => r.title === title)!);
+    expect(targets.every(Boolean)).toBe(true);
+
+    for (const title of labels) {
+      await page.getByLabel(`Select ${title}`).first().check({ force: true });
     }
 
     const bar = page.getByRole("region", { name: /2 projects selected/ });
@@ -185,9 +236,7 @@ test.describe("workbook board", () => {
     // behaviour that stops one of them overwriting a change they cannot see.
     const target = (await projects(page)).find((p) => p.workStatus !== "stuck")!;
     await board(page);
-    const cell = page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}:`) });
-    await cell.scrollIntoViewIfNeeded();
-    await expect(cell).toBeVisible();
+    await showOnBoard(page, target.title);
 
     // Wait until the board says it is live. Between mount and subscription
     // Pusher delivers nothing, so changing the row before then proves only
@@ -453,8 +502,8 @@ test.describe("workbook board", () => {
     const target = (await projects(page))[0];
     await board(page);
 
+    await showOnBoard(page, target.title);
     const cell = page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}:`) });
-    await cell.scrollIntoViewIfNeeded();
     await cell.click();
 
     const input = page.getByLabel(`Start of ${target.title}`);
@@ -472,11 +521,16 @@ test.describe("workbook board", () => {
   });
 
   test("a row shows how much has been said about it", async ({ page }) => {
+    const talkative = (await projects(page)).find((p) => (p.updateCount ?? 0) > 0);
+    expect(talkative, "some seeded project has a conversation").toBeTruthy();
+
     await board(page);
-    // Rows with a conversation carry the count in the button's own name, so
-    // it is available to a screen reader and not only as a badge.
-    const withUpdates = page.getByRole("button", { name: /^Updates on .+, \d+ so far$/ });
-    await expect(withUpdates.first()).toBeVisible();
+    await showOnBoard(page, talkative!.title);
+    // The count is in the button's own name, so a screen reader hears it too
+    // rather than it being only a badge.
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^Updates on ${escapeRe(talkative!.title)}, \\d+ so far$`) }),
+    ).toBeVisible();
   });
 
   test("a row opens the panel where its conversation lives", async ({ page }) => {
