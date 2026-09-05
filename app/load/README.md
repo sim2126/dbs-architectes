@@ -10,6 +10,44 @@ Two suites, two questions.
 Neither is a unit test. Both need a running server and a database they are
 allowed to hammer.
 
+## Isolated acceptance run
+
+From the repository root, `docker compose -f app/load/compose.acceptance.yml -p friday-review up -d`
+starts a separate disposable PostgreSQL database on 55433 and Soketi on 6001.
+Existing staging containers and databases are untouched. Then, from `app/`:
+
+```bash
+npm run acceptance:local -- prepare
+npm run acceptance:local -- build
+npm run acceptance:local -- start
+# In another terminal:
+npm run acceptance:local -- test
+npm run acceptance:local -- concurrency
+```
+
+The runner fixes the database to `127.0.0.1:55433/friday_review` and the app to
+`http://localhost:3100`, disables model keys and S3 uploads, and configures the
+local broker. `prepare` replaces only that disposable database. Optional
+`npm run acceptance:local -- scale` tops up to 800 projects; `scale --clean`
+removes its marked fixtures. Do not run performance measurements alongside
+builds or the acceptance suite.
+
+Both load suites reject non-loopback app origins and refuse HTTP redirects.
+The concurrency suite also rejects non-loopback databases, connection-query
+overrides, and databases outside its explicit test-name allowlist. It requires
+`FRIDAY_LOAD_TARGET=host:port/database?schema=public` to match the exact URL.
+The local runner supplies this for its fixed target. `npm run test:load` checks
+these guards offline; `npm run test:realtime` checks the transport restriction.
+All three harnesses verify `/api/acceptance-target` before logging in. This
+test-only endpoint returns 404 unless the running server's own `DATABASE_URL`
+passes the local guard and matches its `FRIDAY_LOAD_TARGET`. A localhost app
+pointing at Neon therefore cannot be mistaken for the disposable test server.
+Hosted Pusher keeps TLS; `PUSHER_HOST`/`PUSHER_PORT` and the corresponding
+`NEXT_PUBLIC_` variables accept plain transport only on loopback.
+
+CI runs Soketi as a service. The realtime journey must connect and receive an
+invalidation; it fails when the broker is missing rather than skipping.
+
 ## Never against the demo
 
 The Vercel deployment talks to Neon, and Neon is the database Ali Reza sees.
@@ -26,6 +64,7 @@ export DATABASE_ADAPTER=pg
 export DATABASE_URL=postgresql://friday:friday@localhost:55432/friday_staging
 export FRIDAY_DEMO_SEED_ALLOW=I_UNDERSTAND_THIS_REPLACES_DEMO_DATA
 export FRIDAY_DEMO_SEED_TARGET='localhost:55432/friday_staging?schema=public'
+export FRIDAY_LOAD_TARGET='localhost:55432/friday_staging?schema=public'
 
 npx prisma migrate deploy
 npx tsx prisma/seed-demo.ts && npx tsx prisma/seed-demo-account.ts && npx tsx prisma/seed-ai-files.ts
@@ -51,7 +90,8 @@ npm run load:spike    # 0→150 in 10 s — does it recover
 npm run load:soak     # 25 VUs, 4 m   — does anything leak (a real soak is hours)
 ```
 
-Set `BASE_URL` if not `http://localhost:3000`. Summaries land in
+Set `BASE_URL` if not `http://localhost:3000`, and set `FRIDAY_LOAD_TARGET` to
+the exact identifier configured on the test server. Summaries land in
 `load/k6/results/<scenario>.json` (ignored by git).
 
 Thresholds are the product's stated targets from `MEMORY.md` — p95 ≤ 200 ms,
@@ -74,14 +114,18 @@ warm-up are not attributed to the first scenario.
 ### Authorization is modelled, not counted as failure
 
 `authorize()` limits team workload and every AI surface to managers and above,
-and project detail to assignment. Three of the eight k6 accounts are below
+and conversations to assignment (including directors). Every project returned
+by the region-filtered list must open successfully. Three of the eight k6 accounts are below
 manager, so roughly a third of their requests to those routes are correctly
 refused. The first run counted every one of those 403s as a failed request — a
 17 % "error rate" that was authorization holding under load. Each request now
 declares whether its role predicts a denial; a predicted 403 is recorded in
 `authz_denied_expected` (visible, because a sudden change there is a
 regression) and excluded from `http_req_failed`. An unpredicted 403 still
-fails the run.
+fails the run. A predicted denial also requires 403: an unexpected 200 fails
+the dedicated 100% authorisation threshold. Chat writes accept the endpoint's
+200/201 success responses or 429 throttling for writers, and require 403 for
+read-only interns, with their own 100% check gate.
 
 ### What k6 deliberately does not do
 
@@ -104,31 +148,35 @@ not the write path. Two consequences worth knowing:
 
 ```bash
 DATABASE_URL=postgresql://friday:friday@localhost:55432/friday_staging \
+FRIDAY_LOAD_TARGET='localhost:55432/friday_staging?schema=public' \
 BASE_URL=http://localhost:3100 npm run test:concurrency
 ```
 
-Six invariants, each checked against the database after the burst, not just
+Six scenarios (seven checks), checked against the database after the burst, not just
 against the HTTP statuses:
 
 | | Race | Invariant |
 |---|---|---|
-| T1 | 8× same user → `/api/agent` | one 200, seven 409, lease released, seven quota slots refunded |
-| T2 | 25× same user → `/api/agent` | exactly 1×200, 19×409, 5×429 |
-| T3 | 10× same reaction toggle | no 5xx, ≤ 1 row |
+| T1 | 8× same user → `/api/agent`, no provider | all 503, no quota charged or lease taken |
+| T2 | 25× same user → `/api/agent`, no provider | all 503, no quota charged or lease taken |
+| T3 | 10× same reaction toggle, initially absent and present | all 2xx, ≤ 1 row |
 | T4 | 10× open the same DM from both sides | exactly one direct channel |
 | T5 | 10× add the same guest to a channel | exactly one membership row |
 | T6 | 20 writes ∥ 10 reads on one channel | no 5xx, every 2xx persisted once |
 
-T1 and T2 read `/api/ai-status` first. When no provider is configured — the
-normal state of a staging box, and the "provider went dark" scenario the
-platform must survive — the contract they assert is instead: every request
-503s, nothing is charged, no lease is taken.
+The suite refuses to run unless `/api/ai-status` explicitly confirms that no
+provider is configured. These availability probes cannot bill a model and do
+not claim to measure provider-on lease contention or quota ceilings. Exact
+provider-on response counts depend on scheduling and immediate quota refunds.
 
 Run it when nothing else is hitting the server: T1/T2 assume a clean lease and
 quota table (the script clears them for its two users), and the login limiter
 is shared with k6's `setup()`.
 
-## Baseline observed
+## Historical baseline (before the harness corrections)
+
+These earlier measurements have not been rerun with the stricter authorisation
+checks. They are historical observations, not acceptance evidence for this fix.
 
 One production `next start` process, one laptop (16 logical cores), local
 Postgres 16 in Docker, k6 on the same machine. Not Vercel: there, instances

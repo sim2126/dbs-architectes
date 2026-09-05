@@ -1,11 +1,15 @@
 import Pusher from "pusher";
+import { localPusherEndpoint } from "./pusher-local";
+
+const local = localPusherEndpoint(process.env.PUSHER_HOST, process.env.PUSHER_PORT);
 
 export const pusherServer = new Pusher({
   appId: process.env.PUSHER_APP_ID!,
   key: process.env.PUSHER_KEY!,
   secret: process.env.PUSHER_SECRET!,
   cluster: process.env.PUSHER_CLUSTER!,
-  useTLS: true,
+  useTLS: !local,
+  ...(local ? { host: local.host, port: String(local.port) } : {}),
 });
 
 export const PUSHER_EVENTS = {

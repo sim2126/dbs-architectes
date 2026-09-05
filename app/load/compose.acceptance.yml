@@ -1,0 +1,22 @@
+# Disposable acceptance infrastructure; deliberately separate from existing staging.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: friday
+      POSTGRES_PASSWORD: friday-local-test
+      POSTGRES_DB: friday_review
+    ports: ["127.0.0.1:55433:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U friday -d friday_review"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  soketi:
+    image: quay.io/soketi/soketi:1.6-16-alpine
+    environment:
+      SOKETI_DEFAULT_APP_ID: friday-test
+      SOKETI_DEFAULT_APP_KEY: friday-test-key
+      SOKETI_DEFAULT_APP_SECRET: friday-test-secret
+    ports: ["127.0.0.1:6001:6001"]

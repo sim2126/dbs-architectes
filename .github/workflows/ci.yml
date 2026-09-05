@@ -104,6 +104,10 @@ jobs:
         working-directory: app
         run: npm run test:release-hygiene
 
+      - name: Load-target and harness contracts
+        working-directory: app
+        run: npm run test:load && npm run test:realtime
+
       - name: WorkItem compatibility tests
         working-directory: app
         run: npm run test:work-items
@@ -168,6 +172,13 @@ jobs:
     needs: build
     timeout-minutes: 25
     services:
+      soketi:
+        image: quay.io/soketi/soketi:1.6-16-alpine
+        env:
+          SOKETI_DEFAULT_APP_ID: friday-test
+          SOKETI_DEFAULT_APP_KEY: friday-test-key
+          SOKETI_DEFAULT_APP_SECRET: friday-test-secret
+        ports: ["6001:6001"]
       postgres:
         image: postgres:16
         env:
@@ -180,6 +191,7 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=5
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_e2e
+      FRIDAY_LOAD_TARGET: localhost:5432/friday_e2e?schema=public
       # Plain Postgres in CI: the Neon WebSocket driver cannot reach it.
       DATABASE_ADAPTER: pg
       NEXTAUTH_URL: http://localhost:3100
@@ -188,6 +200,16 @@ jobs:
       NEXTAUTH_SECRET: e2e-only-not-a-real-secret
       AUTH_SECRET: e2e-only-not-a-real-secret
       BASE_URL: http://localhost:3100
+      PUSHER_APP_ID: friday-test
+      PUSHER_KEY: friday-test-key
+      PUSHER_SECRET: friday-test-secret
+      PUSHER_CLUSTER: mt1
+      PUSHER_HOST: 127.0.0.1
+      PUSHER_PORT: '6001'
+      NEXT_PUBLIC_PUSHER_KEY: friday-test-key
+      NEXT_PUBLIC_PUSHER_CLUSTER: mt1
+      NEXT_PUBLIC_PUSHER_HOST: 127.0.0.1
+      NEXT_PUBLIC_PUSHER_PORT: '6001'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

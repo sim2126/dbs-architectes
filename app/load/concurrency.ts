@@ -12,21 +12,24 @@
  * statuses would pass a race that wrote duplicate rows and returned 200 to
  * both writers.
  *
- * Runs against the local staging server only. It deliberately exercises
- * /api/agent — a handful of requests, of which exactly one can ever reach the
- * provider — and on staging there is no provider key, so nothing is billed and
- * the one admitted request fails closed after acquiring the lease. That is the
- * point: it proves the lease is released on failure, not just on success.
+ * Runs against an attested disposable local server with no AI provider.
+ * The availability probes assert that concurrent /api/agent requests fail
+ * before consuming quota or acquiring leases. They do not test provider-on
+ * lease contention or quota ceilings, and must never make paid model calls.
  *
  *   DATABASE_URL=postgresql://friday:friday@localhost:55432/friday_staging \
  *   BASE_URL=http://localhost:3000 npx tsx load/concurrency.ts
  */
 
 import { Client } from "pg";
+import { assertLocalBaseUrl, assertLocalDatabaseTarget, assertServerTarget } from "./target-safety.mjs";
+import { assertNoProvider } from "./provider-safety";
 
-const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error("DATABASE_URL is required (staging only).");
+const BASE_URL = assertLocalBaseUrl(process.env.BASE_URL ?? "http://localhost:3000");
+const DATABASE_URL = assertLocalDatabaseTarget(process.env);
+
+// A local app must not redirect a probe (or its credentials) to another host.
+const localFetch = (input: string, init?: RequestInit) => fetch(input, { ...init, redirect: init?.redirect ?? "error" });
 
 type Session = { email: string; cookie: string; userId: string };
 type Outcome = { name: string; pass: boolean; detail: string };
@@ -41,11 +44,11 @@ function record(name: string, pass: boolean, detail: string) {
 // ── Auth (same flow as the sign-in form) ────────────────────────────────
 
 async function login(email: string, password: string): Promise<string> {
-  const csrfRes = await fetch(`${BASE_URL}/api/auth/csrf`);
+  const csrfRes = await localFetch(`${BASE_URL}/api/auth/csrf`);
   const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
   const csrfCookie = mergeCookies("", csrfRes.headers.getSetCookie());
 
-  const res = await fetch(`${BASE_URL}/api/auth/callback/credentials`, {
+  const res = await localFetch(`${BASE_URL}/api/auth/callback/credentials`, {
     method: "POST",
     redirect: "manual",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: csrfCookie },
@@ -103,6 +106,9 @@ function tally(statuses: number[]): string {
 // ── Tests ────────────────────────────────────────────────────────────────
 
 async function main() {
+  const attestation = await localFetch(`${BASE_URL}/api/acceptance-target`);
+  if (!attestation.ok) throw new Error("The server must attest its local database before concurrency probes may run.");
+  assertServerTarget(await attestation.json(), process.env.FRIDAY_LOAD_TARGET);
   const db = new Client({ connectionString: DATABASE_URL });
   await db.connect();
 
@@ -113,105 +119,65 @@ async function main() {
   const B: Session = { email: "employee@dbsarc.com", cookie: await login("employee@dbsarc.com", "dbs2025"), userId: await idOf("employee@dbsarc.com") };
   console.log(`logged in ${A.email} and ${B.email}\n`);
 
-  // Does this server have an AI provider configured? Decides which contract
-  // T1/T2 assert. Staging normally has no key, and that is the more valuable
-  // case: it is exactly the "provider went dark" scenario the platform is
-  // required to survive.
-  const statusRes = await fetch(`${BASE_URL}/api/ai-status`, { headers: headers(A) });
-  const status = (await statusRes.json()) as { enabled: boolean; providerConfigured?: boolean };
-  const providerUp = status.enabled && status.providerConfigured !== false;
-  console.log(`ai-status: enabled=${status.enabled} providerConfigured=${status.providerConfigured ?? "(not reported)"}
-`);
+  // Require an explicit no-provider response before changing guard tables or
+  // posting any agent request. A disabled UI alone does not prove no key exists.
+  const statusRes = await localFetch(`${BASE_URL}/api/ai-status`, { headers: headers(A) });
+  const status: unknown = await statusRes.json().catch(() => null);
+  assertNoProvider(statusRes.status, status);
+  console.log("ai-status: provider absence verified\n");
 
   // Clean slate for the guard tables so counts below are exact.
   await db.query('DELETE FROM "AiAgentLease" WHERE "userId" IN ($1,$2)', [A.userId, B.userId]);
   await db.query('DELETE FROM "AiRequestEvent" WHERE "userId" IN ($1,$2)', [A.userId, B.userId]);
 
-  // ── T1: agent lease + quota refund ────────────────────────────────────
+  // T1: no-provider availability at eight concurrent requests
   //
-  // 8 simultaneous requests from one user. Contract: quota is consumed first
-  // (all 8 pass, well under 20), then the lease admits exactly one; the other
-  // seven get 409 and must hand their quota slot back. Afterwards the lease
-  // must be released even though the admitted request fails at the provider
-  // (no key on staging).
+  // Eight concurrent requests must all fail before quota or lease acquisition.
+  // This checks unavailable-provider behaviour, not provider-on admission.
   {
-    const chatRes = await fetch(`${BASE_URL}/api/ai-chats`, { method: "POST", headers: headers(A) });
+    const chatRes = await localFetch(`${BASE_URL}/api/ai-chats`, { method: "POST", headers: headers(A) });
     const chat = (await chatRes.json()) as { id: string };
     const statuses = await burst(8, () =>
-      fetch(`${BASE_URL}/api/agent`, {
+      localFetch(`${BASE_URL}/api/agent`, {
         method: "POST",
         headers: headers(A, { Accept: "text/event-stream" }),
         body: JSON.stringify({ sessionId: chat.id, message: "concurrency probe" }),
       }),
     );
-    const admitted = statuses.filter((s) => s === 200).length;
-    const refused = statuses.filter((s) => s === 409).length;
     const unavailable = statuses.filter((s) => s === 503).length;
 
-    // Give the admitted request's finally{} a moment to run.
-    let leases = -1;
-    for (let i = 0; i < 30; i++) {
-      leases = Number((await db.query('SELECT count(*) FROM "AiAgentLease" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
-      if (leases === 0) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    const leases = Number((await db.query('SELECT count(*) FROM "AiAgentLease" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
     const events = Number((await db.query('SELECT count(*) FROM "AiRequestEvent" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
 
-    if (providerUp) {
-      record(
-        "T1 agent: one admitted, rest 409, lease released, refused slots refunded",
-        admitted === 1 && refused === statuses.length - 1 && leases === 0 && events === 1,
-        `statuses ${tally(statuses)} | leases after: ${leases} (want 0) | quota events: ${events} (want 1 — 8 consumed, 7 refunded)`,
-      );
-    } else {
-      // No provider: every request must fail closed with 503 before touching
-      // quota or lease. A 500 here is the bug where the SDK constructor threw
-      // after the slot was already charged.
-      record(
-        "T1 agent (no provider): all 503, nothing charged, no lease",
-        unavailable === statuses.length && leases === 0 && events === 0,
-        `statuses ${tally(statuses)} (want ${statuses.length}×503) | leases: ${leases} (want 0) | quota events: ${events} (want 0)`,
-      );
-    }
-    await db.query('DELETE FROM "AiRequestEvent" WHERE "userId"=$1', [A.userId]);
+    record(
+      "T1 AI unavailable: 8 simultaneous, all 503, no quota or lease",
+      unavailable === statuses.length && leases === 0 && events === 0,
+      `statuses ${tally(statuses)} (want ${statuses.length}×503) | leases: ${leases} (want 0) | quota events: ${events} (want 0)`,
+    );
   }
 
-  // ── T2: quota ceiling under contention ────────────────────────────────
+  // T2: no-provider availability at twenty-five concurrent requests
   //
-  // 25 simultaneous. The advisory lock serialises quota consumption, so the
-  // first 20 pass and 5 get 429 before ever reaching the lease. Of the 20,
-  // one holds the lease and 19 get 409 (and refund). Exact expectation:
-  // 1×200, 19×409, 5×429.
+  // Twenty-five concurrent requests exercise the same unavailable-provider
+  // contract above the normal quota size; none may consume a quota slot.
   {
-    const chatRes = await fetch(`${BASE_URL}/api/ai-chats`, { method: "POST", headers: headers(A) });
+    const chatRes = await localFetch(`${BASE_URL}/api/ai-chats`, { method: "POST", headers: headers(A) });
     const chat = (await chatRes.json()) as { id: string };
     const statuses = await burst(25, () =>
-      fetch(`${BASE_URL}/api/agent`, {
+      localFetch(`${BASE_URL}/api/agent`, {
         method: "POST",
         headers: headers(A, { Accept: "text/event-stream" }),
         body: JSON.stringify({ sessionId: chat.id, message: "quota probe" }),
       }),
     );
-    const c = (s: number) => statuses.filter((x) => x === s).length;
-    for (let i = 0; i < 30; i++) {
-      const n = Number((await db.query('SELECT count(*) FROM "AiAgentLease" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
-      if (n === 0) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
+    const unavailable = statuses.filter((s) => s === 503).length;
+    const leases = Number((await db.query('SELECT count(*) FROM "AiAgentLease" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
     const events = Number((await db.query('SELECT count(*) FROM "AiRequestEvent" WHERE "userId"=$1', [A.userId])).rows[0]!.count);
-    if (providerUp) {
-      record(
-        "T2 quota: 20/10min ceiling holds under 25 simultaneous; over-limit 429 before lease",
-        c(200) === 1 && c(409) === 19 && c(429) === 5 && events === 1,
-        `statuses ${tally(statuses)} (want 1×200 19×409 5×429) | quota events left: ${events} (want 1)`,
-      );
-    } else {
-      record(
-        "T2 quota (no provider): 25 simultaneous → all 503, zero quota consumed",
-        c(503) === 25 && events === 0,
-        `statuses ${tally(statuses)} (want 25×503) | quota events: ${events} (want 0 — unavailable must be decided before quota)`,
-      );
-    }
+    record(
+      "T2 AI unavailable: 25 simultaneous, all 503, no quota or lease",
+      unavailable === 25 && leases === 0 && events === 0,
+      `statuses ${tally(statuses)} (want 25×503) | leases: ${leases} (want 0) | quota events: ${events} (want 0)`,
+    );
   }
 
   // ── T3: reaction toggle race ──────────────────────────────────────────
@@ -221,24 +187,29 @@ async function main() {
   // toggles: the invariant is no 5xx and at most one row afterwards. Parity
   // of the final state is legitimately undefined for a toggle.
   {
-    const channels = (await (await fetch(`${BASE_URL}/api/chat/channels`, { headers: headers(A) })).json()) as Array<{ id: string; name: string }> | { channels?: Array<{ id: string; name: string }> };
+    const channels = (await (await localFetch(`${BASE_URL}/api/chat/channels`, { headers: headers(A) })).json()) as Array<{ id: string; name: string }> | { channels?: Array<{ id: string; name: string }> };
     const list = Array.isArray(channels) ? channels : channels.channels ?? [];
     const general = list.find((c) => c.name === "general") ?? list[0];
-    const msgs = (await (await fetch(`${BASE_URL}/api/chat/messages?channelId=${general!.id}&limit=5`, { headers: headers(A) })).json()) as Array<{ id: string }> | { messages?: Array<{ id: string }> };
+    const msgs = (await (await localFetch(`${BASE_URL}/api/chat/messages?channelId=${general!.id}&limit=5`, { headers: headers(A) })).json()) as Array<{ id: string }> | { messages?: Array<{ id: string }> };
     const mlist = Array.isArray(msgs) ? msgs : msgs.messages ?? [];
     const msg = mlist[0]!;
-    await db.query('DELETE FROM "MessageReaction" WHERE "messageId"=$1 AND "userId"=$2', [msg.id, A.userId]);
-
-    const statuses = await burst(10, () =>
-      fetch(`${BASE_URL}/api/chat/messages/${msg.id}/reactions`, { method: "POST", headers: headers(A), body: JSON.stringify({ emoji: "👍" }) }),
-    );
-    const rows = Number((await db.query('SELECT count(*) FROM "MessageReaction" WHERE "messageId"=$1 AND "userId"=$2 AND emoji=$3', [msg.id, A.userId, "👍"])).rows[0]!.count);
-    const fiveHundreds = statuses.filter((s) => s >= 500).length;
-    record(
-      "T3 reactions: 10 simultaneous toggles → no 5xx, ≤1 row",
-      fiveHundreds === 0 && rows <= 1,
-      `statuses ${tally(statuses)} | rows after: ${rows} (want 0 or 1) | 5xx: ${fiveHundreds} (want 0)`,
-    );
+    for (const initiallyPresent of [false, true]) {
+      await db.query('DELETE FROM "MessageReaction" WHERE "messageId"=$1 AND "userId"=$2 AND emoji=$3', [msg.id, A.userId, "👍"]);
+      const toggleReaction = () => localFetch(`${BASE_URL}/api/chat/messages/${msg.id}/reactions`, {
+        method: "POST", headers: headers(A), body: JSON.stringify({ emoji: "👍" }),
+      });
+      if (initiallyPresent) {
+        const initial = await toggleReaction();
+        if (!initial.ok) throw new Error(`Could not prepare existing reaction: HTTP ${initial.status}`);
+      }
+      const statuses = await burst(10, toggleReaction);
+      const rows = Number((await db.query('SELECT count(*) FROM "MessageReaction" WHERE "messageId"=$1 AND "userId"=$2 AND emoji=$3', [msg.id, A.userId, "👍"])).rows[0]!.count);
+      record(
+        `T3 reactions (initially ${initiallyPresent ? "present" : "absent"}): 10 simultaneous toggles`,
+        statuses.every((status) => status >= 200 && status < 300) && rows <= 1,
+        `statuses ${tally(statuses)} | rows after: ${rows} (want 0 or 1)`,
+      );
+    }
   }
 
   // ── T4: direct-message creation race ──────────────────────────────────
@@ -254,7 +225,7 @@ async function main() {
       [A.userId, B.userId],
     );
     const mk = (s: Session, other: Session) => () =>
-      fetch(`${BASE_URL}/api/chat/channels`, {
+      localFetch(`${BASE_URL}/api/chat/channels`, {
         method: "POST",
         headers: headers(s),
         body: JSON.stringify({ name: `dm-${s.userId}-${other.userId}`, type: "direct", memberIds: [s.userId, other.userId] }),
@@ -270,7 +241,7 @@ async function main() {
     )).rows[0]!.count);
     record(
       "T4 DM: 10 simultaneous opens from both sides → exactly one direct channel",
-      channels === 1 && statuses.every((s) => s < 500),
+      channels === 1 && statuses.every((s) => s >= 200 && s < 300),
       `statuses ${tally(statuses)} | direct channels A↔B: ${channels} (want 1)`,
     );
   }
@@ -290,35 +261,34 @@ async function main() {
        WHERE email NOT IN ('owner@dbsarc.com','admin@dbsarc.com','director@dbsarc.com','manager@dbsarc.com',
                            'pm@dbsarc.com','employee@dbsarc.com','partner@dbsarc.com','intern@dbsarc.com',
                            'viewer@dbsarc.com','demo@dbsarc.com')
-         AND "isActive" = true
+         AND "isActive" = true AND "isExternal" = false
        ORDER BY email LIMIT 1`,
     )).rows[0];
     const row = (await db.query<{ id: string }>(
-      `SELECT c.id FROM "Channel" c
+      `SELECT c.id FROM "Channel" c JOIN "Project" p ON p.id=c."projectId"
        WHERE c.type='project'
-         AND EXISTS (SELECT 1 FROM "ChannelMember" m WHERE m."channelId"=c.id AND m."userId"=$1)
+         AND EXISTS (SELECT 1 FROM "ProjectAssignment" a WHERE a."projectId"=p.id AND a."userId"=$1 AND a.role='lead')
+         AND (p.country IS NULL OR p.country='' OR EXISTS (
+           SELECT 1 FROM "UserRegionAccess" r WHERE r."userId"=$1 AND r.country=p.country
+             AND r."accessLevel"='manage' AND (r."operatingRegion" IS NULL OR r."operatingRegion"='' OR r."operatingRegion"=p."operatingRegion")))
          AND NOT EXISTS (SELECT 1 FROM "ChannelMember" m WHERE m."channelId"=c.id AND m."userId"=$2)
        LIMIT 1`,
       [A.userId, guest?.id ?? ""],
     )).rows[0];
     if (!guest || !row) {
-      record("T5 members: skipped", true, "no candidate guest or channel to race");
+      record("T5 members: fixture missing", false, "no internal candidate or project channel the PM may manage");
     } else {
       await db.query('UPDATE "User" SET "isExternal"=true WHERE id=$1', [guest.id]);
       try {
         const statuses = await burst(10, () =>
-          fetch(`${BASE_URL}/api/chat/channels/${row.id}/members`, { method: "POST", headers: headers(A), body: JSON.stringify({ userId: guest.id }) }),
+          localFetch(`${BASE_URL}/api/chat/channels/${row.id}/members`, { method: "POST", headers: headers(A), body: JSON.stringify({ userId: guest.id }) }),
         );
         const rows = Number((await db.query('SELECT count(*) FROM "ChannelMember" WHERE "channelId"=$1 AND "userId"=$2', [row.id, guest.id])).rows[0]!.count);
-        if (statuses.every((s) => s === 403)) {
-          record("T5 members: skipped", true, `A (${A.email}) lacks project:assign on this channel's project — 10×403 is correct authz, not a race result`);
-        } else {
-          record(
-            "T5 members: 10 simultaneous guest adds → exactly one membership, no 5xx",
-            rows === 1 && statuses.every((s) => s < 500),
-            `guest ${guest.email} | statuses ${tally(statuses)} | membership rows: ${rows} (want 1)`,
-          );
-        }
+        record(
+          "T5 members: 10 simultaneous guest adds → exactly one membership, all 2xx",
+          rows === 1 && statuses.every((s) => s >= 200 && s < 300),
+          `guest ${guest.email} | statuses ${tally(statuses)} | membership rows: ${rows} (want 1)`,
+        );
       } finally {
         // Staging is throwaway, but leave the fixture as it was found.
         await db.query('DELETE FROM "ChannelMember" WHERE "channelId"=$1 AND "userId"=$2', [row.id, guest.id]);
@@ -333,21 +303,22 @@ async function main() {
   // limiter) while another user reads. Invariant: no 5xx, and every message
   // that returned 201 is present exactly once.
   {
-    const channels = (await (await fetch(`${BASE_URL}/api/chat/channels`, { headers: headers(A) })).json()) as Array<{ id: string; name: string }> | { channels?: Array<{ id: string; name: string }> };
+    const channels = (await (await localFetch(`${BASE_URL}/api/chat/channels`, { headers: headers(A) })).json()) as Array<{ id: string; name: string }> | { channels?: Array<{ id: string; name: string }> };
     const list = Array.isArray(channels) ? channels : channels.channels ?? [];
     const general = list.find((c) => c.name === "general") ?? list[0]!;
     const marker = `cc-${Date.now()}`;
     const writes = burst(20, () =>
-      fetch(`${BASE_URL}/api/chat/messages`, { method: "POST", headers: headers(A), body: JSON.stringify({ channelId: general.id, content: `${marker} ${Math.random()}` }) }),
+      localFetch(`${BASE_URL}/api/chat/messages`, { method: "POST", headers: headers(A), body: JSON.stringify({ channelId: general.id, content: `${marker} ${Math.random()}` }) }),
     );
-    const reads = burst(10, () => fetch(`${BASE_URL}/api/chat/messages?channelId=${general.id}&limit=50`, { headers: headers(B) }));
+    const reads = burst(10, () => localFetch(`${BASE_URL}/api/chat/messages?channelId=${general.id}&limit=50`, { headers: headers(B) }));
     const [w, r] = await Promise.all([writes, reads]);
     // The route answers 200 on a successful create, not 201; either is a write.
     const created = w.filter((s) => s >= 200 && s < 300).length;
     const persisted = Number((await db.query('SELECT count(*) FROM "Message" WHERE "channelId"=$1 AND content LIKE $2', [general.id, `${marker}%`])).rows[0]!.count);
     record(
       "T6 fan-in: 20 parallel writes + 10 parallel reads → no 5xx, every 2xx persisted once",
-      [...w, ...r].every((s) => s < 500) && persisted === created,
+      w.every((s) => s === 200 || s === 201 || s === 429) &&
+        r.every((s) => s >= 200 && s < 300) && created > 0 && persisted === created,
       `writes ${tally(w)} | reads ${tally(r)} | persisted: ${persisted} of ${created} created`,
     );
   }

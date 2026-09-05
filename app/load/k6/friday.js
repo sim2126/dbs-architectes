@@ -41,8 +41,11 @@ import { check, group, sleep } from "k6";
 import { Trend, Rate, Counter } from "k6/metrics";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.1.0/index.js";
 import { login } from "./lib/auth.js";
+import { assertLocalBaseUrl, assertLoadTargetIdentifier, assertServerTarget } from "../target-safety.mjs";
+import { accountFor, sessionFor, expectsThreadAccess, expectedReadStatus, expectedWriteStatus } from "./lib/expectations.mjs";
 
-const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+const BASE_URL = assertLocalBaseUrl(__ENV.BASE_URL || "http://localhost:3000");
+const TARGET = assertLoadTargetIdentifier(__ENV.FRIDAY_LOAD_TARGET);
 const SCENARIO = __ENV.SCENARIO || "smoke";
 const WRITES = __ENV.WRITES === "1";
 
@@ -53,10 +56,6 @@ const WRITES = __ENV.WRITES === "1";
  * counts 4xx as failed requests — a viewer VU would report authorization
  * working as if it were the server breaking.
  */
-const MANAGER_PLUS = new Set(["owner", "admin", "director", "manager", "pm"]);
-// authorize() lets directors and admins read any project regardless of
-// assignment. Everyone else — including managers and PMs — is row-level.
-const DIRECTOR_PLUS = new Set(["owner", "admin", "director"]);
 const ACCOUNTS = [
   "owner",
   "admin",
@@ -66,17 +65,7 @@ const ACCOUNTS = [
   "employee",
   "partner",
   "intern",
-].map((p) => ({
-  email: `${p}@dbsarc.com`,
-  password: "dbs2025",
-  // authorize() limits team-workload and every AI surface to managers and
-  // above, and project detail to assignment. The first run counted those
-  // correct 403s as failures — a 17 % "error rate" that was authorization
-  // working. Modelled explicitly now, so a denied request is expected where
-  // the role predicts it and a defect where it does not.
-  managerPlus: MANAGER_PLUS.has(p),
-  directorPlus: DIRECTOR_PLUS.has(p),
-}));
+].map(accountFor);
 
 // ── Scenario definitions ─────────────────────────────────────────────────
 
@@ -140,6 +129,8 @@ export const options = {
     // handed to a role that should have been allowed through.
     http_req_failed: ["rate<0.01"],
     checks: ["rate>0.99"],
+    "checks{contract:authorization}": ["rate==1"],
+    ...(WRITES ? { "checks{contract:chat-write}": ["rate==1"] } : {}),
     // Per-journey visibility so a regression in one surface is not averaged
     // away by the others. Also on successful responses only.
     "http_req_duration{journey:morning,status:200}": ["p(95)<200"],
@@ -150,6 +141,7 @@ export const options = {
   // Login cookies are ~1 KB; discard bodies we do not inspect to keep memory
   // flat during the soak.
   discardResponseBodies: false,
+  maxRedirects: 0,
   userAgent: "friday-k6/1.0",
 };
 
@@ -167,10 +159,16 @@ const jsonOk = new Rate("json_parseable");
 // ── Setup: log every account in once ─────────────────────────────────────
 
 export function setup() {
-  const sessions = ACCOUNTS.map((a) => ({
-    email: a.email,
-    cookie: login(BASE_URL, a.email, a.password),
-  }));
+  const attestation = http.get(`${BASE_URL}/api/acceptance-target`, { redirects: 0 });
+  if (attestation.status !== 200) throw new Error("The server must attest its local database before load probes may run.");
+  assertServerTarget(attestation.json(), TARGET);
+  const sessions = ACCOUNTS.map((a) => {
+    const cookie = login(BASE_URL, a.email, a.password);
+    const identity = http.get(`${BASE_URL}/api/auth/session`, { headers: hdr(cookie) });
+    const userId = identity.json("user.id");
+    if (identity.status !== 200 || typeof userId !== "string") throw new Error(`Missing session identity for ${a.email}`);
+    return sessionFor(a, cookie, userId);
+  });
   // Warm one request so the first VU does not pay a cold start that then
   // gets attributed to the product.
   http.get(`${BASE_URL}/api/ai-status`, { headers: hdr(sessions[0].cookie) });
@@ -183,17 +181,16 @@ export default function iteration(data) {
   const session = data.sessions[(__VU - 1) % data.sessions.length];
   const h = hdr(session.cookie);
   const mgr = session.managerPlus;
-  const dir = session.directorPlus;
 
   // Weighted journey pick. Weights reflect a day in a studio: people check
   // their own work far more than they browse the portfolio, and they read
   // chat far more than they write it.
   const r = Math.random();
   if (r < 0.4) morningCheck(h, mgr);
-  else if (r < 0.65) portfolio(h, dir);
+  else if (r < 0.65) portfolio(h, session);
   else if (r < 0.85) chatRead(h);
   else if (r < 0.97 || !WRITES) aiSurface(h, mgr);
-  else chatWrite(h);
+  else chatWrite(h, session);
 
   // Think time. Real users pause between requests; a test without it is a
   // benchmark of the server's ceiling, not of the experience at N users.
@@ -208,26 +205,22 @@ function morningCheck(h, mgr) {
     api("GET", "/api/agenda", h, "agenda", "morning");
     api("GET", "/api/tasks", h, "tasks", "morning");
     // team:workload.read is manager+. Below that, 403 is the right answer.
-    api("GET", "/api/team-workload", h, "team-workload", "morning", null, { denyOk: !mgr });
-    api("GET", "/api/activity?limit=20", h, "activity", "morning", null, { denyOk: !mgr });
+    api("GET", "/api/team-workload", h, "team-workload", "morning", null, { denied: !mgr });
+    api("GET", "/api/activity?limit=20", h, "activity", "morning");
   });
 }
 
-function portfolio(h, dir) {
+function portfolio(h, session) {
   group("portfolio", () => {
     const list = api("GET", "/api/projects", h, "projects", "portfolio");
     api("GET", "/api/projects?phase=CHANTIER", h, "projects?phase", "portfolio");
     const id = firstId(list);
     if (id) {
-      // Project detail is row-level: the list is portfolio-wide but opening a
-      // project you are not assigned to is denied for most roles. The first
-      // project in the list is arbitrary, so 403 is legitimate here — except
-      // for directors and admins, who may read any project. For them a 403
-      // is an authorization regression and must fail the run.
-      const opts = { denyOk: !dir };
-      api("GET", `/api/projects/${id}`, h, "projects/[id]", "portfolio", null, opts);
-      api("GET", `/api/projects/${id}/thread`, h, "projects/[id]/thread", "portfolio", null, opts);
-      api("GET", `/api/projects/${id}/status-updates`, h, "projects/[id]/status-updates", "portfolio", null, opts);
+      // Every listed project must open; its conversation additionally requires assignment.
+      const project = (Array.isArray(list) ? list : list.projects).find((p) => p.id === id);
+      api("GET", `/api/projects/${id}`, h, "projects/[id]", "portfolio");
+      api("GET", `/api/projects/${id}/thread`, h, "projects/[id]/thread", "portfolio", null, { denied: !expectsThreadAccess(session, project) });
+      api("GET", `/api/projects/${id}/status-updates`, h, "projects/[id]/status-updates", "portfolio");
     }
   });
 }
@@ -245,7 +238,7 @@ function chatRead(h) {
 function aiSurface(h, mgr) {
   group("ai-surface", () => {
     // ai:invoke is manager+ by role. Below that the whole surface is 403.
-    const opts = { denyOk: !mgr };
+    const opts = { denied: !mgr };
     const chats = api("GET", "/api/ai-chats", h, "ai-chats", "ai-surface", null, opts);
     api("GET", "/api/ai-attachments", h, "ai-attachments", "ai-surface", null, opts);
     const id = firstId(chats);
@@ -253,7 +246,7 @@ function aiSurface(h, mgr) {
   });
 }
 
-function chatWrite(h) {
+function chatWrite(h, session) {
   group("chat-write", () => {
     const channels = api("GET", "/api/chat/channels", h, "chat/channels", "chat-write");
     const id = firstId(channels);
@@ -261,13 +254,10 @@ function chatWrite(h) {
     const res = http.post(
       `${BASE_URL}/api/chat/messages`,
       JSON.stringify({ channelId: id, content: `k6 ${__VU}-${__ITER} ${Date.now()}` }),
-      { headers: { ...h, "Content-Type": "application/json" }, tags: { name: "chat/messages POST", kind: "api", journey: "chat-write" } },
+      { headers: { ...h, "Content-Type": "application/json" }, responseCallback: session.canPost ? http.expectedStatuses(200, 201, 429) : http.expectedStatuses(403), tags: { name: "chat/messages POST", kind: "api", journey: "chat-write" } },
     );
     classify(res);
-    // 201 is the write; 429 is the per-IP limiter doing exactly what it is
-    // meant to do under a single-machine load test. Both are acceptable;
-    // anything else is not.
-    check(res, { "chat write: 201 or 429": (r) => r.status === 201 || r.status === 429 });
+    check(res, { "chat write: expected role response": (r) => expectedWriteStatus(r.status, !session.canPost) }, { contract: "chat-write" });
   });
 }
 
@@ -283,17 +273,17 @@ function hdr(cookie) {
  * Returns the parsed body or null so a journey can chain on it.
  */
 function api(method, path, h, name, journey, extra, opts = {}) {
-  const denyOk = Boolean(opts.denyOk);
+  const expectDenied = Boolean(opts.denied);
   const res = http.request(method, `${BASE_URL}${path}`, null, {
     headers: h,
     tags: { name, kind: "api", journey },
     // A 403 the role predicts is an expected response and must not count in
     // http_req_failed; one it did not predict still does.
-    responseCallback: denyOk
-      ? http.expectedStatuses({ min: 200, max: 299 }, 403)
+    responseCallback: expectDenied
+      ? http.expectedStatuses(403)
       : http.expectedStatuses({ min: 200, max: 299 }),
   });
-  if (res.status === 403 && denyOk) authzDenied.add(1, { name });
+  if (res.status === 403 && expectDenied) authzDenied.add(1, { name });
   classify(res);
   ttfbApi.add(res.timings.waiting, { name });
 
@@ -308,9 +298,11 @@ function api(method, path, h, name, journey, extra, opts = {}) {
   jsonOk.add(parseable, { name });
 
   const ok2xx = res.status >= 200 && res.status < 300;
-  const denied = res.status === 403 && denyOk;
+  const denied = res.status === 403 && expectDenied;
   check(res, {
-    [`${name}: 2xx${denyOk ? " or expected 403" : ""}`]: () => ok2xx || denied,
+    [`${name}: ${expectDenied ? "403 required" : "2xx required"}`]: () => expectedReadStatus(res.status, expectDenied),
+  }, { contract: "authorization" });
+  check(res, {
     [`${name}: json`]: () => parseable,
     // Shape only applies to a successful body.
     ...(extra ? { [`${name}: shape`]: () => denied || safe(() => extra(res)) } : {}),

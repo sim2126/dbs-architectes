@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 /**
  * WCAG 2.1 AA scan of the current page. Two rules: axe reports no serious or
- * critical violation against the wcag2a/wcag2aa/wcag21aa tag set, and every
+ * critical violation against the WCAG 2.0/2.1 A and AA tag sets, and every
  * finding, blocking or not, is recorded on the test so the trend is visible.
  * Moderate and minor findings do not fail the run yet; the bar tightens once
  * the current count is zero.
@@ -16,7 +16,7 @@ export async function expectAccessible(page: Page, label: string) {
   );
   await page.waitForTimeout(150);
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   const blocking = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   const summary = results.violations.map((v) => `${v.impact}: ${v.id} ×${v.nodes.length}`).join("\n  ");
