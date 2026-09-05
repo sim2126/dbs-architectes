@@ -6,6 +6,8 @@
  */
 export { Board, type BoardProps, type BulkAction } from "./board";
 export { BoardControls } from "./controls";
+export { useDismiss } from "./use-dismiss";
+export { Kanban, type KanbanProps } from "./kanban";
 export {
   activeFilterCount,
   applyView,

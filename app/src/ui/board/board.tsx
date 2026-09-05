@@ -102,6 +102,13 @@ export type BoardProps = {
   onCellChange?: (rowId: string, key: string, value: BoardCellValue) => void | Promise<void>;
   onAssign?: (rowId: string, userId: string, action: "add" | "remove") => void | Promise<void>;
   onAddRow?: (groupValue: string | null, title: string) => void | Promise<void>;
+  /**
+   * Drop a row into another group, which means setting its grouping value.
+   * Dragging is the only gesture here a keyboard cannot perform; the
+   * grouping column's own cell menu does the same thing and is reachable,
+   * so nothing is only-draggable.
+   */
+  onMoveRow?: (rowId: string, groupValue: string | null) => void | Promise<void>;
   onOpenRow?: (rowId: string) => void;
   onOpenConversation?: (rowId: string) => void;
   bulkActions?: readonly BulkAction[];
@@ -121,6 +128,7 @@ export function Board({
   onCellChange,
   onAssign,
   onAddRow,
+  onMoveRow,
   onOpenRow,
   onOpenConversation,
   bulkActions = [],
@@ -130,6 +138,8 @@ export function Board({
   const groups = useMemo(() => groupRows(rows, groupBy), [rows, groupBy]);
   const orderedIds = useMemo(() => groups.flatMap((g) => g.rows.map((r) => r.id)), [groups]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [overGroup, setOverGroup] = useState<string | null>(null);
   const [rawSelection, setSelection] = useState<ReadonlySet<string>>(new Set());
   const anchor = useRef<string | null>(null);
 
@@ -205,8 +215,23 @@ export function Board({
             const key = group.value ?? "__ungrouped";
             const isCollapsed = collapsed.has(key);
             const groupIds = group.rows.map((r) => r.id);
+            const isOver = overGroup === key && dragging !== null;
             return (
-              <tbody key={key}>
+              <tbody
+                key={key}
+                onDragOver={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  setOverGroup(key);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragging) void onMoveRow?.(dragging, group.value);
+                  setDragging(null);
+                  setOverGroup(null);
+                }}
+                className={cn(isOver && "bg-friday-accent-soft/40")}
+              >
                 <tr>
                   <th scope="colgroup" colSpan={columnCount} className="sticky left-0 pb-1 pt-4 font-normal">
                     <GroupHeader
@@ -240,6 +265,13 @@ export function Board({
                         selected={selection.has(row.id)}
                         canEdit={canEdit}
                         canEditCell={canEditCell}
+                        draggable={Boolean(onMoveRow) && canEdit && (canEditCell?.(row, groupBy) ?? true)}
+                        dragging={dragging === row.id}
+                        onDragStart={() => setDragging(row.id)}
+                        onDragEnd={() => {
+                          setDragging(null);
+                          setOverGroup(null);
+                        }}
                         roster={roster}
                         onCheck={onRowCheck}
                         onCellChange={onCellChange}
@@ -353,6 +385,10 @@ function BoardRowView({
   selected,
   canEdit,
   canEditCell,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
   roster,
   onCheck,
   onCellChange,
@@ -366,6 +402,10 @@ function BoardRowView({
   selected: boolean;
   canEdit: boolean;
   canEditCell?: BoardProps["canEditCell"];
+  draggable: boolean;
+  dragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
   roster: readonly BoardPerson[];
   onCheck: (rowId: string, shiftKey: boolean) => void;
   onCellChange?: BoardProps["onCellChange"];
@@ -377,7 +417,20 @@ function BoardRowView({
 
   return (
     <tr
-      className={cn("group transition-colors", selected ? "bg-friday-accent-soft" : "hover:bg-friday-surface/60")}
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (!draggable) return;
+        e.dataTransfer.effectAllowed = "move";
+        // Firefox will not begin a drag unless some data is set.
+        e.dataTransfer.setData("text/plain", row.id);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "group transition-colors",
+        selected ? "bg-friday-accent-soft" : "hover:bg-friday-surface/60",
+        dragging && "opacity-40",
+      )}
       style={{ height: ROW_H }}
     >
       <td className="border-b border-friday-border-soft text-center">

@@ -226,7 +226,7 @@ test.describe("workbook board", () => {
     expect(doing).toBeLessThan(rows.length);
 
     await board(page);
-    await expect(page.getByText(`${rows.length} of ${rows.length} projects`)).toBeVisible();
+    await expect(page.getByText(`${rows.length} of ${rows.length} projects shown`)).toBeVisible();
 
     // Filter: only what is being worked on.
     await page.getByRole("button", { name: /^Filter/ }).click();
@@ -235,7 +235,7 @@ test.describe("workbook board", () => {
     await expectAccessible(page, "workbook-filter-menu");
     await filterMenu.getByRole("menuitemcheckbox", { name: STATUS_LABEL.doing }).click();
     await page.keyboard.press("Escape");
-    await expect(page.getByText(`${doing} of ${rows.length} projects`)).toBeVisible();
+    await expect(page.getByText(`${doing} of ${rows.length} projects shown`)).toBeVisible();
 
     // Sort: by client, ascending, within each group.
     await page.getByRole("button", { name: /^Sort/ }).click();
@@ -287,7 +287,58 @@ test.describe("workbook board", () => {
     await menu.getByRole("menuitemcheckbox", { name: new RegExp(escapeRe(busiest.person.name ?? "")) }).click();
     await page.keyboard.press("Escape");
 
-    await expect(page.getByText(`${busiest.count} of ${rows.length} projects`)).toBeVisible();
+    await expect(page.getByText(`${busiest.count} of ${rows.length} projects shown`)).toBeVisible();
+  });
+
+  test("kanban shows a column per phase and moves a project between them", async ({ page }) => {
+    const rows = await projects(page);
+    const target = rows.find((p) => p.phase === "ETUDE/AP");
+    expect(target, "the seed has a project in the first phase").toBeTruthy();
+
+    await board(page);
+    await page.getByRole("button", { name: "Kanban view" }).click();
+
+    // A column per phase, each announcing what it holds.
+    const study = page.getByRole("region", { name: /^Study \/ Prelim\., \d+ projects?$/ });
+    await expect(study).toBeVisible();
+    await expect(page.getByRole("region", { name: /^Construction, \d+ projects?$/ })).toBeVisible();
+    await expectAccessible(page, "workbook-kanban");
+
+    // Dragging is the gesture, but the Move menu is the same call and is the
+    // one a keyboard can reach — so that is what the test drives.
+    const card = page.getByRole("button", { name: `Move ${target!.title} to another phase` });
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await page.getByRole("menu", { name: `Move ${target!.title}` }).getByRole("menuitem", { name: "Construction" }).click();
+
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.id === target!.id)?.phase)
+      .toBe("CHANTIER");
+    await expect(
+      page.getByRole("region", { name: /^Construction, \d+ projects?$/ })
+        .getByText(target!.title),
+    ).toBeVisible();
+
+    await page.request.patch(`/api/projects/${target!.id}`, { data: { phase: target!.phase } });
+  });
+
+  test("a card can be dragged into another column", async ({ page }) => {
+    const rows = await projects(page);
+    const target = rows.find((p) => p.phase === "ETUDE/AP")!;
+
+    await board(page);
+    await page.getByRole("button", { name: "Kanban view" }).click();
+    const card = page.locator("li[draggable='true']").filter({ hasText: target.title }).first();
+    await expect(card).toBeVisible();
+
+    const construction = page.getByRole("region", { name: /^Construction, \d+ projects?$/ });
+    await card.dragTo(construction);
+
+    await expect
+      .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.phase, { timeout: 10_000 })
+      .toBe("CHANTIER");
+
+    await page.request.patch(`/api/projects/${target.id}`, { data: { phase: target.phase } });
   });
 
   test("a row shows how much has been said about it", async ({ page }) => {

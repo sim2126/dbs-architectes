@@ -24,7 +24,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, ExternalLink, Loader2, RefreshCw, Search, X } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  ExternalLink,
+  LayoutGrid,
+  Loader2,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Table2,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import {
   applyView,
@@ -32,6 +43,8 @@ import {
   BoardControls,
   EMPTY_VIEW,
   isFiltered,
+  Kanban,
+  useDismiss,
   type BoardCellValue,
   type BoardColumn,
   type BoardPerson,
@@ -118,6 +131,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   // here is persisted: a saved view is a board setting, not a preference,
   // and inventing one now would be guessing at the shape.
   const [view, setView] = useState<BoardView>(EMPTY_VIEW);
+  // Table or Kanban. The same rows, groups and rules either way — only the
+  // shape changes, so this is a layout choice rather than a second board.
+  const [layout, setLayout] = useState<"table" | "kanban">("table");
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -492,6 +510,17 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     URL.revokeObjectURL(url);
   }, [visibleColumns, rows]);
 
+  const moveRow = useCallback(
+    (rowId: string, groupValue: string | null) => {
+      // The ungrouped bucket is not a destination: it is where rows with no
+      // value land, and dropping into it would mean clearing the phase, which
+      // is never what the gesture meant.
+      if (groupValue === null) return;
+      void patch(rowId, groupByKey, groupValue);
+    },
+    [patch, groupByKey],
+  );
+
   const bulkActions = useMemo<BulkAction[]>(
     () => [
       {
@@ -551,6 +580,9 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     [byId],
   );
 
+  const groupMenuRef = useDismiss<HTMLDivElement>(useCallback(() => setGroupMenuOpen(false), []));
+  const overflowRef = useDismiss<HTMLDivElement>(useCallback(() => setOverflowOpen(false), []));
+
   const openProject = openItemId ? projects.find((p) => p.id === openItemId) ?? null : null;
 
   return (
@@ -568,30 +600,50 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           />
         </div>
 
-        <div className="flex items-center gap-1 rounded-md border border-friday-border-soft p-0.5">
-          {(
-            [
-              { key: "phase" as const, label: t("projects.col.phase", "Phase") },
-              { key: "workStatus" as const, label: t("projects.col.status", "Status") },
-            ]
-          ).map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setGroupByKey(key)}
-              aria-pressed={groupByKey === key}
-              className={cn(
-                "rounded px-2 py-1 text-[11.5px] transition-colors",
-                groupByKey === key
-                  ? "bg-friday-fg text-friday-bg"
-                  : "text-friday-fg-subtle hover:text-friday-fg",
-              )}
+        {/* One button rather than a label and two toggles: the toolbar has
+            four control groups on it now, and the words were wrapping. */}
+        <div ref={groupMenuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setGroupMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={groupMenuOpen}
+            aria-label={`Group by ${groupBy.label}`}
+            className="flex h-8 items-center gap-1 whitespace-nowrap rounded-md px-2.5 text-[12px] text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
+          >
+            Group
+            <span className="font-medium text-friday-fg">{groupBy.label}</span>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {groupMenuOpen && (
+            <div
+              role="menu"
+              aria-label="Group by"
+              className="absolute left-0 top-full z-40 mt-1 w-44 overflow-hidden rounded-md border border-friday-border bg-friday-bg py-1 shadow-lg"
             >
-              {label}
-            </button>
-          ))}
+              {(
+                [
+                  { key: "phase" as const, label: t("projects.col.phase", "Phase") },
+                  { key: "workStatus" as const, label: t("projects.col.status", "Status") },
+                ]
+              ).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={groupByKey === key}
+                  onClick={() => {
+                    setGroupByKey(key);
+                    setGroupMenuOpen(false);
+                  }}
+                  className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-friday-fg transition-colors hover:bg-friday-surface-2"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <span className="text-[11px] text-friday-fg-subtle">Group by</span>
 
         <BoardControls
           columns={columns}
@@ -600,10 +652,36 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           onChange={setView}
         />
 
+        <div className="flex items-center gap-1 rounded-md border border-friday-border-soft p-0.5">
+          {(
+            [
+              { key: "table" as const, label: "Table", icon: Table2 },
+              { key: "kanban" as const, label: "Kanban", icon: LayoutGrid },
+            ]
+          ).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setLayout(key)}
+              aria-pressed={layout === key}
+              aria-label={`${label} view`}
+              className={cn(
+                "flex items-center gap-1 rounded px-2 py-1 text-[11.5px] transition-colors",
+                layout === key
+                  ? "bg-friday-fg text-friday-bg"
+                  : "text-friday-fg-subtle hover:text-friday-fg",
+              )}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+
         <span className="flex-1" />
 
         <span
-          className="flex items-center gap-1.5 text-[11px] text-friday-fg-subtle"
+          className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-friday-fg-subtle"
           aria-label={liveUpdates ? "Live updates on" : "Live updates unavailable"}
         >
           <span
@@ -615,25 +693,58 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           />
           {liveUpdates ? "Live" : "Not live"}
         </span>
-        <span className="text-[11px] text-friday-fg-subtle">
-          {rows.length} of {projects.length} projects
+        <span className="whitespace-nowrap text-[11px] text-friday-fg-subtle">
+          <span aria-hidden>
+            {rows.length} of {projects.length}
+          </span>
+          <span className="sr-only">
+            {rows.length} of {projects.length} projects shown
+          </span>
         </span>
-        <button
-          type="button"
-          onClick={() => void load()}
-          aria-label="Refresh the board"
-          className="rounded-md p-1.5 text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-        </button>
-        <button
-          type="button"
-          onClick={exportCsv}
-          aria-label="Export this board as CSV"
-          className="rounded-md p-1.5 text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
-        >
-          <Download className="h-3.5 w-3.5" />
-        </button>
+        <div ref={overflowRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setOverflowOpen((o) => !o)}
+            aria-label="Board actions"
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            className="rounded-md p-1.5 text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+          {overflowOpen && (
+            <div
+              role="menu"
+              aria-label="Board actions"
+              className="absolute right-0 top-full z-40 mt-1 w-48 overflow-hidden rounded-md border border-friday-border bg-friday-bg py-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOverflowOpen(false);
+                  void load();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-friday-fg transition-colors hover:bg-friday-surface-2"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+                Refresh the board
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOverflowOpen(false);
+                  exportCsv();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-friday-fg transition-colors hover:bg-friday-surface-2"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export as CSV
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {loading && projects.length === 0 ? (
@@ -641,6 +752,23 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading the board
         </div>
+      ) : layout === "kanban" ? (
+        <Kanban
+          columns={visibleColumns}
+          rows={rows}
+          groupBy={groupBy}
+          canEdit={canEditAnything}
+          canEditCell={canEditCell}
+          canAdd={canAdd}
+          onCellChange={patch}
+          onAddRow={addRow}
+          onOpenRow={setOpenItemId}
+          onOpenConversation={setOpenItemId}
+          itemNoun="project"
+          emptyNote={
+            isFiltered(view) || search.trim() ? "Nothing here matches" : "No projects"
+          }
+        />
       ) : (
         <Board
           columns={visibleColumns}
@@ -654,6 +782,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           onCellChange={patch}
           onAssign={assign}
           onAddRow={addRow}
+          onMoveRow={moveRow}
           onOpenRow={setOpenItemId}
           onOpenConversation={setOpenItemId}
           bulkActions={bulkActions}
