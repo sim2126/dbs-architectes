@@ -8,6 +8,25 @@ export { Board, type BoardProps, type BulkAction } from "./board";
 export { BoardControls } from "./controls";
 export { useDismiss } from "./use-dismiss";
 export { Kanban, type KanbanProps } from "./kanban";
+export { ViewsMenu } from "./views-menu";
+export {
+  describeView,
+  MAX_VIEW_NAME,
+  normaliseViewName,
+  parseSavedViewState,
+  type BoardLayout,
+  type SavedView,
+  type SavedViewState,
+} from "./saved-views";
+export {
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
+  moveColumn,
+  orderedKeys,
+  reorderColumn,
+  resetColumnWidth,
+  setColumnWidth,
+} from "./view-state";
 export {
   activeFilterCount,
   applyView,

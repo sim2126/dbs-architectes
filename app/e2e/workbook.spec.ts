@@ -374,6 +374,46 @@ test.describe("workbook board", () => {
     await page.request.patch(`/api/projects/${target.id}`, { data: { phase: target.phase } });
   });
 
+  test("an arrangement can be named, left and come back to", async ({ page }) => {
+    const name = `E2E view ${Date.now()}`;
+    await board(page);
+
+    // Something worth keeping: only what is being worked on, as a Kanban.
+    await page.getByRole("button", { name: /^Filter/ }).click();
+    await page.getByRole("menu", { name: "Filter" }).getByRole("menuitemcheckbox", { name: STATUS_LABEL.doing }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Kanban view" }).click();
+
+    await page.getByRole("button", { name: /^Views$/ }).click();
+    await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: "Save this view" }).click();
+    await page.getByLabel("Name for this view").fill(name);
+    await page.keyboard.press("Enter");
+
+    // The button says what you are looking at.
+    await expect(page.getByRole("button", { name: `Views, showing ${name}` })).toBeVisible();
+
+    // Leave it, and the board is plain again.
+    await page.getByRole("button", { name: `Views, showing ${name}` }).click();
+    await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: "All projects" }).click();
+    await expect(page.getByRole("columnheader", { name: "Item" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Filter 1/ })).toHaveCount(0);
+
+    // Come back to it, and every part of it returns: filter, layout, grouping.
+    await page.getByRole("button", { name: /^Views$/ }).click();
+    await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: new RegExp(escapeRe(name)) }).click();
+    await expect(page.locator("li[draggable='true']").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: `Views, showing ${name}` })).toBeVisible();
+
+    // It survives a reload, because it is stored rather than remembered.
+    await page.reload();
+    await page.getByRole("button", { name: /^Views$/ }).click();
+    const menu = page.getByRole("menu", { name: "Saved views" });
+    await expect(menu.getByRole("menuitem", { name: new RegExp(escapeRe(name)) })).toBeVisible();
+
+    await menu.getByRole("button", { name: `Delete the view ${name}` }).click();
+    await expect(page.getByRole("menuitem", { name: new RegExp(escapeRe(name)) })).toHaveCount(0);
+  });
+
   test("a row shows how much has been said about it", async ({ page }) => {
     await board(page);
     // Rows with a conversation carry the count in the button's own name, so

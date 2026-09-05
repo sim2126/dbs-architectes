@@ -45,12 +45,14 @@ import {
   isFiltered,
   Kanban,
   useDismiss,
+  ViewsMenu,
   type BoardCellValue,
   type BoardColumn,
   type BoardPerson,
   type BoardRow,
   type BoardView,
   type BulkAction,
+  type SavedView,
 } from "@/ui/board";
 import { showToast } from "@/ui/components/toast";
 import { cn, CATEGORIES, PHASES } from "@/ui/utils";
@@ -136,6 +138,11 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const [layout, setLayout] = useState<"table" | "kanban">("table");
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  // The saved view currently on screen, cleared the moment anything is
+  // changed — a name should describe what you are looking at, not what you
+  // were looking at before you touched a filter.
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -211,6 +218,80 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
+
+  const loadSavedViews = useCallback(async () => {
+    try {
+      const res = await fetch("/api/board-views?board=projects&groupBy=phase");
+      if (!res.ok) return;
+      const data = (await res.json()) as { views: SavedView[] };
+      setSavedViews(data.views ?? []);
+    } catch {
+      // Saved views are a convenience; the board works without them.
+      setSavedViews([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedViews();
+  }, [loadSavedViews]);
+
+  const applySavedView = useCallback((saved: SavedView) => {
+    setView(saved.state.view);
+    setLayout(saved.state.layout);
+    // The stored grouping is a plain string; only the two this board groups by
+    // are honoured, so a view saved before a column was renamed degrades to
+    // the default rather than emptying the board.
+    setGroupByKey(saved.state.groupBy === "workStatus" ? "workStatus" : "phase");
+    setActiveViewId(saved.id);
+  }, []);
+
+  const resetView = useCallback(() => {
+    setView(EMPTY_VIEW);
+    setLayout("table");
+    setGroupByKey("phase");
+    setActiveViewId(null);
+  }, []);
+
+  const saveCurrentView = useCallback(
+    async (name: string) => {
+      try {
+        const res = await fetch("/api/board-views", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            board: "projects",
+            name,
+            groupBy: groupByKey,
+            state: { view, layout, groupBy: groupByKey },
+          }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error ?? `HTTP ${res.status}`);
+        }
+        const saved = (await res.json()) as SavedView;
+        await loadSavedViews();
+        setActiveViewId(saved.id);
+        showToast(`Saved as ${saved.name}`, "success");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "That view was not saved.", "danger");
+      }
+    },
+    [view, layout, groupByKey, loadSavedViews],
+  );
+
+  const deleteSavedView = useCallback(
+    async (saved: SavedView) => {
+      setSavedViews((prev) => prev.filter((v) => v.id !== saved.id));
+      setActiveViewId((current) => (current === saved.id ? null : current));
+      const res = await fetch(`/api/board-views/${saved.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        await loadSavedViews();
+        showToast("That view was not deleted.", "danger");
+      }
+    },
+    [loadSavedViews],
+  );
 
   useEffect(() => {
     // Creating a project is a workspace right, not a per-row one, so the
@@ -589,6 +670,16 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Board toolbar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-friday-border-soft px-4 py-2.5">
+        <ViewsMenu
+          views={savedViews}
+          columns={columns}
+          activeId={activeViewId}
+          onApply={applySavedView}
+          onReset={resetView}
+          onSave={saveCurrentView}
+          onDelete={deleteSavedView}
+        />
+
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-friday-fg-subtle" />
           <input
@@ -634,6 +725,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
                   aria-checked={groupByKey === key}
                   onClick={() => {
                     setGroupByKey(key);
+                    setActiveViewId(null);
                     setGroupMenuOpen(false);
                   }}
                   className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-friday-fg transition-colors hover:bg-friday-surface-2"
@@ -649,7 +741,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           columns={columns}
           roster={roster as BoardPerson[]}
           view={view}
-          onChange={setView}
+          onChange={(next) => {
+            setView(next);
+            setActiveViewId(null);
+          }}
         />
 
         <div className="flex items-center gap-1 rounded-md border border-friday-border-soft p-0.5">
@@ -662,7 +757,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
             <button
               key={key}
               type="button"
-              onClick={() => setLayout(key)}
+              onClick={() => {
+                setLayout(key);
+                setActiveViewId(null);
+              }}
               aria-pressed={layout === key}
               aria-label={`${label} view`}
               className={cn(
@@ -776,7 +874,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           rows={rows}
           groupBy={groupBy}
           view={view}
-          onViewChange={setView}
+          onViewChange={(next) => {
+            setView(next);
+            setActiveViewId(null);
+          }}
           label="Projects"
           roster={roster as BoardPerson[]}
           canEdit={canEditAnything}
