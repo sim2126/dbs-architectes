@@ -180,6 +180,24 @@ function canRegionAccess(subject: Subject, country: string | null | undefined): 
   return subject.regions.some((r) => r.country === country);
 }
 
+/**
+ * Which countries this subject may see projects in. `null` means no
+ * restriction at all.
+ *
+ * canRegionAccess() answers the question one project at a time, which is the
+ * right shape for a decision and the wrong shape for a list: asking it per
+ * row means fetching rows in order to discard them. This states the same rule
+ * as a set the query can be built from, and lives here so the two cannot
+ * drift — a list that shows more than the detail view will open is a leak of
+ * titles, clients and communes across a boundary the practice cares about.
+ *
+ * Projects with no country are visible to everyone, matching canRegionAccess.
+ */
+export function readableProjectCountries(subject: Subject): string[] | null {
+  if (isDirector(subject.role)) return null;
+  return [...new Set(subject.regions.map((r) => r.country))];
+}
+
 function deny(reason: string): Decision { return { allow: false, reason }; }
 const ALLOW: Decision = { allow: true };
 

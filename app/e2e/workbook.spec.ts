@@ -315,6 +315,29 @@ test.describe("workbook board", () => {
 test.describe("workbook board, restricted role", () => {
   test.use({ storageState: stateFor("employee") });
 
+  test("the board lists only projects this person may open", async ({ page, browser }) => {
+    // A row the viewer cannot open should not be on the board at all: its
+    // title, client and commune are not public within the practice, and the
+    // list used to show all of them and reveal the boundary only on click.
+    const mine = await projects(page);
+    expect(mine.length).toBeGreaterThan(0);
+    for (const project of mine) {
+      expect(project.capabilities?.read, `${project.code} is listed but not readable`).not.toBe(false);
+    }
+
+    const admin = await browser.newContext({ storageState: stateFor("admin") });
+    const all = (await (await admin.request.get("/api/projects?limit=500")).json()) as Project[];
+    await admin.close();
+
+    expect(all.length).toBeGreaterThan(mine.length);
+    const hidden = all.filter((p) => !mine.some((m) => m.id === p.id));
+    expect(hidden.length, "the employee is region-scoped, so something is withheld").toBeGreaterThan(0);
+
+    // And the withheld ones really are refused, not merely absent.
+    const refused = await page.request.get(`/api/projects/${hidden[0].id}`);
+    expect(refused.status()).toBe(403);
+  });
+
   test("an employee cannot type into a project they do not run", async ({ page }) => {
     const rows = await projects(page);
     // The row the server says is read-only for this caller. Every listed row

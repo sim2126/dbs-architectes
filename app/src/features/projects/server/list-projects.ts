@@ -4,10 +4,13 @@
  * Used by the JSON API at /api/projects (GET). Page server components
  * fetch through their own helpers because they need different joins.
  *
- * No authorization is enforced here — the caller must have a session
- * (the list endpoint is firm-wide visible to any signed-in user; finer
- * regional filtering is applied via the `country` / `operatingRegion`
- * filters and the WHERE clause).
+ * Region visibility is enforced here, via `visibleCountries`. It used to
+ * say it was — the route carried a comment promising the list was filtered
+ * to what the caller may see — while every signed-in user in fact received
+ * all 24 projects and discovered the boundary only on clicking one. Titles,
+ * clients and communes are not public within the practice, so that was a
+ * leak rather than an inconvenience. The caller passes the countries; the
+ * rule that produces them is readableProjectCountries() in platform/authz.
  */
 
 import { prisma } from "@/platform/db";
@@ -22,6 +25,11 @@ export type ListProjectsInput = {
   cursor?: string;
   /** Page size. Defaulted + clamped by the caller. */
   limit: number;
+  /**
+   * Countries the caller may see projects in. `null` or omitted means no
+   * restriction — pass it explicitly rather than leaving it out by accident.
+   */
+  visibleCountries?: string[] | null;
 };
 
 export type ListProjectsOutput = {
@@ -39,6 +47,7 @@ async function fetchProjectsPage(input: ListProjectsInput) {
     operatingRegion = "",
     cursor = "",
     limit,
+    visibleCountries = null,
   } = input;
   const normalisedPhase = phase ? normaliseProjectPhase(phase) : "";
 
@@ -59,6 +68,10 @@ async function fetchProjectsPage(input: ListProjectsInput) {
         category        ? { category }                  : {},
         country         ? { country }                   : {},
         operatingRegion ? { operatingRegion }           : {},
+        // A project with no country belongs to the whole practice.
+        visibleCountries
+          ? { OR: [{ country: null }, { country: { in: visibleCountries } }] }
+          : {},
       ],
     },
     orderBy: { updatedAt: "desc" },

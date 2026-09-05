@@ -39,11 +39,12 @@ interface TeamRow {
   id: string;
   name: string;
   role: string;
-  total: number;
+  /** Assignments on projects that are still live — terminal phases excluded. */
+  active: number;
   doing: number;
   stuck: number;
-  completed: number;
-  workloadCode: number;
+  overdueTasks: number;
+  load: "light" | "balanced" | "heavy" | "overloaded";
 }
 
 interface CustomSheet {
@@ -63,27 +64,19 @@ type ActiveView = "projects" | "workload" | string; // string = custom sheet id
 
 // ─── Constants ─────────────────────────────────────────────────
 
-const WORKLOAD_COLORS: Record<number, string> = {
-  0: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  1: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
-  2: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-  3: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+const LOAD_COLORS: Record<TeamRow["load"], string> = {
+  light: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  balanced: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+  heavy: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  overloaded: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
-const WORKLOAD_LABELS: Record<number, string> = {
-  0: "Low (0)",
-  1: "Moderate (1)",
-  2: "High (2)",
-  3: "Critical (3)",
+const LOAD_LABELS: Record<TeamRow["load"], string> = {
+  light: "Light",
+  balanced: "Balanced",
+  heavy: "Heavy",
+  overloaded: "Overloaded",
 };
-
-/** Workload code: 0 ≤2 tasks · 1 >2 · 2 >3 · 3 >4 */
-function workloadCode(activeCount: number): number {
-  if (activeCount > 4) return 3;
-  if (activeCount > 3) return 2;
-  if (activeCount > 2) return 1;
-  return 0;
-}
 
 // ─── Editable text cell (personal sheets) ──────────────────────
 
@@ -136,6 +129,7 @@ export default function SheetsPage() {
   const { data: session } = useSession();
   const [activeView, setActiveView] = useState<ActiveView>("projects");
   const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
+  const [workloadDenied, setWorkloadDenied] = useState(false);
   const [customSheets, setCustomSheets] = useState<SheetMeta[]>([]);
   const [activeCustomSheet, setActiveCustomSheet] = useState<CustomSheet | null>(null);
   const [loading, setLoading] = useState(false);
@@ -147,38 +141,51 @@ export default function SheetsPage() {
 
   // ── Load team workload ────────────────────────────────────
 
+  /*
+   * Read the canonical snapshot rather than recomputing one here.
+   *
+   * This view used to derive workload in the browser from /api/projects and
+   * /api/team. Two problems with that: it is a second implementation of a
+   * calculation the server already owns, and now that the project list is
+   * filtered to what the caller may see, a Swiss manager would have computed
+   * every Italian colleague as carrying nothing at all. The endpoint is also
+   * gated to managers and above, which this table should always have been.
+   */
   const loadWorkload = useCallback(async () => {
     setLoading(true);
+    setWorkloadDenied(false);
     try {
-      const [usersRes, projectsRes] = await Promise.all([
-        fetch("/api/team"),
-        fetch("/api/projects"),
-      ]);
-      const users = await usersRes.json() as { id: string; name?: string | null; role: string }[];
-      const projects = await projectsRes.json() as {
-        workStatus: string;
-        assignments: { userId: string }[];
-      }[];
-
-      const rows: TeamRow[] = users.map((u) => {
-        const assigned = projects.filter((p) => p.assignments.some((a) => a.userId === u.id));
-        const active = assigned.filter((p) => p.workStatus !== "completed");
-        const doing = assigned.filter((p) => p.workStatus === "doing").length;
-        const stuck = assigned.filter((p) => p.workStatus === "stuck").length;
-        const completed = assigned.filter((p) => p.workStatus === "completed").length;
-        return {
-          id: u.id,
-          name: u.name ?? "—",
-          role: u.role,
-          total: assigned.length,
-          doing,
-          stuck,
-          completed,
-          workloadCode: workloadCode(active.length),
-        };
-      }).sort((a, b) => b.workloadCode - a.workloadCode);
-
-      setTeamRows(rows);
+      const res = await fetch("/api/team-workload");
+      if (res.status === 403) {
+        setWorkloadDenied(true);
+        setTeamRows([]);
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as {
+        members: {
+          user: { id: string; name: string | null; role: string };
+          projects: { workStatus: string }[];
+          tasks: { overdue: number };
+          load: TeamRow["load"];
+          score: number;
+        }[];
+      };
+      setTeamRows(
+        data.members.map((m) => ({
+          id: m.user.id,
+          name: m.user.name ?? "—",
+          role: m.user.role,
+          active: m.projects.length,
+          doing: m.projects.filter((p) => p.workStatus === "doing").length,
+          stuck: m.projects.filter((p) => p.workStatus === "stuck").length,
+          overdueTasks: m.tasks.overdue,
+          load: m.load,
+        })),
+      );
+    } catch (error) {
+      console.error("[workbook] workload failed to load", error);
+      setTeamRows([]);
     } finally {
       setLoading(false);
     }
@@ -228,8 +235,8 @@ export default function SheetsPage() {
     if (activeView === "workload") {
       sheetName = "Team Workload";
       wsData = [
-        ["Name", "Role", "Total Projects", "Doing", "Stuck", "Completed", "Workload Code", "Workload Level"],
-        ...teamRows.map((r) => [r.name, r.role, r.total, r.doing, r.stuck, r.completed, r.workloadCode, WORKLOAD_LABELS[r.workloadCode]]),
+        ["Name", "Role", "Active Projects", "Doing", "Stuck", "Overdue Tasks", "Load"],
+        ...teamRows.map((r) => [r.name, r.role, r.active, r.doing, r.stuck, r.overdueTasks, LOAD_LABELS[r.load]]),
       ];
     } else if (activeCustomSheet) {
       sheetName = activeCustomSheet.name.slice(0, 31);
@@ -496,7 +503,7 @@ export default function SheetsPage() {
                   Loading…
                 </div>
               ) : onWorkload ? (
-                <WorkloadTable rows={teamRows} />
+                <WorkloadTable rows={teamRows} denied={workloadDenied} />
               ) : activeCustomSheet ? (
                 <CustomSheetTable
                   sheet={activeCustomSheet}
@@ -520,13 +527,21 @@ export default function SheetsPage() {
 
 // ─── Workload table ────────────────────────────────────────────
 
-function WorkloadTable({ rows }: { rows: TeamRow[] }) {
+function WorkloadTable({ rows, denied }: { rows: TeamRow[]; denied: boolean }) {
+  if (denied) {
+    return (
+      <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+        Team workload is available to managers and above.
+      </p>
+    );
+  }
+
   return (
     <div>
       <table className="w-full text-xs border-collapse">
         <thead className="sticky top-0 z-10 bg-muted/90 backdrop-blur-sm">
           <tr className="border-b border-border">
-            {["Name", "Role", "Total", "Doing", "Stuck", "Completed", "Workload"].map((h) => (
+            {["Name", "Role", "Active", "Doing", "Stuck", "Overdue tasks", "Load"].map((h) => (
               <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground uppercase tracking-wide text-[10px]">
                 {h}
               </th>
@@ -538,13 +553,13 @@ function WorkloadTable({ rows }: { rows: TeamRow[] }) {
             <tr key={row.id} className="border-b border-border/60 hover:bg-accent/30 transition-colors">
               <td className="px-3 py-2 font-medium">{row.name}</td>
               <td className="px-3 py-2 text-muted-foreground">{row.role}</td>
-              <td className="px-3 py-2">{row.total}</td>
+              <td className="px-3 py-2">{row.active}</td>
               <td className="px-3 py-2">{row.doing}</td>
               <td className="px-3 py-2">{row.stuck}</td>
-              <td className="px-3 py-2">{row.completed}</td>
+              <td className="px-3 py-2">{row.overdueTasks}</td>
               <td className="px-3 py-2">
-                <span className={cn("px-2 py-0.5 rounded-md text-[11px] font-medium", WORKLOAD_COLORS[row.workloadCode])}>
-                  {WORKLOAD_LABELS[row.workloadCode]}
+                <span className={cn("px-2 py-0.5 rounded-md text-[11px] font-medium", LOAD_COLORS[row.load])}>
+                  {LOAD_LABELS[row.load]}
                 </span>
               </td>
             </tr>

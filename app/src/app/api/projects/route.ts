@@ -4,6 +4,7 @@ import {
   loadSubject,
   PermissionError,
   permissionResponse,
+  readableProjectCountries,
   requirePermission,
 } from "@/platform/authz";
 import { projectCapabilities } from "@/features/projects/domain/project-capabilities";
@@ -25,6 +26,11 @@ export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  // auth() above already refuses guests; loadSubject() adds the regions and
+  // grants the visibility rule needs. Both, deliberately: widening this to
+  // loadSubject alone would hand the project list to conversation guests.
+  const subject = await loadSubject();
+
   const { searchParams } = new URL(request.url);
   const result = await listProjects({
     search:          searchParams.get("search")  ?? undefined,
@@ -34,13 +40,13 @@ export async function GET(request: NextRequest) {
     operatingRegion: searchParams.get("region")  ?? undefined,
     cursor:          searchParams.get("cursor")  ?? undefined,
     limit:           boundedLimit(searchParams.get("limit")),
+    visibleCountries: subject ? readableProjectCountries(subject) : [],
   });
 
   // Each row says what this caller may do to it, so a board can grey the
   // cells it must not offer without keeping its own copy of the rules.
-  // authorize() is pure and the assignment is already loaded, so this is
-  // one subject lookup for the whole page rather than a query per row.
-  const subject = await loadSubject();
+  // authorize() is pure and the assignment is already loaded, so this costs
+  // nothing beyond the subject already loaded above.
   const projects = subject
     ? result.projects.map((project) => ({
         ...project,

@@ -16,6 +16,7 @@ export {
 
 export {
   authorize,
+  readableProjectCountries,
   type AuthContext,
   type Decision,
   type RegionAccess,
