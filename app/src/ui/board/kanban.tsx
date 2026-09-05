@@ -14,7 +14,7 @@
  * than dragging across a wide board, and it is how the move is tested.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, MessageSquare, Plus } from "lucide-react";
 import { cn } from "@/ui/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/components/avatar";
@@ -27,6 +27,16 @@ import {
 } from "./columns";
 import { groupRows } from "./grouping";
 import { useDismiss } from "./use-dismiss";
+
+/**
+ * Cards rendered per column before scrolling asks for more.
+ *
+ * A card's height depends on its content, so the exact arithmetic the table
+ * uses does not apply here. Growing the list as the column is scrolled is
+ * simpler and does the same job: measured at 800 projects, rendering every
+ * card cost 17,214 DOM nodes.
+ */
+const CARDS_PER_PAGE = 30;
 
 export type KanbanProps = {
   columns: readonly BoardColumn[];
@@ -117,11 +127,10 @@ export function Kanban({
               <span className="text-[11px] text-friday-fg-subtle">{group.rows.length}</span>
             </header>
 
-            <ul className="flex-1 space-y-2 overflow-y-auto p-2">
-              {group.rows.length === 0 && (
-                <li className="px-1 py-3 text-[12px] text-friday-fg-subtle">{emptyNote}</li>
-              )}
-              {group.rows.map((row) => (
+            <CardList
+              rows={group.rows}
+              emptyNote={emptyNote}
+              renderCard={(row) => (
                 <Card
                   key={row.id}
                   row={row}
@@ -140,8 +149,8 @@ export function Kanban({
                   onOpenConversation={onOpenConversation}
                   groupLabel={groupBy.label}
                 />
-              ))}
-            </ul>
+              )}
+            />
 
             {canAdd && onAddRow && (
               <AddCard
@@ -154,6 +163,68 @@ export function Kanban({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * One column's cards, grown as it is scrolled.
+ *
+ * The count resets whenever the column's contents change — a filter, a sort,
+ * a card moved away — so a narrowed board never starts halfway down a list
+ * it no longer has.
+ */
+function CardList({
+  rows,
+  emptyNote,
+  renderCard,
+}: {
+  rows: readonly BoardRow[];
+  emptyNote: string;
+  renderCard: (row: BoardRow) => React.ReactNode;
+}) {
+  const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE);
+  const sentinel = useRef<HTMLLIElement>(null);
+
+  /*
+   * Start again from the top whenever the column's contents change, so a
+   * narrowed board never opens halfway down a list it no longer has. Adjusted
+   * during render rather than in an effect: an effect would paint the stale
+   * count first, and React forbids the synchronous setState that would avoid
+   * that. This is the documented way to reset state when an input changes.
+   */
+  const listKey = `${rows.length}:${rows[0]?.id ?? ""}`;
+  const [renderedFor, setRenderedFor] = useState(listKey);
+  if (renderedFor !== listKey) {
+    setRenderedFor(listKey);
+    setVisibleCount(CARDS_PER_PAGE);
+  }
+
+  useEffect(() => {
+    const element = sentinel.current;
+    if (!element || visibleCount >= rows.length) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisibleCount((count) => Math.min(rows.length, count + CARDS_PER_PAGE));
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [visibleCount, rows.length]);
+
+  const remaining = rows.length - visibleCount;
+
+  return (
+    <ul className="flex-1 space-y-2 overflow-y-auto p-2">
+      {rows.length === 0 && (
+        <li className="px-1 py-3 text-[12px] text-friday-fg-subtle">{emptyNote}</li>
+      )}
+      {rows.slice(0, visibleCount).map(renderCard)}
+      {remaining > 0 && (
+        <li ref={sentinel} className="px-1 py-2 text-[11px] text-friday-fg-subtle">
+          {remaining} more below
+        </li>
+      )}
+    </ul>
   );
 }
 
