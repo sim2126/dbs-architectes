@@ -22,7 +22,7 @@
  *    approximately.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CalendarDays,
@@ -69,6 +69,9 @@ import { translatePhase, useT } from "@/i18n/translations";
 import { getPusherClient } from "@/platform/integrations/pusher-client";
 import { presenceChannelName, PUSHER_EVENTS } from "@/platform/integrations/pusher";
 import { ProjectThreadPanel } from "./project-thread-panel";
+import { buildCellPayload } from "../domain/editable-columns";
+import { BoardRequestCoordinator } from "@/ui/board/request-coordinator";
+import { csvCell } from "@/ui/board/csv";
 
 // ── Wire shape ───────────────────────────────────────────────────────────────
 
@@ -127,6 +130,13 @@ const STATUS_ONLY_FIELD = "workStatus";
 export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const t = useT();
   const [projects, setProjects] = useState<BoardProject[]>([]);
+  const projectsRef = useRef<BoardProject[]>([]);
+  const [requests] = useState(() => new BoardRequestCoordinator());
+  const loadId = useRef(0);
+  const updateProjects = useCallback((update: (current: BoardProject[]) => BoardProject[]) => {
+    projectsRef.current = update(projectsRef.current);
+    setProjects(projectsRef.current);
+  }, []);
   const [roster, setRoster] = useState<RosterMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -144,48 +154,60 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const savedViewsVersion = useRef(0);
   // The saved view currently on screen, cleared the moment anything is
   // changed — a name should describe what you are looking at, not what you
   // were looking at before you touched a filter.
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const id = ++loadId.current;
     setLoading(true);
     try {
-      /*
-       * Page through everything rather than asking for one capped page. The
-       * endpoint clamps limit at 500, so a single request quietly returned
-       * 500 of the 800 projects on staging — in year three that is a project
-       * that has simply vanished from the board with no error anywhere.
-       *
-       * The board groups, filters, sorts and summarises across the whole
-       * collection, so it does need all of it. The ceiling is the working
-       * set, which is what archiving is for.
-       */
-      const collected: BoardProject[] = [];
-      let cursor: string | null = null;
-      for (let page = 0; page < 20; page++) {
-        const query = new URLSearchParams({ paging: "1", limit: "500" });
-        if (cursor) query.set("cursor", cursor);
-        const res = await fetch(`/api/projects?${query}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as {
-          projects: BoardProject[];
-          hasMore: boolean;
-          nextCursor: string | null;
-        };
-        collected.push(...body.projects);
-        if (!body.hasMore || !body.nextCursor) break;
-        cursor = body.nextCursor;
+      for (;;) {
+        await requests.whenIdle();
+        if (id !== loadId.current) return;
+        const version = requests.readVersion();
+        // Grouping and summaries need every page. A write during this read
+        // invalidates it, so it is retried after the queued edits settle.
+        const collected: BoardProject[] = [];
+        let cursor: string | null = null;
+        const seenCursors = new Set<string>();
+        for (;;) {
+          const query = new URLSearchParams({ paging: "1", limit: "500" });
+          if (cursor) query.set("cursor", cursor);
+          const res = await fetch(`/api/projects?${query}`);
+          if ((res.status === 401 || res.status === 403) && id === loadId.current) {
+            updateProjects(() => []);
+            setOpenItemId(null);
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = (await res.json()) as {
+            projects: BoardProject[];
+            hasMore: boolean;
+            nextCursor: string | null;
+          };
+          collected.push(...body.projects);
+          if (!body.hasMore) break;
+          if (!body.nextCursor || seenCursors.has(body.nextCursor)) {
+            throw new Error("The project list did not advance to the next page.");
+          }
+          seenCursors.add(body.nextCursor);
+          cursor = body.nextCursor;
+        }
+        if (id !== loadId.current) return;
+        if (!requests.canApplyRead(version)) continue;
+        updateProjects(() => [...new Map(collected.map((project) => [project.id, project])).values()]);
+        break;
       }
-      setProjects(collected);
     } catch (error) {
+      if (id !== loadId.current) return;
       console.error("[board] projects failed to load", error);
       showToast("The board could not be loaded. Try refreshing.", "danger");
     } finally {
-      setLoading(false);
+      if (id === loadId.current) setLoading(false);
     }
-  }, []);
+  }, [requests, updateProjects]);
 
   useEffect(() => {
     void load();
@@ -219,7 +241,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
        * much longer — a board that looks current but is not is worse than one
        * that admits it.
        */
-      channel.bind("pusher:subscription_succeeded", () => setLiveUpdates(true));
+      channel.bind("pusher:subscription_succeeded", () => {
+        setLiveUpdates(true);
+        void load();
+      });
       channel.bind("pusher:subscription_error", () => setLiveUpdates(false));
       client.connection.bind("state_change", ({ current }: { current: string }) => {
         if (current !== "connected") setLiveUpdates(false);
@@ -249,14 +274,14 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   }, [load]);
 
   const loadSavedViews = useCallback(async () => {
+    const version = ++savedViewsVersion.current;
     try {
       const res = await fetch("/api/board-views?board=projects&groupBy=phase");
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { views: SavedView[] };
-      setSavedViews(data.views ?? []);
+      if (version === savedViewsVersion.current) setSavedViews(data.views ?? []);
     } catch {
-      // Saved views are a convenience; the board works without them.
-      setSavedViews([]);
+      if (version === savedViewsVersion.current) showToast("Saved views could not be loaded. Try refreshing.", "danger");
     }
   }, []);
 
@@ -266,6 +291,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
 
   const applySavedView = useCallback((saved: SavedView) => {
     setView(saved.state.view);
+    setSearch(saved.state.search ?? "");
     setLayout(saved.state.layout);
     // The stored grouping is a plain string; only the two this board groups by
     // are honoured, so a view saved before a column was renamed degrades to
@@ -276,6 +302,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
 
   const resetView = useCallback(() => {
     setView(EMPTY_VIEW);
+    setSearch("");
     setLayout("table");
     setGroupByKey("phase");
     setActiveViewId(null);
@@ -291,7 +318,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
             board: "projects",
             name,
             groupBy: groupByKey,
-            state: { view, layout, groupBy: groupByKey },
+            state: { view, layout, groupBy: groupByKey, search },
           }),
         });
         if (!res.ok) {
@@ -299,27 +326,31 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           throw new Error(body?.error ?? `HTTP ${res.status}`);
         }
         const saved = (await res.json()) as SavedView;
-        await loadSavedViews();
+        savedViewsVersion.current++;
+        setSavedViews((prev) => [...prev.filter((item) => item.id !== saved.id), saved]);
         setActiveViewId(saved.id);
         showToast(`Saved as ${saved.name}`, "success");
       } catch (error) {
         showToast(error instanceof Error ? error.message : "That view was not saved.", "danger");
+        throw error;
       }
     },
-    [view, layout, groupByKey, loadSavedViews],
+    [view, layout, groupByKey, search],
   );
 
   const deleteSavedView = useCallback(
     async (saved: SavedView) => {
-      setSavedViews((prev) => prev.filter((v) => v.id !== saved.id));
-      setActiveViewId((current) => (current === saved.id ? null : current));
-      const res = await fetch(`/api/board-views/${saved.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        await loadSavedViews();
+      try {
+        const res = await fetch(`/api/board-views/${saved.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        savedViewsVersion.current++;
+        setSavedViews((prev) => prev.filter((v) => v.id !== saved.id));
+        setActiveViewId((current) => (current === saved.id ? null : current));
+      } catch {
         showToast("That view was not deleted.", "danger");
       }
     },
-    [loadSavedViews],
+    [],
   );
 
   useEffect(() => {
@@ -391,7 +422,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
       { key: "year", label: "Year", kind: "number", width: 78 },
       { key: "billing", label: t("projects.col.billing", "Billing"), kind: "text", width: 110 },
       { key: "notes", label: "Notes", kind: "longtext", width: 200 },
-      { key: "updatedAt", label: "Last updated", kind: "readonly", width: 118 },
+      { key: "updatedAt", label: "Last updated", kind: "readonly", width: 118, labelFor: relativeDay },
     ],
     [phaseLabel, statusLabel, t],
   );
@@ -430,7 +461,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           // The board works in whole days; the record keeps a timestamp.
           startDate: project.startDate ? toDayValue(new Date(project.startDate)) : null,
           endDate: project.endDate ? toDayValue(new Date(project.endDate)) : null,
-          updatedAt: relativeDay(project.updatedAt),
+          updatedAt: project.updatedAt,
         },
         updateCount: project.updateCount,
         people: project.assignments.map((a) => ({
@@ -451,13 +482,13 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   // ── Writes ─────────────────────────────────────────────────────────────────
 
   const patch = useCallback(
-    async (id: string, field: string, value: BoardCellValue) => {
-      const previous = projects.find((p) => p.id === id);
+    (id: string, field: string, value: BoardCellValue) => requests.enqueue(id, async () => {
+      const previous = projectsRef.current.find((p) => p.id === id);
       if (!previous) return;
 
       const caps = previous.capabilities;
       const allowed =
-        field === STATUS_ONLY_FIELD ? caps?.updateStatus ?? true : caps?.update ?? true;
+        field === STATUS_ONLY_FIELD ? caps?.updateStatus === true : caps?.update === true;
       if (!allowed) {
         showToast(
           field === STATUS_ONLY_FIELD
@@ -468,47 +499,56 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         return;
       }
 
-      // Optimistic: the cell shows the new value at once, and goes back if
-      // the server refuses. Nothing is queued in memory.
-      setProjects((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)),
+      const built = field === "startDate" || field === "endDate"
+        ? { ok: true as const, payload: { [field]: value } }
+        : buildCellPayload(field, String(value ?? ""));
+      if (!built.ok) {
+        showToast(built.reason, "danger");
+        return;
+      }
+      if (String(previous[field as keyof BoardProject] ?? "") === String(built.payload[field] ?? "")) return;
+      // Writes to the same row run in order; a failed write can only undo its
+      // own snapshot, and reads cannot replace a row while it is being saved.
+      updateProjects((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, ...built.payload } : p)),
       );
 
       try {
         const res = await fetch(`/api/projects/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [field]: value }),
+          body: JSON.stringify(built.payload),
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           throw new Error(body?.error ?? `HTTP ${res.status}`);
         }
         const saved = (await res.json()) as Partial<BoardProject>;
-        setProjects((prev) =>
+        updateProjects((prev) =>
           prev.map((p) =>
-            p.id === id ? { ...p, ...saved, capabilities: p.capabilities, assignments: p.assignments } : p,
+            p.id === id ? { ...p, ...saved, capabilities: saved.capabilities ?? p.capabilities, assignments: saved.assignments ?? p.assignments } : p,
           ),
         );
       } catch (error) {
-        setProjects((prev) => prev.map((p) => (p.id === id ? previous : p)));
+        updateProjects((prev) => prev.map((p) => (p.id === id ? previous : p)));
         showToast(error instanceof Error ? error.message : "That change was not saved.", "danger");
       }
-    },
-    [projects],
+    }),
+    [requests, updateProjects],
   );
 
   const assign = useCallback(
-    async (id: string, userId: string, action: "add" | "remove") => {
-      const previous = projects.find((p) => p.id === id);
+    (id: string, userId: string, action: "add" | "remove") => requests.enqueue(id, async () => {
+      const previous = projectsRef.current.find((p) => p.id === id);
       if (!previous) return;
-      if (previous.capabilities && !previous.capabilities.assign) {
+      if (!previous.capabilities?.assign) {
         showToast("Only directors or project leads can change the team.", "warning");
         return;
       }
+      if (previous.assignments.some((member) => member.userId === userId) === (action === "add")) return;
       const person = roster.find((m) => m.id === userId);
 
-      setProjects((prev) =>
+      updateProjects((prev) =>
         prev.map((p) =>
           p.id !== id
             ? p
@@ -548,15 +588,15 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           throw new Error(body?.error ?? `HTTP ${res.status}`);
         }
       } catch (error) {
-        setProjects((prev) => prev.map((p) => (p.id === id ? previous : p)));
+        updateProjects((prev) => prev.map((p) => (p.id === id ? previous : p)));
         showToast(error instanceof Error ? error.message : "The team was not changed.", "danger");
       }
-    },
-    [projects, roster],
+    }),
+    [requests, roster, updateProjects],
   );
 
   const addRow = useCallback(
-    async (groupValue: string | null, title: string) => {
+    (groupValue: string | null, title: string) => requests.enqueue("__create", async () => {
       try {
         const res = await fetch("/api/projects", {
           method: "POST",
@@ -573,7 +613,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           throw new Error(body?.error ?? `HTTP ${res.status}`);
         }
         const created = (await res.json()) as BoardProject;
-        setProjects((prev) => [
+        updateProjects((prev) => [
           { ...created, assignments: created.assignments ?? [] },
           ...prev,
         ]);
@@ -583,9 +623,10 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           error instanceof Error ? error.message : "That project was not created.",
           "danger",
         );
+        throw error;
       }
-    },
-    [groupByKey],
+    }),
+    [groupByKey, requests, updateProjects],
   );
 
   /**
@@ -609,12 +650,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         return column.labelFor ? column.labelFor(String(value)) : String(value);
       }),
     ]);
-    const cell = (value: unknown) => {
-      let text = value == null ? "" : String(value);
-      if (/^[=+@-]/.test(text)) text = `'${text}`;
-      return `"${text.replace(/"/g, '""')}"`;
-    };
-    const csv = [header, ...body].map((line) => line.map(cell).join(",")).join("\r\n");
+    const csv = [header, ...body].map((line) => line.map(csvCell).join(",")).join("\r\n");
     const url = URL.createObjectURL(
       new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }),
     );
@@ -641,6 +677,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
       {
         label: "Set status",
         run: () => undefined,
+        canRun: (ids) => ids.every((id) => projects.find((project) => project.id === id)?.capabilities?.updateStatus === true),
         options: WORK_STATUSES.map((value) => ({
           value,
           label: statusLabel(value),
@@ -653,6 +690,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
       {
         label: "Move to phase",
         run: () => undefined,
+        canRun: (ids) => ids.every((id) => projects.find((project) => project.id === id)?.capabilities?.update === true),
         options: PHASES.map((value) => ({
           value,
           label: phaseLabel(value),
@@ -663,7 +701,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
         },
       },
     ],
-    [patch, phaseLabel, statusLabel],
+    [patch, phaseLabel, statusLabel, projects],
   );
 
   // A row is editable if the caller may change anything on it at all; which
@@ -671,7 +709,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const canEditAnything = useMemo(
     () =>
       filtered.some(
-        (p) => (p.capabilities?.update ?? true) || (p.capabilities?.updateStatus ?? true),
+        (p) => p.capabilities?.update === true || p.capabilities?.updateStatus === true || p.capabilities?.assign === true,
       ),
     [filtered],
   );
@@ -687,7 +725,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
   const canEditCell = useCallback(
     (row: { id: string }, column: { key: string }) => {
       const caps = byId.get(row.id)?.capabilities;
-      if (!caps) return true;
+      if (!caps) return false;
       if (column.key === "people") return caps.assign;
       if (column.key === STATUS_ONLY_FIELD) return caps.updateStatus;
       return caps.update;
@@ -718,7 +756,7 @@ export function ProjectsBoard({ currentUserId }: { currentUserId: string }) {
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-friday-fg-subtle" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setActiveViewId(null); }}
             placeholder="Search this board"
             aria-label="Search the board"
             className="h-8 w-56 rounded-md border border-friday-border-soft bg-friday-surface pl-8 pr-3 text-[12.5px] text-friday-fg outline-none transition-colors placeholder:text-friday-fg-subtle focus:border-friday-accent"

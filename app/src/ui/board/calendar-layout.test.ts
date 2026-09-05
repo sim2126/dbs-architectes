@@ -8,9 +8,22 @@ import {
   parseDayValue,
   startOfMonth,
   toDayValue,
+  localDay,
+  millisecondsUntilTomorrow,
+  formatDay,
 } from "./calendar-layout";
 
 const day = (iso: string) => parseDayValue(iso)!;
+
+test("today follows local dates and refreshes at the next local midnight", () => {
+  const now = new Date(2026, 8, 5, 0, 15);
+  assert.equal(toDayValue(localDay(now)), "2026-09-05");
+  const midnight = new Date(now.getTime() + millisecondsUntilTomorrow(now));
+  assert.equal(midnight.getDate(), 6);
+  assert.equal(midnight.getHours(), 0);
+  assert.equal(midnight.getMinutes(), 0);
+  assert.equal(formatDay(day("2026-09-05")), "5 Sept 2026");
+});
 
 // ── The grid ─────────────────────────────────────────────────────────────────
 

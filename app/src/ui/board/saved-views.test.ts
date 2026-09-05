@@ -27,6 +27,7 @@ test("a complete view round-trips", () => {
     },
     layout: "kanban",
     groupBy: "workStatus",
+    search: "client example",
   };
   const parsed = parseSavedViewState(stored, "phase");
   assert.deepEqual(parsed, {
@@ -40,6 +41,7 @@ test("a complete view round-trips", () => {
     },
     layout: "kanban",
     groupBy: "workStatus",
+    search: "client example",
   });
 });
 
@@ -51,7 +53,14 @@ test("nothing usable gives null rather than a broken board", () => {
 
 test("a half-written view fills in from the empty view", () => {
   const parsed = parseSavedViewState({ view: {} }, "phase");
-  assert.deepEqual(parsed, { view: EMPTY_VIEW, layout: "table", groupBy: "phase" });
+  assert.deepEqual(parsed, { view: EMPTY_VIEW, layout: "table", groupBy: "phase", search: "" });
+});
+
+test("stored column arrays are unique and legacy search is empty", () => {
+  const parsed = parseSavedViewState({ view: { order: ["phase", "phase"], hidden: ["client", "client"] } }, "phase")!;
+  assert.deepEqual(parsed.view.order, ["phase"]);
+  assert.deepEqual(parsed.view.hidden, ["client"]);
+  assert.equal(parsed.search, "");
 });
 
 test("values of the wrong type are dropped, not coerced", () => {

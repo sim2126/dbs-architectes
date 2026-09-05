@@ -181,7 +181,7 @@ function UpdateItem({
           {message.replies.length > 0 && (
             <button
               onClick={() => setShowReplies((v) => !v)}
-              className="flex items-center gap-1.5 mt-2 text-xs text-blue-500 hover:text-blue-600 font-medium"
+              className="flex items-center gap-1.5 mt-2 text-xs text-friday-fg hover:text-friday-fg-muted font-medium"
             >
               <MessageSquare className="w-3 h-3" />
               {message.replies.length} {message.replies.length === 1 ? "reply" : "replies"}

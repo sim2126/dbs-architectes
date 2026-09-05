@@ -54,6 +54,8 @@ export function ViewsMenu({
       setName("");
       setNaming(false);
       setOpen(false);
+    } catch {
+      // The binding reports the failure. Keep the name so it can be retried.
     } finally {
       setBusy(false);
     }

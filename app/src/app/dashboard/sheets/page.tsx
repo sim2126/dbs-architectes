@@ -130,6 +130,7 @@ export default function SheetsPage() {
   const [activeView, setActiveView] = useState<ActiveView>("projects");
   const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
   const [workloadDenied, setWorkloadDenied] = useState(false);
+  const [workloadError, setWorkloadError] = useState(false);
   const [customSheets, setCustomSheets] = useState<SheetMeta[]>([]);
   const [activeCustomSheet, setActiveCustomSheet] = useState<CustomSheet | null>(null);
   const [loading, setLoading] = useState(false);
@@ -154,6 +155,7 @@ export default function SheetsPage() {
   const loadWorkload = useCallback(async () => {
     setLoading(true);
     setWorkloadDenied(false);
+    setWorkloadError(false);
     try {
       const res = await fetch("/api/team-workload");
       if (res.status === 403) {
@@ -185,6 +187,7 @@ export default function SheetsPage() {
       );
     } catch (error) {
       console.error("[workbook] workload failed to load", error);
+      setWorkloadError(true);
       setTeamRows([]);
     } finally {
       setLoading(false);
@@ -503,7 +506,11 @@ export default function SheetsPage() {
                   Loading…
                 </div>
               ) : onWorkload ? (
-                <WorkloadTable rows={teamRows} denied={workloadDenied} />
+                workloadError ? (
+                  <p role="alert" className="px-6 py-12 text-center text-sm text-friday-fg-subtle">
+                    Team workload could not be loaded. Use Refresh to try again.
+                  </p>
+                ) : <WorkloadTable rows={teamRows} denied={workloadDenied} />
               ) : activeCustomSheet ? (
                 <CustomSheetTable
                   sheet={activeCustomSheet}

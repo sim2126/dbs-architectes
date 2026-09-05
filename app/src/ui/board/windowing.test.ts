@@ -5,10 +5,10 @@ import {
   shouldWindow,
   windowGroups,
   WINDOW_THRESHOLD,
-  type WindowMetrics,
+  boardWindowMetrics,
 } from "./windowing";
 
-const METRICS: WindowMetrics = { rowHeight: 36, headerHeight: 44, footerHeight: 60, emptyHeight: 36 };
+const METRICS = boardWindowMetrics(true);
 const VIEWPORT = 720;
 
 const group = (rowCount: number, collapsed = false) => ({ rowCount, collapsed });
@@ -99,11 +99,20 @@ test("an empty group is skipped without leaving a hole", () => {
 test("an empty group's note is counted, so later groups do not drift", () => {
   const withEmpty = [group(0), group(300)];
   const withoutEmpty = [group(1), group(300)];
-  // A group showing one row and a group showing the empty note are the same
-  // height, so the group after them starts in the same place.
+  // Both show a 36px line, but an empty group does not render a summary.
   const a = windowGroups(withEmpty, 2000, VIEWPORT, METRICS)[1];
-  const b = windowGroups(withoutEmpty, 2000, VIEWPORT, METRICS)[1];
+  const b = windowGroups(withoutEmpty, 2000 + METRICS.summaryHeight!, VIEWPORT, METRICS)[1];
   assert.deepEqual(a, b);
+});
+
+test("many empty groups and the column heading have exact production offsets", () => {
+  for (const canAdd of [false, true]) {
+    const metrics = boardWindowMetrics(canAdd);
+    const groups = [...Array.from({ length: 50 }, () => group(0)), group(300)];
+    const rowsTop = metrics.tableHeaderHeight! + 50 * (metrics.headerHeight + metrics.emptyHeight + metrics.footerHeight) + metrics.headerHeight;
+    const result = windowGroups(groups, rowsTop + 30 * metrics.rowHeight, VIEWPORT, metrics)[50];
+    assert.equal(result.firstIndex, 18, "twelve overscan rows before visible row 30");
+  }
 });
 
 test("a window never runs past the rows a group has", () => {

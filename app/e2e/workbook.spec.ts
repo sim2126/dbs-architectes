@@ -21,6 +21,7 @@ type Project = {
   phase: string;
   workStatus: string;
   client: string | null;
+  year: number | null;
   startDate: string | null;
   endDate: string | null;
   updateCount?: number;
@@ -83,6 +84,152 @@ async function board(page: Page) {
 
 test.describe("workbook board", () => {
   test.use({ storageState: stateFor("admin") });
+
+  test("year edits save an integer and survive reload", async ({ page }) => {
+    const target = (await projects(page))[0];
+    const year = target.year === 2027 ? 2028 : 2027;
+    try {
+      await board(page);
+      await showOnBoard(page, target.title);
+      await page.getByRole("button", { name: new RegExp(`^Year of ${escapeRe(target.title)}:`) }).click();
+      const editor = page.getByLabel(`Year of ${target.title}`, { exact: true });
+      await editor.fill(String(year));
+      await editor.press("Enter");
+      await expect.poll(async () => (await projects(page)).find((p) => p.id === target.id)?.year).toBe(year);
+      await page.reload();
+      await showOnBoard(page, target.title);
+      await expect(page.getByRole("button", { name: `Year of ${target.title}: ${year}`, exact: true })).toBeVisible();
+    } finally {
+      const response = await page.request.patch(`/api/projects/${target.id}`, { data: { year: target.year } });
+      expect(response.ok(), await response.text()).toBeTruthy();
+    }
+  });
+
+  test("column dragging moves the source before the drop target", async ({ page }) => {
+    await board(page);
+    // Both headings must remain in view: scrolling an off-screen source
+    // away between mouse-down and mouse-move prevents a native drag starting.
+    const source = page.getByRole("columnheader", { name: /^Phase column options/ });
+    const target = page.getByRole("columnheader", { name: /^Status column options/ });
+    await source.dragTo(target);
+    await expect.poll(async () => {
+      const keys = await page.locator("thead th button").allTextContents();
+      return keys.indexOf("Phase") < keys.indexOf("Status");
+    }).toBe(true);
+  });
+
+  test("two edits and a slow refresh cannot overwrite one another", async ({ page }) => {
+    const target = (await projects(page))[0];
+    await board(page);
+    await showOnBoard(page, target.title);
+    let stored = { ...target };
+    let releaseWrite!: () => void;
+    let releaseRead!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+    let writes = 0;
+    let reads = 0;
+    await page.route(`**/api/projects/${target.id}`, async (route) => {
+      if (route.request().method() !== "PATCH") { await route.continue(); return; }
+      const next = { ...stored, ...route.request().postDataJSON() };
+      writes++;
+      if (writes === 1) await writeGate;
+      stored = next;
+      await route.fulfill({ json: stored });
+    });
+    await page.route("**/api/projects?*", async (route) => {
+      if (new URL(route.request().url()).searchParams.get("paging") !== "1") { await route.continue(); return; }
+      const response = await route.fetch();
+      const body = await response.json();
+      const snapshot = { ...stored };
+      reads++;
+      if (reads === 1) await readGate;
+      await route.fulfill({ json: { ...body, projects: body.projects.map((project: Project) => project.id === target.id ? { ...project, ...snapshot } : project) } });
+    });
+    try {
+      await page.getByRole("button", { name: "Board actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Refresh the board", exact: true }).click();
+      await expect.poll(() => reads).toBeGreaterThan(0);
+      await page.getByRole("button", { name: new RegExp(`^Client of ${escapeRe(target.title)}:`) }).click();
+      await page.getByLabel(`Client of ${target.title}`, { exact: true }).fill("Ordered client edit");
+      await page.getByLabel(`Client of ${target.title}`, { exact: true }).press("Enter");
+      await expect.poll(() => writes).toBe(1);
+      await page.getByRole("button", { name: new RegExp(`^Year of ${escapeRe(target.title)}:`) }).click();
+      await page.getByLabel(`Year of ${target.title}`, { exact: true }).fill("2029");
+      await page.getByLabel(`Year of ${target.title}`, { exact: true }).press("Enter");
+      releaseRead();
+      releaseWrite();
+      await expect.poll(() => writes).toBe(2);
+      await expect.poll(() => reads).toBeGreaterThan(1);
+      await expect(page.getByRole("button", { name: `Client of ${target.title}: Ordered client edit`, exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: `Year of ${target.title}: 2029`, exact: true })).toBeVisible();
+    } finally {
+      releaseRead();
+      releaseWrite();
+    }
+  });
+
+  test("filtering a selected row away forgets it permanently", async ({ page }) => {
+    const [first, second] = await projects(page);
+    await board(page);
+    await showOnBoard(page, first.title);
+    await page.getByRole("checkbox", { name: `Select ${first.title}`, exact: true }).click();
+    await showOnBoard(page, second.title);
+    await page.getByRole("checkbox", { name: `Select ${second.title}`, exact: true }).click();
+    await page.getByLabel("Search the board").fill("");
+    await expect(page.getByRole("region", { name: "1 project selected, bulk actions", exact: true })).toBeVisible();
+  });
+
+  test("failed creation and view saving retain their drafts", async ({ page }) => {
+    await board(page);
+    await page.route("**/api/projects", async (route) => {
+      if (route.request().method() === "POST") await route.fulfill({ status: 500, json: { error: "Creation unavailable" } });
+      else await route.continue();
+    });
+    const draft = page.getByLabel("Add project to Study / Prelim.", { exact: true });
+    await draft.fill("Draft retained after a failed creation");
+    const creationFailed = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/projects");
+    await draft.press("Enter");
+    await creationFailed;
+    await expect(draft).toBeEnabled();
+    await expect(draft).toHaveValue("Draft retained after a failed creation");
+    await draft.press("Escape");
+
+    await page.route("**/api/board-views", async (route) => {
+      if (route.request().method() === "POST") await route.fulfill({ status: 500, json: { error: "View saving unavailable" } });
+      else await route.continue();
+    });
+    await page.getByRole("button", { name: "Views", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Save this view", exact: true }).click();
+    const name = page.getByLabel("Name for this view");
+    await name.fill("Retained view name");
+    const saveFailed = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/board-views");
+    await name.press("Enter");
+    await saveFailed;
+    await expect(name).toBeEnabled();
+    await expect(name).toHaveValue("Retained view name");
+  });
+
+  test("rendered table heights match windowing including empty groups", async ({ page }) => {
+    const target = (await projects(page))[0];
+    await board(page);
+    await showOnBoard(page, target.title);
+    const metrics = await page.getByRole("table", { name: "Projects", exact: true }).evaluate((table) => ({
+      heading: table.querySelector("thead")!.getBoundingClientRect().height,
+      groups: Array.from(table.querySelectorAll("tbody")).map((group) => ({
+        header: group.firstElementChild!.getBoundingClientRect().height,
+        rows: Array.from(group.querySelectorAll("tr")).slice(1).map((row) => ({
+          height: row.getBoundingClientRect().height,
+          summary: row === group.lastElementChild && !row.querySelector("input") && Boolean(group.querySelector('th[scope="row"]')),
+        })),
+      })),
+    }));
+    expect(metrics.heading).toBe(36);
+    for (const group of metrics.groups) {
+      expect(group.header).toBe(44);
+      for (const row of group.rows) expect(row.height).toBe(row.summary ? 26 : 36);
+    }
+  });
 
   test("projects are grouped by phase, with counts and a status distribution", async ({ page }) => {
     const rows = await projects(page);
@@ -234,40 +381,39 @@ test.describe("workbook board", () => {
   test("a change made elsewhere appears without reloading", async ({ page, browser }) => {
     // The board is shared: several people have it open at once. This is the
     // behaviour that stops one of them overwriting a change they cannot see.
-    const target = (await projects(page)).find((p) => p.workStatus !== "stuck")!;
+    const other = await browser.newContext({ storageState: stateFor("pm") });
+    const list = await other.request.get("/api/projects?limit=500");
+    expect(list.ok(), await list.text()).toBeTruthy();
+    const target = ((await list.json()) as Project[]).find((p) => p.capabilities?.updateStatus && p.workStatus !== "stuck");
+    expect(target, "the PM has a project they may update").toBeTruthy();
+    if (!target) { await other.close(); return; }
+    try {
     await board(page);
     await showOnBoard(page, target.title);
 
     // Wait until the board says it is live. Between mount and subscription
     // Pusher delivers nothing, so changing the row before then proves only
     // that the event was dropped.
-    //
-    // Where there is no broker configured — CI runs without Pusher
-    // credentials — there is nothing to assert, so the test says so and
-    // stops rather than reporting a failure it cannot avoid.
-    const live = await page
-      .getByLabel("Live updates on")
-      .waitFor({ timeout: 20_000 })
-      .then(() => true)
-      .catch(() => false);
-    test.skip(!live, "no real-time broker is configured in this environment");
+    await expect(page.getByLabel("Live updates on")).toBeVisible({ timeout: 20_000 });
 
     // A second person, in their own browser, moves it.
-    const other = await browser.newContext({ storageState: stateFor("pm") });
     const res = await other.request.patch(`/api/projects/${target.id}`, {
       data: { workStatus: "stuck" },
     });
     expect(res.ok(), await res.text()).toBeTruthy();
-    await other.close();
 
     // The first person's board catches up on its own.
     await expect(
       page.getByRole("button", { name: new RegExp(`^Status of ${escapeRe(target.title)}: ${STATUS_LABEL.stuck}`) }),
     ).toBeVisible({ timeout: 15_000 });
 
-    await page.request.patch(`/api/projects/${target.id}`, {
-      data: { workStatus: target.workStatus },
-    });
+    } finally {
+      await other.close();
+      const restored = await page.request.patch(`/api/projects/${target.id}`, {
+        data: { workStatus: target.workStatus },
+      });
+      expect(restored.ok(), await restored.text()).toBeTruthy();
+    }
   });
 
   test("filter, sort and hide change the view without touching the data", async ({ page }) => {
@@ -500,24 +646,29 @@ test.describe("workbook board", () => {
 
   test("a date cell picks a day and saves it", async ({ page }) => {
     const target = (await projects(page))[0];
-    await board(page);
+    const day = new Date(target.endDate ?? "2027-03-10T00:00:00.000Z");
+    day.setUTCDate(day.getUTCDate() - 1);
+    if (day.toISOString().slice(0, 10) === target.startDate?.slice(0, 10)) day.setUTCDate(day.getUTCDate() - 1);
+    const value = day.toISOString().slice(0, 10);
+    const label = day.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    try {
+      await board(page);
+      await showOnBoard(page, target.title);
+      const cell = page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}:`) });
+      await cell.click();
 
-    await showOnBoard(page, target.title);
-    const cell = page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}:`) });
-    await cell.click();
+      const input = page.getByLabel(`Start of ${target.title}`);
+      await expect(input).toBeFocused();
+      await input.fill(value);
 
-    const input = page.getByLabel(`Start of ${target.title}`);
-    await expect(input).toBeFocused();
-    await input.fill("2027-03-09");
-
-    await expect
-      .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.startDate?.slice(0, 10))
-      .toBe("2027-03-09");
-    await expect(
-      page.getByRole("button", { name: new RegExp(`^Start of ${escapeRe(target.title)}: 9 Mar 2027`) }),
-    ).toBeVisible();
-
-    await page.request.patch(`/api/projects/${target.id}`, { data: { startDate: target.startDate } });
+      await expect
+        .poll(async () => (await projects(page)).find((p) => p.id === target.id)?.startDate?.slice(0, 10))
+        .toBe(value);
+      await expect(page.getByRole("button", { name: `Start of ${target.title}: ${label}`, exact: true })).toBeVisible();
+    } finally {
+      const restored = await page.request.patch(`/api/projects/${target.id}`, { data: { startDate: target.startDate } });
+      expect(restored.ok(), await restored.text()).toBeTruthy();
+    }
   });
 
   test("a row shows how much has been said about it", async ({ page }) => {

@@ -54,36 +54,40 @@ export async function saveView(args: {
   const state = parseSavedViewState(args.state, args.fallbackGroupBy);
   if (!state) return { ok: false, error: "That is not a board view", status: 400 };
 
-  const existing = await prisma.savedBoardView.count({
-    where: { userId: args.userId, board: args.board },
-  });
-  const replacing = await prisma.savedBoardView.findUnique({
-    where: { userId_board_name: { userId: args.userId, board: args.board, name } },
-    select: { id: true },
-  });
-  if (!replacing && existing >= MAX_VIEWS_PER_BOARD) {
-    return {
-      ok: false,
-      error: `You already have ${MAX_VIEWS_PER_BOARD} saved views on this board`,
-      status: 409,
-    };
-  }
+  return prisma.$transaction(async (tx): Promise<SaveViewResult> => {
+    // The cap and replacement decision must see the preceding writer's commit.
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`board-views:${args.userId}:${args.board}`}, 0))`);
+    const existing = await tx.savedBoardView.count({
+      where: { userId: args.userId, board: args.board },
+    });
+    const replacing = await tx.savedBoardView.findUnique({
+      where: { userId_board_name: { userId: args.userId, board: args.board, name } },
+      select: { id: true },
+    });
+    if (!replacing && existing >= MAX_VIEWS_PER_BOARD) {
+      return {
+        ok: false,
+        error: `You already have ${MAX_VIEWS_PER_BOARD} saved views on this board`,
+        status: 409,
+      };
+    }
 
-  // Saving under a name you already used replaces it, which is what the
-  // word "save" means everywhere else.
-  const row = await prisma.savedBoardView.upsert({
-    where: { userId_board_name: { userId: args.userId, board: args.board, name } },
-    create: {
-      userId: args.userId,
-      board: args.board,
-      name,
-      state: state as unknown as Prisma.InputJsonValue,
-    },
-    update: { state: state as unknown as Prisma.InputJsonValue },
-    select: { id: true, name: true },
-  });
+    // Saving under a name you already used replaces it, which is what the
+    // word "save" means everywhere else.
+    const row = await tx.savedBoardView.upsert({
+      where: { userId_board_name: { userId: args.userId, board: args.board, name } },
+      create: {
+        userId: args.userId,
+        board: args.board,
+        name,
+        state: state as unknown as Prisma.InputJsonValue,
+      },
+      update: { state: state as unknown as Prisma.InputJsonValue },
+      select: { id: true, name: true },
+    });
 
-  return { ok: true, view: { id: row.id, name: row.name, state } };
+    return { ok: true, view: { id: row.id, name: row.name, state } };
+  }, { maxWait: 15_000, timeout: 15_000 });
 }
 
 /** Scoped to the owner: an id belonging to someone else simply does not match. */

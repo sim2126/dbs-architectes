@@ -125,7 +125,7 @@ export function resetColumnWidth(view: BoardView, key: string): BoardView {
  */
 export function orderedKeys(columns: readonly BoardColumn[], view: BoardView): string[] {
   const known = new Set(columns.map((c) => c.key));
-  const listed = view.order.filter((key) => known.has(key));
+  const listed = [...new Set(view.order.filter((key) => known.has(key)))];
   const rest = columns.map((c) => c.key).filter((key) => !listed.includes(key));
   return [...listed, ...rest];
 }
@@ -175,8 +175,9 @@ function cellText(row: BoardRow, key: string): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-function matches(row: BoardRow, view: BoardView): boolean {
+function matches(row: BoardRow, view: BoardView, known: ReadonlyMap<string, BoardColumn>): boolean {
   for (const [key, allowed] of Object.entries(view.values)) {
+    if (!known.has(key)) continue;
     if (allowed.length === 0) continue;
     if (!allowed.includes(cellText(row, key))) return false;
   }
@@ -254,7 +255,7 @@ export function applyView(
     .map((column) =>
       view.widths[column.key] ? { ...column, width: view.widths[column.key] } : column,
     );
-  const kept = rows.filter((row) => matches(row, view));
+  const kept = rows.filter((row) => matches(row, view, byKey));
 
   const sort = view.sort;
   if (sort) {

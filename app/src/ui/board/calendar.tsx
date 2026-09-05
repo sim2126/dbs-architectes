@@ -16,7 +16,7 @@
  * ./calendar-layout, where it is tested.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/ui/utils";
 import { displayValue, type BoardColumn, type BoardRow } from "./columns";
@@ -30,7 +30,8 @@ import {
   parseDayValue,
   sameDay,
   startOfMonth,
-  toDay,
+  localDay,
+  millisecondsUntilTomorrow,
   type CalendarItem,
 } from "./calendar-layout";
 
@@ -57,9 +58,26 @@ export function Calendar({
   onOpenRow,
   itemNoun = "item",
 }: CalendarProps) {
-  const [month, setMonth] = useState(() => startOfMonth(toDay(new Date())));
+  const [month, setMonth] = useState(() => startOfMonth(localDay(new Date())));
   const weeks = useMemo(() => monthGrid(month), [month]);
-  const today = useMemo(() => toDay(new Date()), []);
+  const [today, setToday] = useState(() => localDay(new Date()));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      clearTimeout(timer);
+      const now = new Date();
+      setToday(localDay(now));
+      timer = setTimeout(refresh, millisecondsUntilTomorrow(now) + 1);
+    };
+    timer = setTimeout(refresh, millisecondsUntilTomorrow(new Date()) + 1);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
 
   const { items, byId, undated } = useMemo(() => {
     const placed: CalendarItem[] = [];
@@ -80,7 +98,7 @@ export function Calendar({
     return { items: placed, byId: lookup, undated: missing };
   }, [rows, startKey, endKey]);
 
-  const monthLabel = month.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const monthLabel = month.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -106,7 +124,7 @@ export function Calendar({
         </button>
         <button
           type="button"
-          onClick={() => setMonth(startOfMonth(toDay(new Date())))}
+          onClick={() => setMonth(startOfMonth(localDay(new Date())))}
           className="rounded-md px-2.5 py-1 text-[12px] text-friday-fg-subtle transition-colors hover:bg-friday-surface-2 hover:text-friday-fg"
         >
           Today

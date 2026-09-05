@@ -20,6 +20,10 @@ export type WindowMetrics = {
   headerHeight: number;
   /** Add-row plus summary plus the gap under a group. */
   footerHeight: number;
+  /** Summary is absent for an empty group. */
+  summaryHeight?: number;
+  /** The column headings precede every group in the scroll container. */
+  tableHeaderHeight?: number;
   /**
    * The "nothing here" line an empty group shows instead of rows. It counts
    * towards the height of everything below it, so leaving it out would make
@@ -27,6 +31,21 @@ export type WindowMetrics = {
    */
   emptyHeight: number;
 };
+
+export const BOARD_ROW_HEIGHT = 36;
+export const BOARD_GROUP_HEADER_HEIGHT = 44;
+export const BOARD_SUMMARY_HEIGHT = 26;
+
+export function boardWindowMetrics(canAdd: boolean): WindowMetrics {
+  return {
+    rowHeight: BOARD_ROW_HEIGHT,
+    headerHeight: BOARD_GROUP_HEADER_HEIGHT,
+    tableHeaderHeight: BOARD_ROW_HEIGHT,
+    footerHeight: canAdd ? BOARD_ROW_HEIGHT : 0,
+    summaryHeight: BOARD_SUMMARY_HEIGHT,
+    emptyHeight: BOARD_ROW_HEIGHT,
+  };
+}
 
 export type WindowedGroup = {
   /** First row of this group to render, inclusive. */
@@ -66,7 +85,7 @@ export function windowGroups(
   const top = scrollTop - overscan;
   const bottom = scrollTop + viewportHeight + overscan;
 
-  let offset = 0;
+  let offset = metrics.tableHeaderHeight ?? 0;
   return groups.map((group) => {
     const rowsTop = offset + metrics.headerHeight;
     const rowsHeight = group.collapsed
@@ -74,7 +93,8 @@ export function windowGroups(
       : group.rowCount === 0
         ? metrics.emptyHeight
         : group.rowCount * metrics.rowHeight;
-    offset = rowsTop + rowsHeight + (group.collapsed ? 0 : metrics.footerHeight);
+    offset = rowsTop + rowsHeight + (group.collapsed ? 0 : metrics.footerHeight +
+      (group.rowCount > 0 ? metrics.summaryHeight ?? 0 : 0));
 
     if (group.collapsed || group.rowCount === 0) {
       return { firstIndex: 0, lastIndex: -1, topSpacer: 0, bottomSpacer: 0 };

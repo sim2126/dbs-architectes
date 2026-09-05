@@ -38,6 +38,16 @@ export function toDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+/** Encode the user's local calendar day using the grid's UTC-day arithmetic. */
+export function localDay(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+export function millisecondsUntilTomorrow(date: Date): number {
+  const tomorrow = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+  return tomorrow.getTime() - date.getTime();
+}
+
 export function addDays(day: Date, count: number): Date {
   return new Date(day.getTime() + count * DAY);
 }
@@ -152,7 +162,7 @@ export function parseDayValue(value: unknown): Date | null {
 
 /** How a day is written in the product: 4 Sep 2026. */
 export function formatDay(day: Date): string {
-  return day.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return day.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /** The `yyyy-mm-dd` a date input wants. */

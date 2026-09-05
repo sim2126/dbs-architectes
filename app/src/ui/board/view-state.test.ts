@@ -50,6 +50,17 @@ test("a filter with nothing chosen constrains nothing", () => {
   assert.deepEqual(view.values, {}, "the key is dropped, not left empty");
 });
 
+test("retired filter keys do not hide rows and duplicate orders render once", () => {
+  const rows = [row("a", { client: "Example" })];
+  const result = applyView(rows, COLUMNS, {
+    ...EMPTY_VIEW,
+    values: { retired: ["anything"] },
+    order: ["client", "client", "retired"],
+  });
+  assert.deepEqual(result.rows.map((item) => item.id), ["a"]);
+  assert.deepEqual(result.columns.map((column) => column.key), ["client", "workStatus", "year", "people"]);
+});
+
 test("filter values accumulate and are read back", () => {
   let view = toggleFilterValue(EMPTY_VIEW, "workStatus", "stuck");
   view = toggleFilterValue(view, "workStatus", "doing");

@@ -27,6 +27,7 @@ export type SavedViewState = {
   layout: BoardLayout;
   /** Key of the column the rows are grouped by. */
   groupBy: string;
+  search?: string;
 };
 
 export type SavedView = {
@@ -42,7 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  return Array.isArray(value) ? [...new Set(value.filter((v): v is string => typeof v === "string"))] : [];
 }
 
 function parseValues(value: unknown): Record<string, readonly string[]> {
@@ -94,6 +95,7 @@ export function parseSavedViewState(input: unknown, fallbackGroupBy: string): Sa
     layout:
       input.layout === "kanban" || input.layout === "calendar" ? input.layout : "table",
     groupBy: typeof input.groupBy === "string" && input.groupBy ? input.groupBy : fallbackGroupBy,
+    search: typeof input.search === "string" ? input.search.slice(0, 1000) : "",
   };
 }
 
@@ -114,6 +116,7 @@ export function describeView(state: SavedViewState, columns: readonly BoardColum
 
   const filters = Object.keys(state.view.values).length + (state.view.people.length > 0 ? 1 : 0);
   if (filters > 0) parts.push(`${filters} filter${filters === 1 ? "" : "s"}`);
+  if (state.search) parts.push(`search: ${state.search}`);
   if (state.view.sort) parts.push(`sorted by ${label(state.view.sort.key)}`);
   if (state.view.hidden.length > 0) parts.push(`${state.view.hidden.length} hidden`);
   parts.push(`grouped by ${label(state.groupBy)}`);

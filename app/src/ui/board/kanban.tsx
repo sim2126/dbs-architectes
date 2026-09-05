@@ -83,9 +83,10 @@ export function Kanban({
 
   const move = useCallback(
     (rowId: string, value: string | null) => {
+      if (value === null || rows.find((row) => row.id === rowId)?.cells[groupBy.key] === value) return;
       void onCellChange?.(rowId, groupBy.key, value);
     },
-    [onCellChange, groupBy.key],
+    [onCellChange, groupBy.key, rows],
   );
 
   const movable = useCallback(
@@ -401,15 +402,20 @@ function AddCard({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
 
   const submit = async () => {
     const title = value.trim();
-    if (!title || busy) return;
+    if (!title || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       await onAdd(title);
       setValue("");
+    } catch {
+      // The binding reports the failure; keep the title available to retry.
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };

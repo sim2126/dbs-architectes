@@ -56,7 +56,10 @@ import {
   fullWindow,
   shouldWindow,
   windowGroups,
-  type WindowMetrics,
+  boardWindowMetrics,
+  BOARD_ROW_HEIGHT,
+  BOARD_GROUP_HEADER_HEIGHT,
+  BOARD_SUMMARY_HEIGHT,
 } from "./windowing";
 import { useDismiss } from "./use-dismiss";
 import {
@@ -82,7 +85,8 @@ import {
 // Monday's board is a fixed grid: every row the same height, every column an
 // explicit width, so the sticky first column and the group footers line up.
 
-const ROW_H = 36;
+const ROW_H = BOARD_ROW_HEIGHT;
+const CELL_H = ROW_H - 1;
 const CHECK_W = 34;
 const ITEM_W = 300;
 const ACTIONS_W = 62;
@@ -91,13 +95,14 @@ const ACTIONS_W = 62;
  * below computes where a row sits rather than measuring it. If these and the
  * rendered heights ever disagree, the scrollbar lies.
  */
-const GROUP_HEADER_H = 44;
-const SUMMARY_H = 26;
+const GROUP_HEADER_H = BOARD_GROUP_HEADER_HEIGHT;
+const SUMMARY_H = BOARD_SUMMARY_HEIGHT;
 
 export type BulkAction = {
   label: string;
   /** Given the selected row ids. Returning a promise keeps the bar disabled. */
   run: (ids: string[]) => void | Promise<void>;
+  canRun?: (ids: readonly string[]) => boolean;
   /** Choices rendered as a submenu, e.g. which status to set. */
   options?: readonly { value: string; label: string; color?: string }[];
   runOption?: (ids: string[], value: string) => void | Promise<void>;
@@ -190,6 +195,7 @@ export function Board({
    * no render in which the two disagree.
    */
   const selection = useMemo(() => pruneSelection(rawSelection, orderedIds), [rawSelection, orderedIds]);
+  if (selection.size !== rawSelection.size) setSelection(selection);
 
   // Handlers below are rebuilt every render, so they close over the current
   // arrangement. A resize drag holds the one it started with, which is right:
@@ -232,12 +238,7 @@ export function Board({
   }, []);
 
   const windows = useMemo(() => {
-    const metrics: WindowMetrics = {
-      rowHeight: ROW_H,
-      headerHeight: GROUP_HEADER_H,
-      footerHeight: (canAdd && onAddRow ? ROW_H : 0) + SUMMARY_H,
-      emptyHeight: ROW_H,
-    };
+    const metrics = boardWindowMetrics(Boolean(canAdd && onAddRow));
     const extents = groups.map((group) => ({
       rowCount: group.rows.length,
       collapsed: collapsed.has(group.value ?? "__ungrouped"),
@@ -299,8 +300,8 @@ export function Board({
                   onMove={(direction) =>
                     onViewChange?.(moveColumn(current, columnUniverse, column.key, direction))
                   }
-                  onReorder={(beforeKey) =>
-                    onViewChange?.(reorderColumn(current, columnUniverse, column.key, beforeKey))
+                  onReorder={(movedKey) =>
+                    onViewChange?.(reorderColumn(current, columnUniverse, movedKey, column.key))
                   }
                   onResize={(width) => onViewChange?.(setColumnWidth(current, column.key, width))}
                   onResetWidth={() => onViewChange?.(resetColumnWidth(current, column.key))}
@@ -344,7 +345,7 @@ export function Board({
                   <th
                     scope="colgroup"
                     colSpan={columnCount}
-                    className="sticky left-0 font-normal"
+                    className="sticky left-0 p-0 font-normal"
                     style={{ height: GROUP_HEADER_H }}
                   >
                     <GroupHeader
@@ -518,11 +519,11 @@ function ColumnHeader({
         const moved = e.dataTransfer.getData("application/x-board-column");
         if (!moved || moved === column.key) return;
         e.preventDefault();
-        onReorder(column.key);
+        onReorder(moved);
       }}
       className="sticky top-0 z-20 border-b border-l border-friday-border-soft bg-friday-bg p-0 font-normal"
     >
-      <span className="relative flex h-9 items-center">
+      <span className="relative flex items-center" style={{ height: CELL_H }}>
         <button
           type="button"
           disabled={!arrangeable}
@@ -557,7 +558,7 @@ function ColumnHeader({
           className="absolute left-0 top-full z-40 w-48 overflow-hidden rounded-md border border-friday-border bg-friday-bg py-1 shadow-lg"
         >
           {[
-            { label: sorted === "asc" ? "Sort descending" : "Sort ascending", run: onSort },
+            { label: sorted === "asc" ? "Sort descending" : sorted === "desc" ? "Clear sort" : "Sort ascending", run: onSort },
             { label: "Move left", run: () => onMove("left") },
             { label: "Move right", run: () => onMove("right") },
             { label: "Wider", run: () => onResize(column.width + 40), keepOpen: true },
@@ -709,7 +710,7 @@ function BoardRowView({
           rowBg,
         )}
       >
-        <span className="flex items-center gap-2 pr-2" style={{ height: ROW_H }}>
+        <span className="flex items-center gap-2 pr-2" style={{ height: CELL_H }}>
           <span aria-hidden className="h-full w-0.75 shrink-0" style={{ background: color }} />
           <span className="min-w-0 flex-1 truncate text-[13px] text-friday-fg">
             {row.title}
@@ -860,7 +861,7 @@ function StatusCell({
           canEdit && "cursor-pointer",
           !value && "text-friday-fg-subtle",
         )}
-        style={{ height: ROW_H, background, color }}
+        style={{ height: CELL_H, background, color }}
       >
         <span className="truncate">{text || "—"}</span>
       </button>
@@ -925,7 +926,7 @@ function SelectCell({
           "flex w-full items-center px-3 text-left text-[12.5px] text-friday-fg",
           !value && "text-friday-fg-subtle",
         )}
-        style={{ height: ROW_H }}
+        style={{ height: CELL_H }}
       >
         <span className="truncate">{text || "—"}</span>
       </button>
@@ -1016,7 +1017,7 @@ function TextCell({
           text ? "text-friday-fg" : "text-friday-fg-subtle",
           canEdit && "hover:bg-friday-surface-2",
         )}
-        style={{ height: ROW_H }}
+        style={{ height: CELL_H }}
       >
         <span className="truncate">{text || (canEdit ? "" : "—")}</span>
       </button>
@@ -1089,7 +1090,7 @@ function CellEditor({
         if (e.key === "Enter") onFinish(true);
       }}
       className="w-full border border-friday-accent bg-friday-bg px-3 text-[12.5px] text-friday-fg outline-none"
-      style={{ height: ROW_H }}
+      style={{ height: CELL_H }}
     />
   );
 }
@@ -1139,7 +1140,7 @@ function DateCell({
             if (e.key === "Enter") setEditing(false);
           }}
           className="w-full border border-friday-accent bg-friday-bg px-2 text-[12.5px] text-friday-fg outline-none"
-          style={{ height: ROW_H }}
+          style={{ height: CELL_H }}
         />
       </td>
     );
@@ -1157,7 +1158,7 @@ function DateCell({
           text ? "text-friday-fg" : "text-friday-fg-subtle",
           canEdit && "hover:bg-friday-surface-2",
         )}
-        style={{ height: ROW_H }}
+        style={{ height: CELL_H }}
       >
         <span className="truncate">{text || (canEdit ? "" : "—")}</span>
       </button>
@@ -1197,7 +1198,7 @@ function PeopleCell({
         aria-haspopup={canEdit ? "menu" : undefined}
         aria-expanded={canEdit ? open : undefined}
         className={cn("flex w-full items-center px-3", canEdit && "hover:bg-friday-surface-2")}
-        style={{ height: ROW_H }}
+        style={{ height: CELL_H }}
       >
         {row.people.length === 0 ? (
           <span className="text-[12.5px] text-friday-fg-subtle">—</span>
@@ -1280,15 +1281,20 @@ function AddRow({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
 
   const submit = async () => {
     const title = value.trim();
-    if (!title || busy) return;
+    if (!title || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     try {
       await onAdd(title);
       setValue("");
+    } catch {
+      // The binding reports the failure; keep the title available to retry.
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -1296,7 +1302,7 @@ function AddRow({
   return (
     <tr style={{ height: ROW_H }}>
       <td colSpan={columnCount} className="border-b border-friday-border-soft bg-friday-bg p-0">
-        <span className="flex items-center" style={{ height: ROW_H }}>
+        <span className="flex items-center" style={{ height: CELL_H }}>
           <span aria-hidden style={{ width: CHECK_W }} />
           <span aria-hidden className="h-full w-0.75 shrink-0" style={{ background: color }} />
           <Plus className="mx-2 h-3.5 w-3.5 shrink-0 text-friday-fg-subtle" />
@@ -1336,7 +1342,7 @@ function SummaryRow({
           const segments = statusDistribution(rows, column);
           const legend = segments.map((s) => `${s.label} ${s.count}`).join(", ");
           return (
-            <td key={column.key} className="px-2 py-1.5 align-middle">
+            <td key={column.key} className="px-2 py-0 align-middle">
               <span aria-hidden className="flex h-2 overflow-hidden rounded-full">
                 {segments.map((segment) => (
                   <span
@@ -1356,11 +1362,11 @@ function SummaryRow({
           <td
             key={column.key}
             className={cn(
-              "px-3 py-1.5 text-[10.5px] text-friday-fg-subtle",
+              "px-3 py-0 text-[10.5px] text-friday-fg-subtle",
               column.kind === "number" && "text-right tabular-nums",
             )}
           >
-            {summary}
+            <span className="block truncate" style={{ height: SUMMARY_H, lineHeight: `${SUMMARY_H}px` }}>{summary}</span>
           </td>
         );
       })}
@@ -1411,7 +1417,7 @@ function BulkBar({
         <div key={action.label} className="relative">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || action.canRun?.(ids) === false}
             onClick={() =>
               action.options
                 ? setOpenMenu((m) => (m === action.label ? null : action.label))
@@ -1440,7 +1446,7 @@ function BulkBar({
                   key={option.value}
                   type="button"
                   role="menuitem"
-                  disabled={busy}
+                  disabled={busy || action.canRun?.(ids) === false}
                   onClick={() => void run(() => action.runOption?.(ids, option.value))}
                   className="mb-0.5 flex w-full items-center rounded px-2 py-1.5 text-left text-[11.5px] font-semibold last:mb-0 disabled:opacity-50"
                   style={
